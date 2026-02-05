@@ -5,7 +5,7 @@ import Link from 'next/link';
 export function Footer() {
   // Hidden on mobile, only shown on desktop (md+)
   return (
-    <footer className="hidden md:block flex-shrink-0" style={{ background: 'transparent', padding: '12px 0' }}>
+    <footer className="hidden md:block flex-shrink-0" style={{ background: 'transparent', padding: '8px 0' }}>
       <div className="max-w-5xl mx-auto px-4">
         <div className="flex items-center justify-between py-2.5 px-6 rounded-full" style={{ background: 'var(--sovereign-green)', border: '2px solid var(--hazard-yellow)' }}>
           {/* Left: Title */}

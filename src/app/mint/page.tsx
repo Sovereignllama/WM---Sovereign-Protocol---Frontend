@@ -1,9 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
+import { PublicKey } from '@solana/web3.js';
 import { SovereignType, CreateSovereignParams } from '@/types/sovereign';
 import { PROTOCOL_CONSTANTS, LAMPORTS_PER_GOR } from '@/lib/config';
+import { useProtocolState } from '@/hooks/useSovereign';
+import { useCreateSovereign } from '@/hooks/useTransactions';
+import { useRouter } from 'next/navigation';
+import { createTokenMetadata, isPinataConfigured } from '@/lib/upload';
 import Link from 'next/link';
 
 type Step = 1 | 2 | 3 | 4;
@@ -17,7 +22,9 @@ interface FormData {
   tokenName: string;
   tokenSymbol: string;
   tokenSupply: string;
-  tokenDecimals: number;
+  tokenImage: File | null;
+  tokenImagePreview: string;
+  tokenDescription: string;
   sellFeeBps: number;
   treasuryAddress: string;
   
@@ -40,7 +47,9 @@ const defaultFormData: FormData = {
   tokenName: '',
   tokenSymbol: '',
   tokenSupply: '1000000000',
-  tokenDecimals: 9,
+  tokenImage: null,
+  tokenImagePreview: '',
+  tokenDescription: '',
   sellFeeBps: 0,
   treasuryAddress: '',
   existingMint: '',
@@ -52,13 +61,63 @@ const defaultFormData: FormData = {
 };
 
 export default function MintPage() {
+  const router = useRouter();
   const { connected } = useWallet();
+  const { data: protocolState, isLoading: protocolLoading } = useProtocolState();
+  const createSovereign = useCreateSovereign();
   const [step, setStep] = useState<Step>(1);
   const [formData, setFormData] = useState<FormData>(defaultFormData);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Use live protocol state values with fallbacks to defaults
+  const creationFeeBps = protocolState?.creationFeeBps ?? PROTOCOL_CONSTANTS.DEFAULT_CREATION_FEE_BPS;
+  const minBondTargetGor = protocolState?.minBondTargetGor ?? (PROTOCOL_CONSTANTS.MIN_BOND_TARGET_LAMPORTS / LAMPORTS_PER_GOR);
+  const minDepositGor = protocolState?.minDepositGor ?? (PROTOCOL_CONSTANTS.MIN_DEPOSIT_LAMPORTS / LAMPORTS_PER_GOR);
+  const byoMinSupplyBps = 3000; // TODO: Add to protocolState when available on-chain
 
   const updateForm = (updates: Partial<FormData>) => {
     setFormData(prev => ({ ...prev, ...updates }));
+  };
+
+  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setError('Please select an image file (PNG, JPG, GIF, or WebP)');
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image must be less than 5MB');
+      return;
+    }
+
+    // Create preview URL
+    const previewUrl = URL.createObjectURL(file);
+    
+    setError(null);
+    updateForm({ 
+      tokenImage: file, 
+      tokenImagePreview: previewUrl 
+    });
+  };
+
+  const removeImage = () => {
+    if (formData.tokenImagePreview) {
+      URL.revokeObjectURL(formData.tokenImagePreview);
+    }
+    updateForm({ 
+      tokenImage: null, 
+      tokenImagePreview: '' 
+    });
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const canProceed = (): boolean => {
@@ -87,8 +146,8 @@ export default function MintPage() {
           );
         }
       case 3:
-        const bondTargetLamports = parseFloat(formData.bondTarget) * LAMPORTS_PER_GOR;
-        return bondTargetLamports >= PROTOCOL_CONSTANTS.MIN_BOND_TARGET_LAMPORTS;
+        const bondTargetGor = parseFloat(formData.bondTarget) || 0;
+        return bondTargetGor >= minBondTargetGor;
       case 4:
         return true;
       default:
@@ -111,40 +170,88 @@ export default function MintPage() {
   const handleSubmit = async () => {
     if (!connected) return;
     
-    setIsSubmitting(true);
+    setError(null);
+    
     try {
-      // TODO: Implement actual sovereign creation via Anchor program
-      console.log('Creating sovereign with params:', formData);
+      // Convert form data to transaction params
+      const bondTargetLamports = BigInt(Math.floor(parseFloat(formData.bondTarget) * LAMPORTS_PER_GOR));
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Upload token metadata if image is provided (Token Launch only)
+      let metadataUri: string | undefined;
+      if (formData.sovereignType === 'TokenLaunch' && formData.tokenImage) {
+        if (!isPinataConfigured()) {
+          throw new Error('Image upload not configured. Please contact support or launch without an image.');
+        }
+        
+        setIsUploadingImage(true);
+        setError(null);
+        
+        try {
+          metadataUri = await createTokenMetadata(
+            formData.tokenName,
+            formData.tokenSymbol,
+            formData.tokenImage,
+            formData.tokenDescription || undefined
+          );
+          console.log('Metadata URI:', metadataUri);
+        } finally {
+          setIsUploadingImage(false);
+        }
+      }
       
-      // Redirect to sovereigns page on success
-      window.location.href = '/';
-    } catch (error) {
-      console.error('Failed to create sovereign:', error);
-    } finally {
-      setIsSubmitting(false);
+      const params = {
+        sovereignType: formData.sovereignType as 'TokenLaunch' | 'BYOToken',
+        bondTarget: bondTargetLamports,
+        bondDurationDays: formData.bondDurationDays,
+        name: formData.name,
+        // Token Launch fields
+        ...(formData.sovereignType === 'TokenLaunch' && {
+          tokenName: formData.tokenName,
+          tokenSymbol: formData.tokenSymbol,
+          tokenSupply: BigInt(formData.tokenSupply) * BigInt(10 ** 9), // Always 9 decimals
+          sellFeeBps: formData.sellFeeBps,
+          feeMode: 'FairLaunch' as const, // Default fee mode
+          metadataUri,
+        }),
+        // BYO Token fields
+        ...(formData.sovereignType === 'BYOToken' && {
+          existingMint: new PublicKey(formData.existingMint),
+          depositAmount: BigInt(formData.depositAmount),
+        }),
+      };
+      
+      console.log('Creating sovereign with params:', params);
+      
+      const result = await createSovereign.mutateAsync(params);
+      
+      console.log('Sovereign created:', result);
+      
+      // Redirect to the new sovereign page on success
+      router.push(`/sovereign/${result.sovereignId}`);
+    } catch (err: any) {
+      console.error('Failed to create sovereign:', err);
+      setError(err.message || 'Failed to create sovereign. Please try again.');
     }
   };
 
-  // Calculate creation fee
+  // Calculate creation fee from live protocol state
   const bondTargetSol = parseFloat(formData.bondTarget) || 0;
-  const creationFeeSol = (bondTargetSol * PROTOCOL_CONSTANTS.DEFAULT_CREATION_FEE_BPS) / 10000;
+  const creationFeeSol = (bondTargetSol * creationFeeBps) / 10000;
+  const creationFeePercent = (creationFeeBps / 100).toFixed(2);
 
   return (
-    <div className="h-full md:overflow-y-auto">
-      <div className="max-w-2xl mx-auto px-4 py-6">
+    <div className="h-full">
+      <div className="max-w-2xl mx-auto px-4 py-4">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="h1 mb-2" style={{ color: 'var(--text-light)' }}>Launch Your $overeign</h1>
-          <p className="text-[var(--muted)]">
+        <div className="mb-4">
+          <h1 className="h1 mb-1" style={{ color: 'var(--text-light)' }}>Launch Your $overeign</h1>
+          <p className="text-[var(--muted)] text-sm">
             Launch your projects token and crowd fundraise its liquidity.
           </p>
         </div>
 
         {/* Progress Steps */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-4">
           {[1, 2, 3, 4].map((s) => (
             <div key={s} className="flex items-center">
               <div className={`step ${s === step ? 'active' : ''} ${s < step ? 'completed' : ''}`}>
@@ -252,6 +359,66 @@ export default function MintPage() {
                 </div>
               </div>
 
+              {/* Token Image Upload */}
+              <div>
+                <label className="input-label">Token Image</label>
+                <div className="mt-2">
+                  {formData.tokenImagePreview ? (
+                    <div className="flex items-start gap-4">
+                      <div className="relative">
+                        <img 
+                          src={formData.tokenImagePreview} 
+                          alt="Token preview" 
+                          className="w-24 h-24 rounded-lg object-cover border border-[var(--border)]"
+                        />
+                        <button
+                          type="button"
+                          onClick={removeImage}
+                          className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white text-sm hover:bg-red-600 transition-colors"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm text-[var(--faint)]">{formData.tokenImage?.name}</p>
+                        <p className="text-xs text-[var(--faint)] mt-1">
+                          {formData.tokenImage && (formData.tokenImage.size / 1024).toFixed(1)} KB
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border-2 border-dashed border-[var(--border)] rounded-lg p-6 text-center cursor-pointer hover:border-[var(--hazard-yellow)] transition-colors"
+                    >
+                      <div className="text-3xl mb-2">🖼️</div>
+                      <p className="text-sm text-[var(--faint)]">Click to upload token image</p>
+                      <p className="text-xs text-[var(--faint)] mt-1">PNG, JPG, GIF, or WebP (max 5MB)</p>
+                    </div>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/gif,image/webp"
+                    onChange={handleImageSelect}
+                    className="hidden"
+                  />
+                </div>
+              </div>
+
+              {/* Token Description (Optional) */}
+              <div>
+                <label className="input-label">Description (Optional)</label>
+                <textarea
+                  className="input min-h-[80px] resize-none"
+                  placeholder="A brief description of your token..."
+                  value={formData.tokenDescription}
+                  onChange={(e) => updateForm({ tokenDescription: e.target.value })}
+                  maxLength={500}
+                />
+                <p className="text-xs text-[var(--faint)] mt-1">{formData.tokenDescription.length}/500</p>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="input-label">Total Supply</label>
@@ -262,17 +429,7 @@ export default function MintPage() {
                     value={formData.tokenSupply}
                     onChange={(e) => updateForm({ tokenSupply: e.target.value })}
                   />
-                </div>
-                <div>
-                  <label className="input-label">Decimals</label>
-                  <select
-                    className="select"
-                    value={formData.tokenDecimals}
-                    onChange={(e) => updateForm({ tokenDecimals: parseInt(e.target.value) })}
-                  >
-                    <option value={6}>6</option>
-                    <option value={9}>9 (Recommended)</option>
-                  </select>
+                  <p className="text-xs text-[var(--faint)] mt-1">Token will use 9 decimals (standard)</p>
                 </div>
               </div>
 
@@ -352,12 +509,12 @@ export default function MintPage() {
                 <input
                   type="number"
                   className="input"
-                  placeholder="Amount to deposit (min 30% of supply)"
+                  placeholder={`Amount to deposit (min ${byoMinSupplyBps / 100}% of supply)`}
                   value={formData.depositAmount}
                   onChange={(e) => updateForm({ depositAmount: e.target.value })}
                 />
                 <div className="text-xs text-[var(--faint)] mt-2">
-                  Minimum 30% of total token supply required
+                  Minimum {byoMinSupplyBps / 100}% of total token supply required
                 </div>
               </div>
 
@@ -379,13 +536,13 @@ export default function MintPage() {
                 <input
                   type="number"
                   className="input"
-                  placeholder="50"
+                  placeholder={minBondTargetGor.toString()}
                   value={formData.bondTarget}
                   onChange={(e) => updateForm({ bondTarget: e.target.value })}
-                  min={50}
+                  min={minBondTargetGor}
                 />
                 <div className="text-xs text-[var(--faint)] mt-2">
-                  Minimum 50 GOR required
+                  Minimum {minBondTargetGor} GOR required
                 </div>
               </div>
 
@@ -442,7 +599,7 @@ export default function MintPage() {
               )}
 
               <div className="stat money">
-                <div className="k">Creation Fee (0.5% of bond target)</div>
+                <div className="k">Creation Fee ({creationFeePercent}% of bond target)</div>
                 <div className="v">{creationFeeSol.toFixed(4)} GOR</div>
                 <div className="sub">Escrowed during bonding, released on success</div>
               </div>
@@ -548,17 +705,32 @@ export default function MintPage() {
             ) : (
               <button
                 onClick={handleSubmit}
-                disabled={!connected || isSubmitting}
+                disabled={!connected || createSovereign.isPending || isUploadingImage}
                 className="btn btn-primary btn-lg"
               >
-                {isSubmitting ? (
-                  <span className="animate-spin">⏳</span>
+                {isUploadingImage ? (
+                  <>
+                    <span className="animate-spin mr-2">⏳</span>
+                    Uploading Image...
+                  </>
+                ) : createSovereign.isPending ? (
+                  <>
+                    <span className="animate-spin mr-2">⏳</span>
+                    Creating $overeign...
+                  </>
                 ) : (
                   'Go $overeign'
                 )}
               </button>
             )}
           </div>
+          
+          {/* Error display */}
+          {error && (
+            <div className="mt-4 p-4 bg-red-500/20 border border-red-500 rounded-lg text-red-400 text-center">
+              {error}
+            </div>
+          )}
         </div>
       </div>
     </div>

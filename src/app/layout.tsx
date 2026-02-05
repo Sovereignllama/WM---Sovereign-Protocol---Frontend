@@ -31,12 +31,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="md:h-full md:overflow-hidden overflow-x-hidden">
-      <body className="text-white min-h-screen md:h-full flex flex-col md:overflow-hidden overflow-x-hidden max-w-[100vw]" style={{ background: 'var(--dark-green-bg)' }}>
+    <html lang="en" className="h-full overflow-hidden">
+      <body className="text-white h-full flex flex-col overflow-hidden" style={{ background: 'var(--dark-green-bg)' }}>
         <QueryProvider>
           <WalletProvider>
             <Navbar />
-            <main className="flex-1 md:min-h-0 md:overflow-hidden overflow-x-hidden">{children}</main>
+            <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">{children}</main>
             <Footer />
             <ToastContainer
               position="bottom-right"

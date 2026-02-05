@@ -1,133 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { SovereignList } from '@/components/SovereignList';
 import { SovereignDisplayData, SovereignStatus } from '@/types/sovereign';
 import { PublicKey } from '@solana/web3.js';
-
-// Mock data for display - will be replaced with actual blockchain data
-const mockSovereigns: SovereignDisplayData[] = [
-  {
-    sovereignId: BigInt(1),
-    publicKey: PublicKey.default,
-    name: 'Degen Launch',
-    creator: PublicKey.default,
-    tokenMint: PublicKey.default,
-    sovereignType: 'TokenLaunch',
-    tokenSymbol: 'DEGEN',
-    tokenName: 'Degen Token',
-    tokenDecimals: 9,
-    tokenSupplyDeposited: BigInt(1000000000000000),
-    tokenTotalSupply: BigInt(1000000000000000),
-    bondTarget: BigInt(100000000000), // 100 GOR
-    bondDeadline: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), // 5 days from now
-    bondDurationDays: 14,
-    status: 'Bonding',
-    totalDeposited: BigInt(65000000000), // 65 GOR
-    depositorCount: 23,
-    sellFeeBps: 200,
-    swapFeeBps: 30,
-    creationFeeEscrowed: BigInt(500000000),
-    creatorEscrow: BigInt(0),
-    creatorMaxBuyBps: 100,
-    totalSolFeesCollected: BigInt(0),
-    totalSolFeesDistributed: BigInt(0),
-    totalTokenFeesCollected: BigInt(0),
-    recoveryTarget: BigInt(0),
-    recoveryComplete: false,
-    unwindSolBalance: BigInt(0),
-    unwindTokenBalance: BigInt(0),
-    activityCheckInitiated: false,
-    autoUnwindPeriod: 90 * 24 * 60 * 60,
-    bondProgress: 65,
-    recoveryProgress: 0,
-    bondTargetSol: 100,
-    totalDepositedSol: 65,
-    recoveryTargetSol: 0,
-  },
-  {
-    sovereignId: BigInt(2),
-    publicKey: PublicKey.default,
-    name: 'Moon Protocol',
-    creator: PublicKey.default,
-    tokenMint: PublicKey.default,
-    sovereignType: 'TokenLaunch',
-    tokenSymbol: 'MOON',
-    tokenName: 'Moon Protocol Token',
-    tokenDecimals: 9,
-    tokenSupplyDeposited: BigInt(500000000000000),
-    tokenTotalSupply: BigInt(500000000000000),
-    bondTarget: BigInt(200000000000), // 200 GOR
-    bondDeadline: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
-    bondDurationDays: 21,
-    status: 'Recovery',
-    totalDeposited: BigInt(200000000000), // 200 GOR
-    depositorCount: 87,
-    sellFeeBps: 150,
-    swapFeeBps: 30,
-    creationFeeEscrowed: BigInt(0),
-    creatorEscrow: BigInt(0),
-    creatorMaxBuyBps: 100,
-    totalSolFeesCollected: BigInt(85000000000),
-    totalSolFeesDistributed: BigInt(85000000000),
-    totalTokenFeesCollected: BigInt(1500000000000),
-    recoveryTarget: BigInt(200000000000),
-    recoveryComplete: false,
-    unwindSolBalance: BigInt(0),
-    unwindTokenBalance: BigInt(0),
-    activityCheckInitiated: false,
-    autoUnwindPeriod: 90 * 24 * 60 * 60,
-    bondProgress: 100,
-    recoveryProgress: 42.5,
-    bondTargetSol: 200,
-    totalDepositedSol: 200,
-    recoveryTargetSol: 200,
-  },
-  {
-    sovereignId: BigInt(3),
-    publicKey: PublicKey.default,
-    name: 'Based Token',
-    creator: PublicKey.default,
-    tokenMint: PublicKey.default,
-    sovereignType: 'BYOToken',
-    tokenSymbol: 'BASED',
-    tokenName: 'Based Token',
-    tokenDecimals: 9,
-    tokenSupplyDeposited: BigInt(300000000000000),
-    tokenTotalSupply: BigInt(1000000000000000),
-    bondTarget: BigInt(75000000000), // 75 GOR
-    bondDeadline: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
-    bondDurationDays: 14,
-    status: 'Active',
-    totalDeposited: BigInt(75000000000), // 75 GOR
-    depositorCount: 42,
-    sellFeeBps: 0,
-    swapFeeBps: 30,
-    creationFeeEscrowed: BigInt(0),
-    creatorEscrow: BigInt(0),
-    creatorMaxBuyBps: 100,
-    totalSolFeesCollected: BigInt(90000000000),
-    totalSolFeesDistributed: BigInt(90000000000),
-    totalTokenFeesCollected: BigInt(2000000000000),
-    recoveryTarget: BigInt(75000000000),
-    recoveryComplete: true,
-    unwindSolBalance: BigInt(0),
-    unwindTokenBalance: BigInt(0),
-    activityCheckInitiated: false,
-    autoUnwindPeriod: 90 * 24 * 60 * 60,
-    bondProgress: 100,
-    recoveryProgress: 100,
-    bondTargetSol: 75,
-    totalDepositedSol: 75,
-    recoveryTargetSol: 75,
-  },
-];
+import { useSovereigns, useProtocolState } from '@/hooks';
+import { LAMPORTS_PER_GOR } from '@/lib/config';
 
 type FilterType = SovereignStatus | 'all' | 'lowVolume';
 
 export default function SovereignsPage() {
   const [filter, setFilter] = useState<FilterType>('all');
+  
+  // Fetch real data from on-chain
+  const { data: sovereignsData, isLoading: sovereignsLoading, error: sovereignsError } = useSovereigns();
+  const { data: protocolState, isLoading: protocolLoading } = useProtocolState();
 
   const filters: { value: FilterType; label: string }[] = [
     { value: 'Bonding', label: 'Bonding' },
@@ -137,16 +25,82 @@ export default function SovereignsPage() {
     { value: 'all', label: 'All' },
   ];
 
+  // Transform on-chain data to display format
+  const sovereigns: SovereignDisplayData[] = useMemo(() => {
+    if (!sovereignsData) return [];
+    
+    return sovereignsData.map((s: any) => ({
+      sovereignId: BigInt(s.sovereignId),
+      publicKey: new PublicKey(s.publicKey),
+      name: `Sovereign #${s.sovereignId}`, // TODO: Add name field to on-chain data
+      creator: new PublicKey(s.creator),
+      tokenMint: new PublicKey(s.tokenMint),
+      sovereignType: s.sovereignType as 'TokenLaunch' | 'BYOToken',
+      tokenSymbol: undefined, // TODO: Fetch from token metadata
+      tokenName: undefined,
+      tokenDecimals: 9,
+      tokenSupplyDeposited: BigInt(0), // TODO: Add to query
+      tokenTotalSupply: BigInt(0),
+      bondTarget: BigInt(s.bondTarget),
+      bondDeadline: s.bondDeadline,
+      bondDurationDays: 14, // TODO: Calculate from on-chain
+      status: s.status as SovereignStatus,
+      totalDeposited: BigInt(s.totalDeposited),
+      depositorCount: s.depositorCount,
+      sellFeeBps: s.sellFeeBps,
+      swapFeeBps: 30, // Default swap fee
+      creationFeeEscrowed: BigInt(0),
+      creatorEscrow: BigInt(0),
+      creatorMaxBuyBps: 100,
+      totalSolFeesCollected: BigInt(s.totalFeesCollected || 0),
+      totalSolFeesDistributed: BigInt(s.totalRecovered || 0),
+      totalTokenFeesCollected: BigInt(0),
+      recoveryTarget: BigInt(s.recoveryTarget),
+      recoveryComplete: s.recoveryComplete,
+      unwindSolBalance: BigInt(0),
+      unwindTokenBalance: BigInt(0),
+      activityCheckInitiated: false, // TODO: Add to query
+      autoUnwindPeriod: 90 * 24 * 60 * 60,
+      // Computed fields
+      bondProgress: s.bondingProgress,
+      recoveryProgress: s.recoveryProgress,
+      bondTargetSol: s.bondTargetGor,
+      totalDepositedSol: s.totalDepositedGor,
+      recoveryTargetSol: s.recoveryTargetGor,
+    }));
+  }, [sovereignsData]);
+
+  // Calculate stats from real data
+  const stats = useMemo(() => {
+    if (!sovereigns.length) {
+      return {
+        totalRaised: 0,
+        feesDistributed: 0,
+        activePools: 0,
+        totalDepositors: 0,
+      };
+    }
+    
+    return {
+      totalRaised: sovereigns.reduce((sum, s) => sum + s.totalDepositedSol, 0),
+      feesDistributed: sovereigns.reduce((sum, s) => sum + Number(s.totalSolFeesDistributed) / LAMPORTS_PER_GOR, 0),
+      activePools: sovereigns.filter(s => s.status === 'Active' || s.status === 'Recovery').length,
+      totalDepositors: sovereigns.reduce((sum, s) => sum + s.depositorCount, 0),
+    };
+  }, [sovereigns]);
+
   // Count by status
-  const counts: Record<FilterType, number> = {
-    all: mockSovereigns.length,
-    Bonding: mockSovereigns.filter(s => s.status === 'Bonding').length,
-    Recovery: mockSovereigns.filter(s => s.status === 'Recovery').length,
-    Active: mockSovereigns.filter(s => s.status === 'Active').length,
-    lowVolume: mockSovereigns.filter(s => s.activityCheckInitiated).length,
-    Failed: mockSovereigns.filter(s => s.status === 'Failed').length,
-    Unwound: mockSovereigns.filter(s => s.status === 'Unwound').length,
-  };
+  const counts: Record<FilterType, number> = useMemo(() => ({
+    all: sovereigns.length,
+    Bonding: sovereigns.filter(s => s.status === 'Bonding').length,
+    Recovery: sovereigns.filter(s => s.status === 'Recovery').length,
+    Active: sovereigns.filter(s => s.status === 'Active').length,
+    lowVolume: sovereigns.filter(s => s.activityCheckInitiated).length,
+    Failed: sovereigns.filter(s => s.status === 'Failed').length,
+    Unwound: sovereigns.filter(s => s.status === 'Unwound').length,
+  }), [sovereigns]);
+
+  const isLoading = sovereignsLoading || protocolLoading;
 
   return (
     <div className="h-full md:overflow-y-auto">
@@ -163,19 +117,19 @@ export default function SovereignsPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="stat money">
             <div className="k">Total Raised</div>
-            <div className="v">340 GOR</div>
+            <div className="v">{isLoading ? '...' : `${stats.totalRaised.toFixed(2)} GOR`}</div>
           </div>
           <div className="stat profit">
             <div className="k">Fees Distributed</div>
-            <div className="v">175 GOR</div>
+            <div className="v">{isLoading ? '...' : `${stats.feesDistributed.toFixed(2)} GOR`}</div>
           </div>
           <div className="stat">
             <div className="k">Active Pools</div>
-            <div className="v">{counts.Active + counts.Recovery}</div>
+            <div className="v">{isLoading ? '...' : stats.activePools}</div>
           </div>
           <div className="stat">
             <div className="k">Total Depositors</div>
-            <div className="v">152</div>
+            <div className="v">{isLoading ? '...' : stats.totalDepositors}</div>
           </div>
         </div>
 
@@ -197,12 +151,36 @@ export default function SovereignsPage() {
           ))}
         </div>
 
+        {/* Loading State */}
+        {isLoading && (
+          <div className="card card-clean text-center py-12">
+            <div className="text-4xl mb-4 animate-pulse">👑</div>
+            <p className="text-[var(--muted)]">Loading sovereigns from chain...</p>
+          </div>
+        )}
+
+        {/* Error State */}
+        {sovereignsError && (
+          <div className="card card-clean text-center py-12 border-[var(--loss)]">
+            <div className="text-4xl mb-4">⚠️</div>
+            <p className="text-[var(--loss)]">Failed to load sovereigns</p>
+            <p className="text-[var(--muted)] text-sm mt-2">
+              {sovereignsError instanceof Error ? sovereignsError.message : 'Unknown error'}
+            </p>
+          </div>
+        )}
+
         {/* Sovereign List */}
-        <SovereignList 
-          sovereigns={mockSovereigns} 
-          filter={filter}
-          emptyMessage={`No ${filter === 'all' ? '' : filter.toLowerCase()} sovereigns found`}
-        />
+        {!isLoading && !sovereignsError && (
+          <SovereignList 
+            sovereigns={sovereigns} 
+            filter={filter}
+            emptyMessage={sovereigns.length === 0 
+              ? 'No sovereigns created yet. Be the first to launch!' 
+              : `No ${filter === 'all' ? '' : filter.toLowerCase()} sovereigns found`
+            }
+          />
+        )}
       </div>
     </div>
   );

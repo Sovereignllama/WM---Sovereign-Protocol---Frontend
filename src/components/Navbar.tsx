@@ -29,7 +29,7 @@ export function Navbar() {
   const currentPageTitle = pageTitles[pathname] || '';
 
   return (
-    <nav style={{ background: 'transparent', padding: '12px 0' }}>
+    <nav className="flex-shrink-0" style={{ background: 'transparent', padding: '8px 0' }}>
       <div className="max-w-5xl mx-auto px-4">
         {/* Desktop Navbar */}
         <div className="hidden md:flex items-center justify-between rounded-full overflow-hidden h-14" style={{ background: 'var(--sovereign-green)', border: '2px solid var(--hazard-yellow)' }}>
