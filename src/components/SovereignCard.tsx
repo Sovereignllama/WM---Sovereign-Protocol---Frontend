@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { SovereignDisplayData } from '@/types/sovereign';
 import { StatusBadge } from './StatusBadge';
+import { useTokenImage } from '@/hooks/useTokenImage';
 import { formatDistanceToNow } from 'date-fns';
 
 interface SovereignCardProps {
@@ -10,6 +11,7 @@ interface SovereignCardProps {
 }
 
 export function SovereignCard({ sovereign }: SovereignCardProps) {
+  const { data: imageUrl } = useTokenImage(sovereign.metadataUri);
   const timeRemaining = sovereign.bondDeadline > new Date() 
     ? formatDistanceToNow(sovereign.bondDeadline, { addSuffix: true })
     : 'Ended';
@@ -19,16 +21,29 @@ export function SovereignCard({ sovereign }: SovereignCardProps) {
       <div className="card card-clean hover:border-[rgba(242,183,5,0.35)] transition-all cursor-pointer">
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
-          <div>
-            <h3 className="h3 text-white mb-1">{sovereign.name}</h3>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-[var(--muted)]">
-                {sovereign.tokenSymbol || 'TOKEN'}
-              </span>
-              <span className="text-[var(--faint)]">•</span>
-              <span className="text-sm text-[var(--faint)]">
-                {sovereign.sovereignType === 'TokenLaunch' ? 'Token Launch' : 'BYO Token'}
-              </span>
+          <div className="flex items-center gap-3">
+            {imageUrl ? (
+              <img
+                src={imageUrl}
+                alt={sovereign.tokenSymbol || sovereign.name}
+                className="w-10 h-10 rounded-full object-cover border border-[var(--border)]"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-[var(--card-bg)] border border-[var(--border)] flex items-center justify-center text-[var(--muted)] text-sm font-bold">
+                {(sovereign.tokenSymbol || sovereign.name || '?').charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div>
+              <h3 className="h3 text-white mb-1">{sovereign.name}</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-[var(--muted)]">
+                  {sovereign.tokenSymbol || 'TOKEN'}
+                </span>
+                <span className="text-[var(--faint)]">•</span>
+                <span className="text-sm text-[var(--faint)]">
+                  {sovereign.sovereignType === 'TokenLaunch' ? 'Token Launch' : 'BYO Token'}
+                </span>
+              </div>
             </div>
           </div>
           <StatusBadge status={sovereign.status} />

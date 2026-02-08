@@ -21,5 +21,6 @@ export {
 export { 
   useDeposit, 
   useWithdraw, 
-  useClaimDepositorFees 
+  useClaimDepositorFees,
+  useMintGenesisNft,
 } from './useTransactions';

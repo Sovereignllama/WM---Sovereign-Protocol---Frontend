@@ -2,6 +2,20 @@ import { PublicKey } from '@solana/web3.js';
 import { PDA_SEEDS } from './seeds';
 
 /**
+ * Encode a u64 (bigint) as a little-endian 8-byte Uint8Array.
+ * Browser-safe alternative to Buffer.writeBigUInt64LE.
+ */
+function encodeBigintLE(value: bigint): Uint8Array {
+  const buf = new Uint8Array(8);
+  let v = BigInt(value);
+  for (let i = 0; i < 8; i++) {
+    buf[i] = Number(v & 0xffn);
+    v >>= 8n;
+  }
+  return buf;
+}
+
+/**
  * Get the Program ID from environment
  */
 export function getProgramId(): PublicKey {
@@ -32,8 +46,7 @@ export function getSovereignPDA(
   programId?: PublicKey
 ): [PublicKey, number] {
   const pid = programId || getProgramId();
-  const idBuffer = Buffer.alloc(8);
-  idBuffer.writeBigUInt64LE(BigInt(sovereignId));
+  const idBuffer = encodeBigintLE(BigInt(sovereignId));
   
   return PublicKey.findProgramAddressSync(
     [Buffer.from(PDA_SEEDS.SOVEREIGN), idBuffer],
@@ -148,8 +161,7 @@ export function getProposalPDA(
   programId?: PublicKey
 ): [PublicKey, number] {
   const pid = programId || getProgramId();
-  const idBuffer = Buffer.alloc(8);
-  idBuffer.writeBigUInt64LE(BigInt(proposalId));
+  const idBuffer = encodeBigintLE(BigInt(proposalId));
   
   return PublicKey.findProgramAddressSync(
     [Buffer.from(PDA_SEEDS.PROPOSAL), sovereign.toBuffer(), idBuffer],

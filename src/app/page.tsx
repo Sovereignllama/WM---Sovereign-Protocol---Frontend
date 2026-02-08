@@ -32,12 +32,12 @@ export default function SovereignsPage() {
     return sovereignsData.map((s: any) => ({
       sovereignId: BigInt(s.sovereignId),
       publicKey: new PublicKey(s.publicKey),
-      name: `Sovereign #${s.sovereignId}`, // TODO: Add name field to on-chain data
+      name: s.name || `Sovereign #${s.sovereignId}`,
       creator: new PublicKey(s.creator),
       tokenMint: new PublicKey(s.tokenMint),
       sovereignType: s.sovereignType as 'TokenLaunch' | 'BYOToken',
-      tokenSymbol: undefined, // TODO: Fetch from token metadata
-      tokenName: undefined,
+      tokenSymbol: s.tokenSymbol || undefined,
+      tokenName: s.tokenName || undefined,
       tokenDecimals: 9,
       tokenSupplyDeposited: BigInt(0), // TODO: Add to query
       tokenTotalSupply: BigInt(0),
@@ -48,7 +48,7 @@ export default function SovereignsPage() {
       totalDeposited: BigInt(s.totalDeposited),
       depositorCount: s.depositorCount,
       sellFeeBps: s.sellFeeBps,
-      swapFeeBps: 30, // Default swap fee
+      swapFeeBps: s.swapFeeBps ?? 30,
       creationFeeEscrowed: BigInt(0),
       creatorEscrow: BigInt(0),
       creatorMaxBuyBps: 100,

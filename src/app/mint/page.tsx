@@ -4,7 +4,8 @@ import { useState, useRef } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { SovereignType, CreateSovereignParams } from '@/types/sovereign';
-import { PROTOCOL_CONSTANTS, LAMPORTS_PER_GOR } from '@/lib/config';
+import type { FeeMode } from '@/lib/program/client';
+import { PROTOCOL_CONSTANTS, LAMPORTS_PER_GOR, getAmmConfigForFee } from '@/lib/config';
 import { useProtocolState } from '@/hooks/useSovereign';
 import { useCreateSovereign } from '@/hooks/useTransactions';
 import { useRouter } from 'next/navigation';
@@ -26,6 +27,7 @@ interface FormData {
   tokenImagePreview: string;
   tokenDescription: string;
   sellFeeBps: number;
+  feeMode: FeeMode;
   treasuryAddress: string;
   
   // Step 2: Token Config (BYO)
@@ -51,12 +53,13 @@ const defaultFormData: FormData = {
   tokenImagePreview: '',
   tokenDescription: '',
   sellFeeBps: 0,
+  feeMode: 'FairLaunch',
   treasuryAddress: '',
   existingMint: '',
   depositAmount: '',
   bondTarget: '50',
   bondDurationDays: 14,
-  swapFeeBps: 30,
+  swapFeeBps: 100,
   creatorBuyIn: '0',
 };
 
@@ -135,7 +138,8 @@ export default function MintPage() {
             formData.tokenName.length >= 1 &&
             formData.tokenSymbol.length >= 1 &&
             formData.tokenSymbol.length <= 10 &&
-            parseFloat(formData.tokenSupply) > 0
+            parseFloat(formData.tokenSupply) > 0 &&
+            formData.tokenImage !== null
           );
         } else {
           return (
@@ -147,7 +151,9 @@ export default function MintPage() {
         }
       case 3:
         const bondTargetGor = parseFloat(formData.bondTarget) || 0;
-        return bondTargetGor >= minBondTargetGor;
+        const buyIn = parseFloat(formData.creatorBuyIn) || 0;
+        const maxBuyIn = bondTargetGor / 100; // 1% of bond target
+        return bondTargetGor >= minBondTargetGor && buyIn <= maxBuyIn;
       case 4:
         return true;
       default:
@@ -176,11 +182,14 @@ export default function MintPage() {
       // Convert form data to transaction params
       const bondTargetLamports = BigInt(Math.floor(parseFloat(formData.bondTarget) * LAMPORTS_PER_GOR));
       
-      // Upload token metadata if image is provided (Token Launch only)
+      // Upload token metadata (image is mandatory for Token Launch)
       let metadataUri: string | undefined;
-      if (formData.sovereignType === 'TokenLaunch' && formData.tokenImage) {
+      if (formData.sovereignType === 'TokenLaunch') {
+        if (!formData.tokenImage) {
+          throw new Error('Token image is required for Token Launch.');
+        }
         if (!isPinataConfigured()) {
-          throw new Error('Image upload not configured. Please contact support or launch without an image.');
+          throw new Error('Image upload not configured. Please contact support.');
         }
         
         setIsUploadingImage(true);
@@ -199,18 +208,30 @@ export default function MintPage() {
         }
       }
       
+      // Resolve AMM config for the chosen swap fee tier
+      const ammTier = getAmmConfigForFee(formData.swapFeeBps);
+      if (!ammTier || !ammTier.address) {
+        throw new Error(`No AMM config address configured for ${(formData.swapFeeBps / 100).toFixed(1)}% swap fee. Please set the NEXT_PUBLIC_AMM_CONFIG_${formData.swapFeeBps}BPS environment variable.`);
+      }
+
       const params = {
         sovereignType: formData.sovereignType as 'TokenLaunch' | 'BYOToken',
         bondTarget: bondTargetLamports,
         bondDurationDays: formData.bondDurationDays,
         name: formData.name,
+        swapFeeBps: ammTier.bps,
+        ammConfig: new PublicKey(ammTier.address),
+        // Creator buy-in
+        ...(parseFloat(formData.creatorBuyIn) > 0 && {
+          creatorBuyIn: BigInt(Math.floor(parseFloat(formData.creatorBuyIn) * LAMPORTS_PER_GOR)),
+        }),
         // Token Launch fields
         ...(formData.sovereignType === 'TokenLaunch' && {
           tokenName: formData.tokenName,
           tokenSymbol: formData.tokenSymbol,
           tokenSupply: BigInt(formData.tokenSupply) * BigInt(10 ** 9), // Always 9 decimals
           sellFeeBps: formData.sellFeeBps,
-          feeMode: 'FairLaunch' as const, // Default fee mode
+          feeMode: formData.feeMode,
           metadataUri,
         }),
         // BYO Token fields
@@ -238,6 +259,7 @@ export default function MintPage() {
   const bondTargetSol = parseFloat(formData.bondTarget) || 0;
   const creationFeeSol = (bondTargetSol * creationFeeBps) / 10000;
   const creationFeePercent = (creationFeeBps / 100).toFixed(2);
+  const maxCreatorBuyIn = bondTargetSol / 100; // 1% of bond target
 
   return (
     <div className="h-full">
@@ -451,19 +473,59 @@ export default function MintPage() {
               </div>
 
               {formData.sellFeeBps > 0 && (
-                <div>
-                  <label className="input-label">Treasury Address (Optional)</label>
-                  <input
-                    type="text"
-                    className="input font-mono text-sm"
-                    placeholder="Wallet address to receive sell fees"
-                    value={formData.treasuryAddress}
-                    onChange={(e) => updateForm({ treasuryAddress: e.target.value })}
-                  />
-                  <div className="text-xs text-[var(--faint)] mt-2">
-                    Leave empty to use creator wallet
+                <>
+                  {/* Fee Mode Selector */}
+                  <div>
+                    <label className="input-label">Fee Mode</label>
+                    <div className="grid grid-cols-1 gap-3 mt-2">
+                      {([
+                        {
+                          value: 'FairLaunch' as FeeMode,
+                          label: '🤝 Fair Launch',
+                          description: 'Fees boost recovery, then auto-renounce to 0%. Best for community trust.',
+                        },
+                        {
+                          value: 'RecoveryBoost' as FeeMode,
+                          label: '🚀 Recovery Boost',
+                          description: 'All fees go to recovery until complete, then to creator.',
+                        },
+                        {
+                          value: 'CreatorRevenue' as FeeMode,
+                          label: '💰 Creator Revenue',
+                          description: 'Fees always go to creator, even during recovery phase.',
+                        },
+                      ]).map((mode) => (
+                        <button
+                          key={mode.value}
+                          type="button"
+                          onClick={() => updateForm({ feeMode: mode.value })}
+                          className={`p-3 rounded-lg border text-left transition-all ${
+                            formData.feeMode === mode.value
+                              ? 'border-[var(--hazard-yellow)] glow-yellow bg-[rgba(242,183,5,0.05)]'
+                              : 'border-[var(--border)] hover:border-[rgba(242,183,5,0.25)]'
+                          }`}
+                        >
+                          <div className="font-bold text-white text-sm">{mode.label}</div>
+                          <div className="text-xs text-[var(--muted)] mt-1">{mode.description}</div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+
+                  <div>
+                    <label className="input-label">Treasury Address (Optional)</label>
+                    <input
+                      type="text"
+                      className="input font-mono text-sm"
+                      placeholder="Wallet address to receive sell fees"
+                      value={formData.treasuryAddress}
+                      onChange={(e) => updateForm({ treasuryAddress: e.target.value })}
+                    />
+                    <div className="text-xs text-[var(--faint)] mt-2">
+                      Leave empty to use creator wallet
+                    </div>
+                  </div>
+                </>
               )}
 
               <div className="alert info">
@@ -561,18 +623,20 @@ export default function MintPage() {
               </div>
 
               <div>
-                <label className="input-label">Swap Fee ({(formData.swapFeeBps / 100).toFixed(1)}%)</label>
+                <label className="input-label">Swap Fee ({formData.swapFeeBps === 20 ? '0.2' : formData.swapFeeBps === 50 ? '0.5' : formData.swapFeeBps === 100 ? '1' : '2'}%)</label>
                 <input
                   type="range"
                   className="w-full accent-[var(--hazard-yellow)]"
-                  min={30}
-                  max={200}
-                  step={10}
-                  value={formData.swapFeeBps}
-                  onChange={(e) => updateForm({ swapFeeBps: parseInt(e.target.value) })}
+                  min={0}
+                  max={3}
+                  step={1}
+                  value={[20, 50, 100, 200].indexOf(formData.swapFeeBps)}
+                  onChange={(e) => updateForm({ swapFeeBps: [20, 50, 100, 200][parseInt(e.target.value)] })}
                 />
                 <div className="flex justify-between text-xs text-[var(--faint)] mt-1">
-                  <span>0.3%</span>
+                  <span>0.2%</span>
+                  <span>0.5%</span>
+                  <span>1%</span>
                   <span>2%</span>
                 </div>
                 <div className="text-xs text-[var(--faint)] mt-2">
@@ -588,12 +652,20 @@ export default function MintPage() {
                     className="input"
                     placeholder="0"
                     value={formData.creatorBuyIn}
-                    onChange={(e) => updateForm({ creatorBuyIn: e.target.value })}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value) || 0;
+                      if (val <= maxCreatorBuyIn) {
+                        updateForm({ creatorBuyIn: e.target.value });
+                      } else {
+                        updateForm({ creatorBuyIn: maxCreatorBuyIn.toString() });
+                      }
+                    }}
                     min={0}
+                    max={maxCreatorBuyIn}
                     step="0.1"
                   />
                   <div className="text-xs text-[var(--faint)] mt-2">
-                    Optional: GOR to market buy tokens at theoretical price upon successful bonding. Tokens locked until active phase.
+                    Optional: GOR to market buy tokens at theoretical price upon successful bonding. Max {maxCreatorBuyIn.toFixed(2)} GOR (1% of bond target).
                   </div>
                 </div>
               )}

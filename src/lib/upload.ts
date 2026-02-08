@@ -1,71 +1,53 @@
 /**
  * Upload utilities for token metadata
- * Uses Pinata IPFS for decentralized storage
+ * Routes uploads through the backend API which handles Pinata IPFS
  */
 
-const PINATA_API_URL = 'https://api.pinata.cloud';
-const PINATA_GATEWAY = 'https://gateway.pinata.cloud/ipfs';
-
-// Get these from environment variables
-const PINATA_JWT = process.env.NEXT_PUBLIC_PINATA_JWT || '';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 /**
- * Upload a file (image) to IPFS via Pinata
+ * Upload a file (image) to IPFS via the backend
  */
 export async function uploadFileToIPFS(file: File): Promise<string> {
-  if (!PINATA_JWT) {
-    throw new Error('Pinata JWT not configured. Set NEXT_PUBLIC_PINATA_JWT in your .env file.');
-  }
-
   const formData = new FormData();
   formData.append('file', file);
 
-  const response = await fetch(`${PINATA_API_URL}/pinning/pinFileToIPFS`, {
+  const response = await fetch(`${API_URL}/api/upload/image`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${PINATA_JWT}`,
-    },
     body: formData,
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to upload file to IPFS: ${error}`);
+    const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+    throw new Error(error.error || 'Failed to upload image');
   }
 
   const result = await response.json();
-  return `${PINATA_GATEWAY}/${result.IpfsHash}`;
+  return result.url;
 }
 
 /**
- * Upload JSON metadata to IPFS via Pinata
+ * Upload JSON metadata to IPFS via the backend
  */
-export async function uploadJSONToIPFS(metadata: object, name: string): Promise<string> {
-  if (!PINATA_JWT) {
-    throw new Error('Pinata JWT not configured. Set NEXT_PUBLIC_PINATA_JWT in your .env file.');
-  }
-
-  const response = await fetch(`${PINATA_API_URL}/pinning/pinJSONToIPFS`, {
+export async function uploadJSONToIPFS(
+  name: string,
+  symbol: string,
+  imageUrl: string,
+  description?: string
+): Promise<string> {
+  const response = await fetch(`${API_URL}/api/upload/metadata`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${PINATA_JWT}`,
-    },
-    body: JSON.stringify({
-      pinataContent: metadata,
-      pinataMetadata: {
-        name: `${name}-metadata.json`,
-      },
-    }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, symbol, description, imageUrl }),
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to upload metadata to IPFS: ${error}`);
+    const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+    throw new Error(error.error || 'Failed to upload metadata');
   }
 
   const result = await response.json();
-  return `${PINATA_GATEWAY}/${result.IpfsHash}`;
+  return result.url;
 }
 
 /**
@@ -92,9 +74,8 @@ export interface TokenMetadata {
 
 /**
  * Create and upload token metadata
- * 1. Upload the image file
- * 2. Create metadata JSON with image URI
- * 3. Upload metadata JSON
+ * 1. Upload the image file via backend
+ * 2. Upload metadata JSON via backend
  * Returns the metadata URI
  */
 export async function createTokenMetadata(
@@ -108,34 +89,17 @@ export async function createTokenMetadata(
   const imageUri = await uploadFileToIPFS(imageFile);
   console.log('Image uploaded:', imageUri);
 
-  // Step 2: Create metadata
-  const metadata: TokenMetadata = {
-    name: tokenName,
-    symbol: tokenSymbol,
-    description: description || `${tokenName} (${tokenSymbol}) - A Sovereign Liquidity Protocol token`,
-    image: imageUri,
-    properties: {
-      files: [
-        {
-          uri: imageUri,
-          type: imageFile.type,
-        },
-      ],
-      category: 'image',
-    },
-  };
-
-  // Step 3: Upload metadata
+  // Step 2: Upload metadata
   console.log('Uploading token metadata...');
-  const metadataUri = await uploadJSONToIPFS(metadata, tokenSymbol);
+  const metadataUri = await uploadJSONToIPFS(tokenName, tokenSymbol, imageUri, description);
   console.log('Metadata uploaded:', metadataUri);
 
   return metadataUri;
 }
 
 /**
- * Check if Pinata is configured
+ * Check if upload is configured (backend handles this now)
  */
 export function isPinataConfigured(): boolean {
-  return !!PINATA_JWT;
+  return !!API_URL;
 }

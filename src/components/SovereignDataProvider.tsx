@@ -20,12 +20,12 @@ function toDisplayData(chainSovereign: ReturnType<typeof useSovereigns>['data'][
   return {
     sovereignId: BigInt(chainSovereign.sovereignId),
     publicKey: new PublicKey(chainSovereign.publicKey),
-    name: `Sovereign #${chainSovereign.sovereignId}`, // Will be fetched from metadata later
+    name: chainSovereign.name || `Sovereign #${chainSovereign.sovereignId}`,
     creator: new PublicKey(chainSovereign.creator),
     tokenMint: new PublicKey(chainSovereign.tokenMint),
     sovereignType: chainSovereign.sovereignType as 'TokenLaunch' | 'BYOToken',
-    tokenSymbol: undefined, // Will be fetched from token metadata
-    tokenName: undefined,
+    tokenSymbol: chainSovereign.tokenSymbol || undefined,
+    tokenName: chainSovereign.tokenName || undefined,
     tokenDecimals: 9,
     tokenSupplyDeposited: BigInt(0),
     tokenTotalSupply: BigInt(0),
@@ -36,7 +36,7 @@ function toDisplayData(chainSovereign: ReturnType<typeof useSovereigns>['data'][
     totalDeposited: BigInt(chainSovereign.totalDeposited),
     depositorCount: chainSovereign.depositorCount,
     sellFeeBps: chainSovereign.sellFeeBps,
-    swapFeeBps: 30, // Default from protocol
+    swapFeeBps: chainSovereign.swapFeeBps ?? 30,
     creationFeeEscrowed: BigInt(0),
     creatorEscrow: BigInt(0),
     creatorMaxBuyBps: 100,
@@ -49,6 +49,7 @@ function toDisplayData(chainSovereign: ReturnType<typeof useSovereigns>['data'][
     unwindTokenBalance: BigInt(0),
     activityCheckInitiated: false,
     autoUnwindPeriod: 90 * 24 * 60 * 60,
+    metadataUri: chainSovereign.metadataUri || undefined,
     // Calculated display values
     bondProgress: chainSovereign.bondingProgress,
     recoveryProgress: chainSovereign.recoveryProgress,

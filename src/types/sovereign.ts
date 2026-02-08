@@ -4,7 +4,7 @@ import { PublicKey } from '@solana/web3.js';
 export type SovereignType = 'TokenLaunch' | 'BYOToken';
 
 // Sovereign Status matching on-chain enum
-export type SovereignStatus = 'Bonding' | 'Recovery' | 'Active' | 'Failed' | 'Unwound';
+export type SovereignStatus = 'Bonding' | 'Finalizing' | 'PoolCreated' | 'Recovery' | 'Active' | 'Unwinding' | 'Unwound' | 'Failed' | 'EmergencyUnlocked' | 'Retired';
 
 // Main Sovereign data structure
 export interface Sovereign {
@@ -51,8 +51,9 @@ export interface Sovereign {
   recoveryTarget: bigint;
   recoveryComplete: boolean;
   
-  // LP info
-  whirlpool?: PublicKey;
+  // LP info (Trashbin SAMM)
+  ammConfig?: string;
+  poolState?: PublicKey;
   positionMint?: PublicKey;
   permanentLock?: PublicKey;
   
@@ -64,6 +65,9 @@ export interface Sovereign {
   activityCheckInitiated: boolean;
   activityCheckTimestamp?: Date;
   autoUnwindPeriod: number;     // in seconds
+  
+  // Metadata
+  metadataUri?: string;
 }
 
 // Deposit record for an investor

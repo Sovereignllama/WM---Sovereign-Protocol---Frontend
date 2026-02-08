@@ -52,6 +52,8 @@ export type SovereignStateAccount = {
   feeMode: FeeMode;
   feeControlRenounced: boolean;
   creationFeeEscrowed: BN;
+  ammConfig: PublicKey;
+  swapFeeBps: number;
   poolState: PublicKey;
   positionMint: PublicKey;
   poolRestricted: boolean;
@@ -171,11 +173,14 @@ export type CreationFeeEscrowAccount = {
 export type SovereignStatus = 
   | { bonding: {} }
   | { finalizing: {} }
+  | { poolCreated: {} }
   | { recovery: {} }
   | { active: {} }
   | { unwinding: {} }
   | { unwound: {} }
-  | { failed: {} };
+  | { failed: {} }
+  | { emergencyUnlocked: {} }
+  | { retired: {} };
 
 export type SovereignType = 
   | { tokenLaunch: {} }
@@ -206,6 +211,8 @@ export type CreateSovereignParams = {
   feeMode: FeeMode | null;
   metadataUri: string | null;
   depositAmount: BN | null;
+  ammConfig: PublicKey;
+  swapFeeBps: number;
 };
 
 // Events
@@ -220,6 +227,8 @@ export type SovereignCreatedEvent = {
   creationFeeEscrowed: BN;
   sellFeeBps: number;
   feeMode: FeeMode;
+  ammConfig: PublicKey;
+  swapFeeBps: number;
 };
 
 export type InvestorDepositedEvent = {

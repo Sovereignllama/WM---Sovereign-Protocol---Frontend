@@ -76,6 +76,10 @@ export function useSovereigns() {
       return sovereigns.map(({ publicKey, account }: { publicKey: PublicKey; account: any }) => ({
         publicKey: publicKey.toBase58(),
         sovereignId: account.sovereignId.toString(),
+        name: account.name || `Sovereign #${account.sovereignId}`,
+        tokenName: account.tokenName || '',
+        tokenSymbol: account.tokenSymbol || '',
+        metadataUri: account.metadataUri || '',
         creator: account.creator.toBase58(),
         tokenMint: account.tokenMint.toBase58(),
         status: getSovereignStatusString(account.state),
@@ -88,6 +92,8 @@ export function useSovereigns() {
         depositorCount: account.depositorCount,
         bondDeadline: new Date(Number(account.bondDeadline) * 1000),
         sellFeeBps: account.sellFeeBps,
+        swapFeeBps: account.swapFeeBps,
+        ammConfig: account.ammConfig.toBase58(),
         recoveryTarget: account.recoveryTarget.toString(),
         recoveryTargetGor: Number(account.recoveryTarget) / LAMPORTS_PER_GOR,
         totalRecovered: account.totalRecovered.toString(),
@@ -124,6 +130,10 @@ export function useSovereign(sovereignId: string | number | undefined) {
       return {
         publicKey: sovereignPDA.toBase58(),
         sovereignId: account.sovereignId.toString(),
+        name: account.name || `Sovereign #${account.sovereignId}`,
+        tokenName: account.tokenName || '',
+        tokenSymbol: account.tokenSymbol || '',
+        metadataUri: account.metadataUri || '',
         creator: account.creator.toBase58(),
         tokenMint: account.tokenMint.toBase58(),
         status: getSovereignStatusString(account.state),
@@ -137,6 +147,8 @@ export function useSovereign(sovereignId: string | number | undefined) {
         bondDeadline: new Date(Number(account.bondDeadline) * 1000),
         bondDuration: account.bondDuration.toString(),
         sellFeeBps: account.sellFeeBps,
+        swapFeeBps: account.swapFeeBps,
+        ammConfig: account.ammConfig.toBase58(),
         feeControlRenounced: account.feeControlRenounced,
         creatorEscrow: account.creatorEscrow.toString(),
         creatorEscrowGor: Number(account.creatorEscrow) / LAMPORTS_PER_GOR,
@@ -171,6 +183,10 @@ export function useSovereign(sovereignId: string | number | undefined) {
           : 0,
         // Time remaining
         bondingTimeRemaining: Math.max(0, Number(account.bondDeadline) * 1000 - Date.now()),
+        // Unwind balances (set after emergency_remove_liquidity)
+        unwindSolBalance: account.unwindSolBalance.toString(),
+        unwindSolBalanceGor: Number(account.unwindSolBalance) / LAMPORTS_PER_GOR,
+        unwindTokenBalance: account.unwindTokenBalance.toString(),
       };
     },
     staleTime: 10_000,
