@@ -14,6 +14,8 @@ const ConnectWalletButton = dynamic(
 const pageTitles: Record<string, string> = {
   '/': '👑 $OVEREIGNS',
   '/mint': '🚀 LAUNCH',
+  '/governance': '🏛️ GOVERNANCE',
+  '/swap': '💱 SWAP',
 };
 
 export function Navbar() {
@@ -23,6 +25,8 @@ export function Navbar() {
   const links = [
     { href: '/mint', label: 'Mint' },
     { href: '/', label: '$overeigns' },
+    { href: '/governance', label: 'Governance' },
+    { href: '/swap', label: 'Swap' },
   ];
 
   // Get current page title for mobile

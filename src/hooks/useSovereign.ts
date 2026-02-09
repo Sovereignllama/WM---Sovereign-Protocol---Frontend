@@ -169,7 +169,25 @@ export function useSovereign(sovereignId: string | number | undefined) {
         totalFeesCollectedGor: Number(account.totalFeesCollected) / LAMPORTS_PER_GOR,
         genesisNftMint: account.genesisNftMint.toBase58(),
         lastActivity: new Date(Number(account.lastActivity) * 1000),
+        lastActivityTimestamp: Number(account.lastActivityTimestamp),
         activityCheckInitiated: account.activityCheckInitiated,
+        activityCheckInitiatedAt: account.activityCheckInitiatedAt
+          ? new Date(Number(account.activityCheckInitiatedAt) * 1000)
+          : null,
+        activityCheckTimestamp: Number(account.activityCheckTimestamp) > 0
+          ? new Date(Number(account.activityCheckTimestamp) * 1000)
+          : null,
+        feeGrowthSnapshotA: account.feeGrowthSnapshotA.toString(),
+        feeGrowthSnapshotB: account.feeGrowthSnapshotB.toString(),
+        activityCheckLastCancelled: Number(account.activityCheckLastCancelled) > 0
+          ? new Date(Number(account.activityCheckLastCancelled) * 1000)
+          : null,
+        totalSolFeesDistributed: account.totalSolFeesDistributed.toString(),
+        totalSolFeesDistributedGor: Number(account.totalSolFeesDistributed) / LAMPORTS_PER_GOR,
+        totalTokenFeesDistributed: account.totalTokenFeesDistributed.toString(),
+        unwoundAt: account.unwoundAt && Number(account.unwoundAt) > 0
+          ? new Date(Number(account.unwoundAt) * 1000)
+          : null,
         createdAt: new Date(Number(account.createdAt) * 1000),
         finalizedAt: account.finalizedAt.toNumber() > 0 
           ? new Date(Number(account.finalizedAt) * 1000) 
@@ -215,20 +233,31 @@ export function useDepositRecord(sovereignId: string | number | undefined) {
       const record = await fetchDepositRecord(program, sovereignPDA, publicKey);
       
       if (!record) return null;
+
+      // Compute shares client-side as fallback when on-chain shares_bps is 0
+      // (shares_bps was not set on-chain prior to the fix)
+      const sovereign = await fetchSovereignById(program, BigInt(sovereignId));
+      const totalDeposited = Number(sovereign.totalDeposited);
+      const depositAmount = Number(record.amount);
+      const computedSharesBps = totalDeposited > 0
+        ? Math.round((depositAmount / totalDeposited) * 10000)
+        : 0;
+      const sharesBps = record.sharesBps > 0 ? record.sharesBps : computedSharesBps;
+      const votingPowerBps = record.votingPowerBps > 0 ? record.votingPowerBps : computedSharesBps;
       
       return {
         sovereign: record.sovereign.toBase58(),
         depositor: record.depositor.toBase58(),
         amount: record.amount.toString(),
         amountGor: Number(record.amount) / LAMPORTS_PER_GOR,
-        sharesBps: record.sharesBps,
-        sharesPercent: record.sharesBps / 100,
+        sharesBps,
+        sharesPercent: sharesBps / 100,
         genesisNftMint: record.genesisNftMint.toBase58(),
         feesClaimed: record.feesClaimed.toString(),
         feesClaimedGor: Number(record.feesClaimed) / LAMPORTS_PER_GOR,
         nftMint: record.nftMint?.toBase58() ?? null,
-        votingPowerBps: record.votingPowerBps,
-        votingPowerPercent: record.votingPowerBps / 100,
+        votingPowerBps,
+        votingPowerPercent: votingPowerBps / 100,
         nftMinted: record.nftMinted,
         unwindClaimed: record.unwindClaimed,
         refundClaimed: record.refundClaimed,

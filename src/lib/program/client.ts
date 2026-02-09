@@ -14,6 +14,8 @@ import {
   getExtraAccountMetasPDA,
   getPermanentLockPDA,
   getGenesisNftMintPDA,
+  getProposalPDA,
+  getVoteRecordPDA,
 } from './pdas';
 import { 
   CreateSovereignParams as OnChainCreateSovereignParams, 
@@ -1053,4 +1055,247 @@ export function getToken2022ATA(
   owner: PublicKey
 ): PublicKey {
   return getAssociatedTokenAddressSync(mint, owner, false, TOKEN_2022_PROGRAM_ID);
+}
+
+// ============================================================
+// Governance — Fetch Functions
+// ============================================================
+
+/**
+ * Fetch a proposal by sovereign and proposal ID
+ */
+export async function fetchProposal(
+  program: SovereignLiquidityProgram,
+  sovereignPubkey: PublicKey,
+  proposalId: bigint | number
+) {
+  const [proposalPDA] = getProposalPDA(sovereignPubkey, proposalId, program.programId);
+  try {
+    return await (program.account as any).proposal.fetch(proposalPDA);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch all proposals for a sovereign
+ */
+export async function fetchSovereignProposals(
+  program: SovereignLiquidityProgram,
+  sovereignPubkey: PublicKey
+) {
+  return (program.account as any).proposal.all([
+    {
+      memcmp: {
+        offset: 8, // After discriminator
+        bytes: sovereignPubkey.toBase58(),
+      },
+    },
+  ]);
+}
+
+/**
+ * Fetch a vote record for a proposal + NFT mint
+ */
+export async function fetchVoteRecord(
+  program: SovereignLiquidityProgram,
+  proposalPubkey: PublicKey,
+  nftMint: PublicKey
+) {
+  const [voteRecordPDA] = getVoteRecordPDA(proposalPubkey, nftMint, program.programId);
+  try {
+    return await (program.account as any).voteRecord.fetch(voteRecordPDA);
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================
+// Governance — Transaction Builders
+// ============================================================
+
+/**
+ * Build a propose_unwind transaction.
+ * The holder must own the Genesis NFT referenced in their deposit record.
+ * 
+ * @param holder - Current NFT holder (signer)
+ * @param originalDepositor - The wallet that originally deposited (for PDA derivation)
+ * @param sovereignId - The sovereign's numeric ID
+ * @param nftMint - The Genesis NFT mint pubkey from deposit_record.nft_mint
+ */
+export async function buildProposeUnwindTx(
+  program: SovereignLiquidityProgram,
+  holder: PublicKey,
+  originalDepositor: PublicKey,
+  sovereignId: bigint | number,
+  nftMint: PublicKey
+): Promise<{ tx: Transaction; proposalPDA: PublicKey }> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, originalDepositor, program.programId);
+
+  // Fetch sovereign to get proposal count (next proposal ID)
+  const sovereign = await (program.account as any).sovereignState.fetch(sovereignPDA);
+  const proposalId = BigInt(sovereign.proposalCount.toString());
+  const [proposalPDA] = getProposalPDA(sovereignPDA, proposalId, program.programId);
+
+  // NFT token account for the holder (legacy SPL Token)
+  const nftTokenAccount = getAssociatedTokenAddressSync(
+    nftMint,
+    holder,
+    false,
+    TOKEN_PROGRAM_ID
+  );
+
+  const tx = await (program.methods as any)
+    .proposeUnwind()
+    .accounts({
+      holder,
+      sovereign: sovereignPDA,
+      originalDepositor,
+      depositRecord: depositRecordPDA,
+      nftTokenAccount,
+      proposal: proposalPDA,
+      systemProgram: SystemProgram.programId,
+    })
+    .transaction();
+
+  return { tx, proposalPDA };
+}
+
+/**
+ * Build a cast_vote transaction.
+ * The holder must own the Genesis NFT referenced in their deposit record.
+ * 
+ * @param holder - Current NFT holder (signer)
+ * @param originalDepositor - The wallet that originally deposited
+ * @param sovereignId - The sovereign's numeric ID
+ * @param proposalId - The proposal ID to vote on
+ * @param nftMint - The Genesis NFT mint pubkey
+ * @param support - true = vote FOR unwind, false = vote AGAINST
+ */
+export async function buildCastVoteTx(
+  program: SovereignLiquidityProgram,
+  holder: PublicKey,
+  originalDepositor: PublicKey,
+  sovereignId: bigint | number,
+  proposalId: bigint | number,
+  nftMint: PublicKey,
+  support: boolean
+): Promise<Transaction> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, originalDepositor, program.programId);
+  const [proposalPDA] = getProposalPDA(sovereignPDA, proposalId, program.programId);
+  const [voteRecordPDA] = getVoteRecordPDA(proposalPDA, nftMint, program.programId);
+
+  // NFT token account for the holder (legacy SPL Token)
+  const nftTokenAccount = getAssociatedTokenAddressSync(
+    nftMint,
+    holder,
+    false,
+    TOKEN_PROGRAM_ID
+  );
+
+  const tx = await (program.methods as any)
+    .vote(support)
+    .accounts({
+      holder,
+      sovereign: sovereignPDA,
+      originalDepositor,
+      depositRecord: depositRecordPDA,
+      nftMint,
+      nftTokenAccount,
+      proposal: proposalPDA,
+      voteRecord: voteRecordPDA,
+      systemProgram: SystemProgram.programId,
+    })
+    .transaction();
+
+  return tx;
+}
+
+/**
+ * Build a finalize_vote transaction.
+ * Anyone can call this after the voting period ends.
+ * If the vote passes, remaining_accounts must include the SAMM pool_state.
+ * 
+ * @param caller - The signer (anyone)
+ * @param sovereignId - The sovereign's numeric ID
+ * @param proposalId - The proposal ID to finalize
+ * @param poolState - The SAMM pool state (optional, required for passed proposals to snapshot fee growth)
+ */
+export async function buildFinalizeVoteTx(
+  program: SovereignLiquidityProgram,
+  caller: PublicKey,
+  sovereignId: bigint | number,
+  proposalId: bigint | number,
+  poolState?: PublicKey
+): Promise<Transaction> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [proposalPDA] = getProposalPDA(sovereignPDA, proposalId, program.programId);
+  const [permanentLockPDA] = getPermanentLockPDA(sovereignPDA, program.programId);
+
+  let builder = (program.methods as any)
+    .finalizeVote()
+    .accounts({
+      caller,
+      sovereign: sovereignPDA,
+      proposal: proposalPDA,
+      permanentLock: permanentLockPDA,
+    });
+
+  // If pool state is provided, add as remaining account for fee growth snapshot
+  if (poolState) {
+    builder = builder.remainingAccounts([
+      { pubkey: poolState, isWritable: false, isSigner: false },
+    ]);
+  }
+
+  const tx = await builder.transaction();
+  return tx;
+}
+
+/**
+ * Build a claim_unwind transaction.
+ * Burns the Genesis NFT and transfers proportional GOR from sol_vault.
+ * 
+ * @param holder - Current NFT holder (signer)
+ * @param originalDepositor - The wallet that originally deposited
+ * @param sovereignId - The sovereign's numeric ID
+ * @param nftMint - The Genesis NFT mint pubkey
+ */
+export async function buildClaimUnwindTx(
+  program: SovereignLiquidityProgram,
+  holder: PublicKey,
+  originalDepositor: PublicKey,
+  sovereignId: bigint | number,
+  nftMint: PublicKey
+): Promise<Transaction> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, originalDepositor, program.programId);
+  const [solVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
+
+  // NFT token account for the holder (legacy SPL Token)
+  const nftTokenAccount = getAssociatedTokenAddressSync(
+    nftMint,
+    holder,
+    false,
+    TOKEN_PROGRAM_ID
+  );
+
+  const tx = await (program.methods as any)
+    .claimUnwind()
+    .accounts({
+      holder,
+      sovereign: sovereignPDA,
+      originalDepositor,
+      depositRecord: depositRecordPDA,
+      nftMint,
+      nftTokenAccount,
+      solVault: solVaultPDA,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    })
+    .transaction();
+
+  return tx;
 }

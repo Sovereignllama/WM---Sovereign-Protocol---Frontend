@@ -24,3 +24,15 @@ export {
   useClaimDepositorFees,
   useMintGenesisNft,
 } from './useTransactions';
+
+// Governance hooks
+export {
+  useProposals,
+  useProposal,
+  useVoteRecord,
+  useProposeUnwind,
+  useCastVote,
+  useFinalizeVote,
+  useClaimUnwind,
+  GOVERNANCE_KEYS,
+} from './useGovernance';

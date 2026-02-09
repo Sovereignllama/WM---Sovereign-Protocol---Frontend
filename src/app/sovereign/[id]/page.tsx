@@ -362,7 +362,7 @@ export default function SovereignDetailPage() {
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-[var(--muted)]">Pool Swap Fee</span>
-              <span className="text-white">2.0%</span>
+              <span className="text-white">{(sovereign.swapFeeBps / 100).toFixed(1)}%</span>
             </div>
             <div className="flex justify-between">
               <span className="text-[var(--muted)]">Token Sell Fee</span>

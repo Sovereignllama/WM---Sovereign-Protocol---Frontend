@@ -8,56 +8,6 @@
   },
   "instructions": [
     {
-      "name": "cancel_activity_check",
-      "docs": [
-        "Creator cancels activity check (proves liveness)"
-      ],
-      "discriminator": [
-        34,
-        221,
-        236,
-        21,
-        33,
-        119,
-        155,
-        132
-      ],
-      "accounts": [
-        {
-          "name": "creator",
-          "signer": true
-        },
-        {
-          "name": "sovereign",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  111,
-                  118,
-                  101,
-                  114,
-                  101,
-                  105,
-                  103,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign.sovereign_id",
-                "account": "SovereignState"
-              }
-            ]
-          }
-        }
-      ],
-      "args": []
-    },
-    {
       "name": "claim_depositor_fees",
       "docs": [
         "Claim depositor's share of accumulated fees"
@@ -1222,6 +1172,111 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "emergency_token_redemption",
+      "docs": [
+        "Emergency token redemption - external token holders burn sovereign tokens",
+        "to receive proportional share of surplus GOR from the LP unwind.",
+        "Available when token_redemption_pool > 0 (unwind_sol_balance > total_deposited)."
+      ],
+      "discriminator": [
+        121,
+        166,
+        182,
+        60,
+        214,
+        200,
+        59,
+        108
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sovereign",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign.sovereign_id",
+                "account": "SovereignState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sol_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint",
+          "docs": [
+            "Token mint — needed for burn (mut because supply decreases)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "caller_token_account",
+          "docs": [
+            "Caller's token account — tokens will be burned from here",
+            "Must be owned by caller and hold the sovereign token"
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": []
@@ -1602,57 +1657,6 @@
       ]
     },
     {
-      "name": "execute_activity_check",
-      "docs": [
-        "Execute activity check after 90 days"
-      ],
-      "discriminator": [
-        91,
-        36,
-        35,
-        187,
-        40,
-        180,
-        22,
-        216
-      ],
-      "accounts": [
-        {
-          "name": "executor",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "sovereign",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  111,
-                  118,
-                  101,
-                  114,
-                  101,
-                  105,
-                  103,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign.sovereign_id",
-                "account": "SovereignState"
-              }
-            ]
-          }
-        }
-      ],
-      "args": []
-    },
-    {
       "name": "execute_unwind",
       "docs": [
         "Execute unwind after proposal passes"
@@ -1699,6 +1703,36 @@
               }
             ]
           }
+        },
+        {
+          "name": "protocol_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true
         },
         {
           "name": "proposal",
@@ -2335,7 +2369,9 @@
     {
       "name": "finalize_vote",
       "docs": [
-        "Finalize voting after period ends"
+        "Finalize voting after period ends.",
+        "If passed, snapshots SAMM fee_growth and starts 90-day observation.",
+        "remaining_accounts[0] = pool_state (required when vote passes)"
       ],
       "discriminator": [
         181,
@@ -2406,6 +2442,36 @@
                 "kind": "account",
                 "path": "proposal.proposal_id",
                 "account": "Proposal"
+              }
+            ]
+          }
+        },
+        {
+          "name": "permanent_lock",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  101,
+                  114,
+                  109,
+                  97,
+                  110,
+                  101,
+                  110,
+                  116,
+                  95,
+                  108,
+                  111,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
               }
             ]
           }
@@ -2631,57 +2697,6 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": []
-    },
-    {
-      "name": "initiate_activity_check",
-      "docs": [
-        "Initiate activity check (90-day countdown)"
-      ],
-      "discriminator": [
-        133,
-        15,
-        165,
-        86,
-        217,
-        160,
-        30,
-        25
-      ],
-      "accounts": [
-        {
-          "name": "initiator",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "sovereign",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  111,
-                  118,
-                  101,
-                  114,
-                  101,
-                  105,
-                  103,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign.sovereign_id",
-                "account": "SovereignState"
-              }
-            ]
-          }
         }
       ],
       "args": []
@@ -3318,6 +3333,118 @@
       ]
     },
     {
+      "name": "sweep_redemption_pool",
+      "docs": [
+        "Sweep unclaimed redemption pool GOR to treasury after 30-day window expires.",
+        "Only callable by protocol authority."
+      ],
+      "discriminator": [
+        9,
+        183,
+        198,
+        231,
+        38,
+        115,
+        38,
+        228
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "sovereign",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign.sovereign_id",
+                "account": "SovereignState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sol_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "transfer_protocol_authority",
       "docs": [
         "Transfer protocol authority"
@@ -3528,6 +3655,18 @@
           "name": "new_min_bond_target",
           "type": {
             "option": "u64"
+          }
+        },
+        {
+          "name": "new_unwind_fee_bps",
+          "type": {
+            "option": "u16"
+          }
+        },
+        {
+          "name": "new_volume_threshold_bps",
+          "type": {
+            "option": "u16"
           }
         }
       ]
@@ -5421,6 +5560,26 @@
       "code": 6116,
       "name": "AlreadyEmergencyUnlocked",
       "msg": "Sovereign is already emergency unlocked"
+    },
+    {
+      "code": 6117,
+      "name": "NoRedemptionPool",
+      "msg": "No surplus GOR available for token redemption"
+    },
+    {
+      "code": 6118,
+      "name": "NoCirculatingTokens",
+      "msg": "No circulating tokens to redeem against"
+    },
+    {
+      "code": 6119,
+      "name": "RedemptionWindowExpired",
+      "msg": "Token redemption window has expired"
+    },
+    {
+      "code": 6120,
+      "name": "RedemptionWindowNotExpired",
+      "msg": "Token redemption window has not expired yet"
     }
   ],
   "types": [
@@ -6631,6 +6790,10 @@
           {
             "name": "min_bond_target",
             "type": "u64"
+          },
+          {
+            "name": "unwind_fee_bps",
+            "type": "u16"
           }
         ]
       }
@@ -6701,8 +6864,8 @@
           {
             "name": "unwind_fee_bps",
             "docs": [
-              "Fee taken from SOL during unwind (0-1000 = 0-10%)",
-              "Default: 500 (5%)"
+              "Fee taken from total WGOR during governance-driven unwind (0-2000 = 0-20%)",
+              "NOT applied during emergency unwind. Default: 2000 (20%)"
             ],
             "type": "u16"
           },
@@ -6739,7 +6902,10 @@
           {
             "name": "min_fee_growth_threshold",
             "docs": [
-              "Minimum fee growth to count as \"active\" (MUST be > 0)"
+              "Minimum fee growth (Q64.64 delta) during 90-day observation period",
+              "to prove the sovereign is still viable and cancel the unwind.",
+              "Default: 1.25% of total_deposited annualized (5% APR / 4 quarters).",
+              "Adjustable by protocol authority."
             ],
             "type": "u128"
           },
@@ -7298,14 +7464,14 @@
           {
             "name": "activity_check_initiated",
             "docs": [
-              "Whether an activity check is in progress"
+              "Whether an unwind observation period is in progress"
             ],
             "type": "bool"
           },
           {
             "name": "activity_check_initiated_at",
             "docs": [
-              "Timestamp when activity check was initiated (Option for cleaner handling)"
+              "Timestamp when unwind observation was initiated (Option for cleaner handling)"
             ],
             "type": {
               "option": "i64"
@@ -7314,28 +7480,28 @@
           {
             "name": "activity_check_timestamp",
             "docs": [
-              "Timestamp when activity check was initiated (legacy)"
+              "Timestamp when unwind observation period ends (90 days after vote passes)"
             ],
             "type": "i64"
           },
           {
             "name": "fee_growth_snapshot_a",
             "docs": [
-              "Snapshot of fee_growth_global_a at initiation"
+              "Snapshot of SAMM fee_growth_global_0_x64 at vote pass time"
             ],
             "type": "u128"
           },
           {
             "name": "fee_growth_snapshot_b",
             "docs": [
-              "Snapshot of fee_growth_global_b at initiation"
+              "Snapshot of SAMM fee_growth_global_1_x64 at vote pass time"
             ],
             "type": "u128"
           },
           {
             "name": "activity_check_last_cancelled",
             "docs": [
-              "Timestamp of last cancelled activity check (for cooldown)"
+              "Timestamp of last cancelled unwind observation (for cooldown)"
             ],
             "type": "i64"
           },
@@ -7352,6 +7518,30 @@
               "Token balance after removing liquidity (for creator)"
             ],
             "type": "u64"
+          },
+          {
+            "name": "token_redemption_pool",
+            "docs": [
+              "Surplus GOR available for external token holder redemption",
+              "= max(0, unwind_sol_balance - total_deposited)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "circulating_tokens_at_unwind",
+            "docs": [
+              "Snapshot of circulating tokens at time of LP removal",
+              "= mint.supply - token_vault.amount - lock_ata_tokens"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "token_redemption_deadline",
+            "docs": [
+              "Deadline for token holders to redeem surplus GOR (unix timestamp).",
+              "After this, unclaimed GOR is swept to treasury."
+            ],
+            "type": "i64"
           },
           {
             "name": "last_activity_timestamp",

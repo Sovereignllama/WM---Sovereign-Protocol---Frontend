@@ -171,12 +171,14 @@ export function getProposalPDA(
 
 /**
  * Derive a Vote Record PDA
+ * On-chain the vote record is keyed by NFT mint (not voter wallet),
+ * so each Genesis NFT position can only vote once per proposal.
  * @param proposal - The proposal's pubkey
- * @param voter - The voter's wallet pubkey
+ * @param nftMint - The Genesis NFT mint pubkey for this position
  */
 export function getVoteRecordPDA(
   proposal: PublicKey,
-  voter: PublicKey,
+  nftMint: PublicKey,
   programId?: PublicKey
 ): [PublicKey, number] {
   const pid = programId || getProgramId();
@@ -184,7 +186,7 @@ export function getVoteRecordPDA(
     [
       Buffer.from(PDA_SEEDS.VOTE_RECORD),
       proposal.toBuffer(),
-      voter.toBuffer(),
+      nftMint.toBuffer(),
     ],
     pid
   );
