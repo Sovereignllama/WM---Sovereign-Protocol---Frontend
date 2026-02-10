@@ -259,7 +259,7 @@
         {
           "name": "fee_vault",
           "docs": [
-            "Fee destination for SOL fees"
+            "Fee destination for GOR fees"
           ],
           "writable": true,
           "pda": {
@@ -325,8 +325,20 @@
           "address": "WTzkPUoprVx7PDc1tfKA5sS7k1ynCgU89WtwZhksHX5"
         },
         {
+          "name": "token_mint",
+          "docs": [
+            "Token mint — needed for FairLaunch auto-renounce on recovery completion",
+            "Optional: pass system_program if sovereign has no transfer fee"
+          ],
+          "writable": true
+        },
+        {
           "name": "token_program",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "token_program_2022",
+          "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
         },
         {
           "name": "system_program",
@@ -3333,6 +3345,201 @@
       ]
     },
     {
+      "name": "swap_recovery_tokens",
+      "docs": [
+        "Swap recovery tokens (harvested transfer fees) to SOL via SAMM",
+        "This converts Token-2022 sell fees into GOR for investor recovery"
+      ],
+      "discriminator": [
+        77,
+        117,
+        28,
+        157,
+        149,
+        63,
+        14,
+        217
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "sovereign",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign.sovereign_id",
+                "account": "SovereignState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "permanent_lock",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  101,
+                  114,
+                  109,
+                  97,
+                  110,
+                  101,
+                  110,
+                  116,
+                  95,
+                  108,
+                  111,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint",
+          "docs": [
+            "Token mint (sovereign's Token-2022 mint)"
+          ]
+        },
+        {
+          "name": "recovery_token_vault",
+          "docs": [
+            "Recovery token vault — holds harvested transfer fees (Token-2022)",
+            "Owned by the sovereign PDA"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sovereign_wgor_ata",
+          "docs": [
+            "WGOR ATA for the sovereign PDA — intermediate account for swap output",
+            "Created by the caller before this instruction (use createAssociatedTokenAccountIdempotent)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "fee_vault",
+          "docs": [
+            "Fee vault (sol_vault PDA) — destination for unwrapped GOR"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "samm_program",
+          "address": "WTzkPUoprVx7PDc1tfKA5sS7k1ynCgU89WtwZhksHX5"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "sweep_redemption_pool",
       "docs": [
         "Sweep unclaimed redemption pool GOR to treasury after 30-day window expires.",
@@ -4819,6 +5026,19 @@
       ]
     },
     {
+      "name": "RecoveryTokensSwapped",
+      "discriminator": [
+        90,
+        44,
+        225,
+        206,
+        233,
+        58,
+        71,
+        183
+      ]
+    },
+    {
       "name": "SammPoolCreated",
       "discriminator": [
         127,
@@ -5580,6 +5800,16 @@
       "code": 6120,
       "name": "RedemptionWindowNotExpired",
       "msg": "Token redemption window has not expired yet"
+    },
+    {
+      "code": 6121,
+      "name": "InvalidFeeMode",
+      "msg": "Invalid fee mode for this operation"
+    },
+    {
+      "code": 6122,
+      "name": "InsufficientAccounts",
+      "msg": "Insufficient remaining accounts provided"
     }
   ],
   "types": [
@@ -6967,6 +7197,34 @@
           {
             "name": "completed_at",
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RecoveryTokensSwapped",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sovereign_id",
+            "type": "u64"
+          },
+          {
+            "name": "tokens_swapped",
+            "type": "u64"
+          },
+          {
+            "name": "sol_received",
+            "type": "u64"
+          },
+          {
+            "name": "total_recovered",
+            "type": "u64"
+          },
+          {
+            "name": "recovery_target",
+            "type": "u64"
           }
         ]
       }

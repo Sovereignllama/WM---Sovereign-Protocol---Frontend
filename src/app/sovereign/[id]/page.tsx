@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useSovereign, useDepositRecord } from '@/hooks/useSovereign';
-import { useDeposit, useWithdraw, useClaimDepositorFees, useFinalizeCreatePool, useFinalizeAddLiquidity, useEmergencyUnlock, useEmergencyWithdraw, useEmergencyWithdrawCreator, useMintGenesisNft } from '@/hooks/useTransactions';
+import { useDeposit, useWithdraw, useFinalizeCreatePool, useFinalizeAddLiquidity, useEmergencyUnlock, useEmergencyWithdraw, useEmergencyWithdrawCreator, useMintGenesisNft } from '@/hooks/useTransactions';
 import { useTokenImage } from '@/hooks/useTokenImage';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LAMPORTS_PER_GOR, config } from '@/lib/config';
@@ -21,7 +21,6 @@ export default function SovereignDetailPage() {
   const { data: depositRecord } = useDepositRecord(sovereignId);
   const deposit = useDeposit();
   const withdraw = useWithdraw();
-  const claimFees = useClaimDepositorFees();
   const finalizeCreatePool = useFinalizeCreatePool();
   const finalizeAddLiquidity = useFinalizeAddLiquidity();
   const emergencyUnlock = useEmergencyUnlock();
@@ -32,7 +31,7 @@ export default function SovereignDetailPage() {
 
   const [depositAmount, setDepositAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
-  const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw' | 'claim'>('deposit');
+  const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw'>('deposit');
 
   if (isLoading) {
     return (
@@ -92,15 +91,6 @@ export default function SovereignDetailPage() {
       setWithdrawAmount('');
     } catch (err: any) {
       console.error('Withdraw failed:', err);
-    }
-  };
-
-  const handleClaimFees = async () => {
-    if (!connected) return;
-    try {
-      await claimFees.mutateAsync({ sovereignId });
-    } catch (err: any) {
-      console.error('Claim fees failed:', err);
     }
   };
 
@@ -297,25 +287,6 @@ export default function SovereignDetailPage() {
         </div>
       )}
 
-      {sovereign.status === 'Recovery' && (
-        <div className="card card-clean p-4 mb-6">
-          <div className="flex justify-between text-sm mb-2">
-            <span className="text-[var(--muted)]">Recovery Progress</span>
-            <span className="text-white font-bold">{sovereign.recoveryProgress.toFixed(1)}%</span>
-          </div>
-          <div className="progress-bar">
-            <div
-              className="fill"
-              style={{ width: `${Math.min(sovereign.recoveryProgress, 100)}%` }}
-            />
-          </div>
-          <div className="flex justify-between text-xs text-[var(--muted)] mt-2">
-            <span>{sovereign.totalRecoveredGor.toLocaleString()} GOR recovered</span>
-            <span>{sovereign.recoveryTargetGor.toLocaleString()} GOR target</span>
-          </div>
-        </div>
-      )}
-
       {/* Details */}
       <div className="grid md:grid-cols-2 gap-4 mb-6">
         {/* Sovereign Info */}
@@ -482,18 +453,7 @@ export default function SovereignDetailPage() {
                 )}
               </>
             )}
-            {depositRecord && (sovereign.status === 'Recovery' || sovereign.status === 'Active') && (
-              <button
-                onClick={() => setActiveTab('claim')}
-                className={`px-4 py-2 rounded text-sm font-medium ${
-                  activeTab === 'claim'
-                    ? 'bg-[var(--money-green)] text-black'
-                    : 'bg-[var(--card-bg)] text-[var(--muted)] hover:text-white'
-                }`}
-              >
-                Claim Fees
-              </button>
-            )}
+
           </div>
 
           {/* Deposit Tab */}
@@ -555,24 +515,7 @@ export default function SovereignDetailPage() {
             </div>
           )}
 
-          {/* Claim Tab */}
-          {activeTab === 'claim' && depositRecord && (
-            <div>
-              <p className="text-sm text-[var(--muted)] mb-3">
-                Claim your share of accumulated trading fees.
-              </p>
-              <button
-                onClick={handleClaimFees}
-                disabled={claimFees.isPending}
-                className="btn-money px-6"
-              >
-                {claimFees.isPending ? 'Claiming...' : 'Claim Fees'}
-              </button>
-              {claimFees.error && (
-                <p className="text-red-400 text-sm mt-2">{(claimFees.error as Error).message}</p>
-              )}
-            </div>
-          )}
+
 
           {/* Bonding ended message */}
           {isBonding && bondDeadlinePassed && (

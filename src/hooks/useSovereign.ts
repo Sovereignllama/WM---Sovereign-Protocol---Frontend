@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useReadOnlyProgram, useProgram, useWalletAddress } from './useProgram';
+import { useConnection } from '@solana/wallet-adapter-react';
 import { 
   fetchProtocolState, 
   fetchSovereignById, 
@@ -12,6 +13,8 @@ import {
   getSovereignStatusString,
   getSovereignTypeString,
   getFeeModeString,
+  fetchPendingHarvestFees,
+  fetchPendingClaimableFees,
   SovereignLiquidityProgram,
 } from '@/lib/program/client';
 import { getProtocolStatePDA, getSovereignPDA, getDepositRecordPDA } from '@/lib/program/pdas';
@@ -26,6 +29,8 @@ export const QUERY_KEYS = {
   depositRecord: (sovereign: string, depositor: string) => ['depositRecord', sovereign, depositor],
   sovereignDepositors: (sovereign: string) => ['sovereignDepositors', sovereign],
   walletDeposits: (wallet: string) => ['walletDeposits', wallet],
+  pendingHarvestFees: (sovereignId: string) => ['pendingHarvestFees', sovereignId],
+  pendingClaimableFees: (sovereignId: string, depositor: string) => ['pendingClaimableFees', sovereignId, depositor],
 } as const;
 
 /**
@@ -301,5 +306,59 @@ export function useWalletDeposits() {
     },
     staleTime: 10_000,
     enabled: !!program && !!publicKey,
+  });
+}
+
+/**
+ * Hook to fetch pending (unharvested) fees sitting in the SAMM position.
+ * Shows how much GOR + tokens can be harvested by calling Harvest Fees.
+ */
+export function usePendingHarvestFees(sovereignId: string | number | undefined) {
+  const program = useReadOnlyProgram();
+  const { connection } = useConnection();
+  const sovereign = useSovereign(sovereignId);
+
+  return useQuery({
+    queryKey: QUERY_KEYS.pendingHarvestFees(sovereignId?.toString() ?? ''),
+    queryFn: async () => {
+      if (!program || !sovereignId || !sovereign.data) return null;
+
+      const poolState = new PublicKey(sovereign.data.poolState);
+      const positionMint = new PublicKey(sovereign.data.positionMint);
+      const tokenMint = new PublicKey(sovereign.data.tokenMint);
+
+      // Default to 9 decimals for sovereign tokens (Token-2022 with default decimals)
+      const tokenDecimals = 9;
+
+      return fetchPendingHarvestFees(connection, poolState, positionMint, tokenMint, tokenDecimals);
+    },
+    staleTime: 15_000, // 15 seconds — fees accumulate slowly
+    refetchInterval: 30_000, // Auto-refresh every 30s
+    enabled: !!program && !!sovereignId && !!sovereign.data && 
+      (sovereign.data.status === 'Recovery' || sovereign.data.status === 'Active'),
+  });
+}
+
+/**
+ * Hook to fetch how much GOR a depositor can claim from the fee vault.
+ * Shows the depositor's unclaimed share of already-harvested fees.
+ */
+export function usePendingClaimableFees(sovereignId: string | number | undefined) {
+  const program = useReadOnlyProgram();
+  const { connection } = useConnection();
+  const { publicKey } = useWalletAddress();
+
+  return useQuery({
+    queryKey: QUERY_KEYS.pendingClaimableFees(
+      sovereignId?.toString() ?? '',
+      publicKey?.toBase58() ?? '',
+    ),
+    queryFn: async () => {
+      if (!program || !sovereignId || !publicKey) return null;
+      return fetchPendingClaimableFees(connection, program, BigInt(sovereignId), publicKey);
+    },
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+    enabled: !!program && !!sovereignId && !!publicKey,
   });
 }

@@ -2,11 +2,31 @@
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
+import { useConnection } from '@solana/wallet-adapter-react';
+import { PublicKey } from '@solana/web3.js';
 import { useSovereigns, useSovereign } from '@/hooks/useSovereign';
 import { useSwapQuote, useSwap, usePoolInfo } from '@/hooks/useSwap';
 import { useTokenImage } from '@/hooks/useTokenImage';
 import { config, LAMPORTS_PER_GOR } from '@/lib/config';
 import Link from 'next/link';
+
+const TOKEN_2022_PROGRAM_ID = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
+
+// ============================================================
+// Token Image Component (fetches per-sovereign)
+// ============================================================
+
+function TokenListImage({ metadataUri, symbol }: { metadataUri?: string; symbol?: string }) {
+  const { data: imageUrl } = useTokenImage(metadataUri);
+  if (imageUrl) {
+    return <img src={imageUrl} alt={symbol || ''} className="w-8 h-8 rounded-full object-cover border border-[var(--border)]" />;
+  }
+  return (
+    <div className="w-8 h-8 rounded-full bg-[var(--card-bg)] border border-[var(--border)] flex items-center justify-center text-[var(--muted)] text-xs font-bold">
+      {(symbol || '?').charAt(0).toUpperCase()}
+    </div>
+  );
+}
 
 // ============================================================
 // SWAP PAGE
@@ -14,11 +34,15 @@ import Link from 'next/link';
 
 export default function SwapPage() {
   const { connected, publicKey } = useWallet();
+  const { connection } = useConnection();
 
   // Sovereign selector
   const { data: sovereigns, isLoading: sovereignsLoading } = useSovereigns();
   const [selectedSovereignId, setSelectedSovereignId] = useState<string | null>(null);
   const { data: sovereign } = useSovereign(selectedSovereignId || undefined);
+
+  // Wallet token balances: mint -> human-readable balance
+  const [tokenBalances, setTokenBalances] = useState<Record<string, number>>({});
 
   // Swap state
   const [direction, setDirection] = useState<'buy' | 'sell'>('buy');
@@ -37,23 +61,42 @@ export default function SwapPage() {
   // Pool info from trading service
   const { poolInfo, loading: poolLoading } = usePoolInfo(poolAddress);
 
-  // Token image
+  // Token image for selected sovereign
   const { data: tokenImage } = useTokenImage(sovereign?.metadataUri || undefined);
+
+  // Filter sovereigns that have pools (Recovery/Active/Unwinding)
+  const tradableSovereigns = useMemo(() => {
+    if (!sovereigns) return [];
+    return sovereigns.filter(
+      (s: any) => ['Recovery', 'Active', 'Unwinding'].includes(s.status)
+    );
+  }, [sovereigns]);
+
+  // Auto-select first sovereign with a live pool
+  useEffect(() => {
+    if (sovereigns && sovereigns.length > 0 && !selectedSovereignId) {
+      const withPool = sovereigns.find(
+        (s: any) => s.poolState && s.poolState !== '11111111111111111111111111111111'
+          && ['Recovery', 'Active'].includes(s.status)
+      );
+      if (withPool) {
+        setSelectedSovereignId(withPool.sovereignId);
+      }
+    }
+  }, [sovereigns, selectedSovereignId]);
 
   // Quote — convert user-readable amount to raw for the API
   const rawAmount = useMemo(() => {
     if (!amount || isNaN(parseFloat(amount))) return '';
     if (direction === 'buy') {
-      // GOR → Token: quote expects raw lamports
       try {
         return BigInt(Math.floor(parseFloat(amount) * 1e9)).toString();
       } catch {
         return '';
       }
     } else {
-      // Token → GOR: quote expects raw token units
       try {
-        return BigInt(Math.floor(parseFloat(amount) * 1e9)).toString(); // Assuming 9 decimals
+        return BigInt(Math.floor(parseFloat(amount) * 1e9)).toString();
       } catch {
         return '';
       }
@@ -72,26 +115,48 @@ export default function SwapPage() {
   // Swap execution
   const { executeSwap, loading: swapLoading, error: swapError, txSignature, reset: resetSwap } = useSwap();
 
-  // Auto-select first sovereign with a live pool
+  // Fetch Token-2022 balances for all tradable sovereign mints
   useEffect(() => {
-    if (sovereigns && sovereigns.length > 0 && !selectedSovereignId) {
-      const withPool = sovereigns.find(
-        (s: any) => s.poolState && s.poolState !== '11111111111111111111111111111111'
-          && ['Recovery', 'Active'].includes(s.status)
-      );
-      if (withPool) {
-        setSelectedSovereignId(withPool.sovereignId);
-      }
+    if (!connected || !publicKey || tradableSovereigns.length === 0) {
+      setTokenBalances({});
+      return;
     }
-  }, [sovereigns, selectedSovereignId]);
 
-  // Filter sovereigns that have pools
-  const tradableSovereigns = useMemo(() => {
-    if (!sovereigns) return [];
-    return sovereigns.filter(
-      (s: any) => ['Recovery', 'Active', 'Unwinding'].includes(s.status)
-    );
-  }, [sovereigns]);
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const accounts = await connection.getTokenAccountsByOwner(
+          publicKey,
+          { programId: TOKEN_2022_PROGRAM_ID },
+          { commitment: 'confirmed', encoding: 'base64' }
+        );
+
+        const balances: Record<string, number> = {};
+        for (const { account } of accounts.value) {
+          let data: Buffer;
+          if (Array.isArray(account.data)) {
+            // [base64string, encoding] format
+            data = Buffer.from(account.data[0], 'base64');
+          } else if (typeof account.data === 'string') {
+            data = Buffer.from(account.data, 'base64');
+          } else {
+            data = account.data as Buffer;
+          }
+          // SPL Token Account layout: mint (32 bytes offset 0), owner (32), amount (u64 at offset 64)
+          const mint = new PublicKey(data.slice(0, 32)).toBase58();
+          const rawAmount = data.readBigUInt64LE(64);
+          balances[mint] = Number(rawAmount) / 1e9; // 9 decimals
+        }
+
+        if (!cancelled) setTokenBalances(balances);
+      } catch (err) {
+        console.error('Failed to fetch token balances:', err);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [connected, publicKey, connection, tradableSovereigns.length, txSignature]);
 
   // Swap direction toggle
   const toggleDirection = useCallback(() => {
@@ -107,11 +172,13 @@ export default function SwapPage() {
     await executeSwap({
       poolAddress,
       tokenMint,
-      amount,
+      // Buy: trading service expects human-readable GOR amount
+      // Sell: trading service expects raw token units
+      amount: direction === 'buy' ? amount : rawAmount,
       slippageBps,
       direction,
     });
-  }, [poolAddress, tokenMint, amount, slippageBps, direction, executeSwap, resetSwap]);
+  }, [poolAddress, tokenMint, amount, rawAmount, slippageBps, direction, executeSwap, resetSwap]);
 
   // Format output amount for display
   const estimatedOutput = useMemo(() => {
@@ -160,11 +227,17 @@ export default function SwapPage() {
               style={{ colorScheme: 'dark' }}
             >
               <option value="" className="bg-[#1a1a2e] text-white">Choose a sovereign...</option>
-              {tradableSovereigns.map((s: any) => (
-                <option key={s.sovereignId} value={s.sovereignId} className="bg-[#1a1a2e] text-white">
-                  {s.name} ({s.tokenSymbol || `#${s.sovereignId}`}) — {s.status}
-                </option>
-              ))}
+              {tradableSovereigns.map((s: any) => {
+                const bal = tokenBalances[s.tokenMint];
+                const balStr = connected && bal !== undefined && bal > 0
+                  ? ` — ${bal < 0.001 ? '<0.001' : bal.toLocaleString(undefined, { maximumFractionDigits: 3 })} held`
+                  : '';
+                return (
+                  <option key={s.sovereignId} value={s.sovereignId} className="bg-[#1a1a2e] text-white">
+                    {s.name} ({s.tokenSymbol || `#${s.sovereignId}`}) — {s.status}{balStr}
+                  </option>
+                );
+              })}
             </select>
           )}
 
@@ -264,6 +337,14 @@ export default function SwapPage() {
             <div className="bg-[var(--bg-main)] rounded-lg p-4 mb-2">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-[var(--muted)]">You Pay</span>
+                {direction === 'sell' && sovereign?.tokenMint && tokenBalances[sovereign.tokenMint] > 0 && (
+                  <button
+                    onClick={() => { setAmount(tokenBalances[sovereign.tokenMint].toString()); resetSwap(); }}
+                    className="text-[10px] font-bold px-2 py-0.5 rounded bg-[var(--money-green)]/15 text-[var(--money-green)] hover:bg-[var(--money-green)]/25 transition-colors"
+                  >
+                    MAX
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 <input

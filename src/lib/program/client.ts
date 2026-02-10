@@ -394,27 +394,239 @@ export async function buildWithdrawTx(
 }
 
 /**
- * Build a claim depositor fees transaction
+ * Build a claim depositor fees transaction.
+ * The holder must own the Genesis NFT referenced in the deposit record.
+ * 
+ * @param holder - Current NFT holder (signer)
+ * @param originalDepositor - The wallet that originally deposited (for PDA derivation)
+ * @param sovereignId - The sovereign's numeric ID
+ * @param nftMint - The Genesis NFT mint pubkey from deposit_record.nft_mint
  */
 export async function buildClaimDepositorFeesTx(
   program: SovereignLiquidityProgram,
-  depositor: PublicKey,
-  sovereignId: bigint | number
+  holder: PublicKey,
+  originalDepositor: PublicKey,
+  sovereignId: bigint | number,
+  nftMint: PublicKey
 ): Promise<Transaction> {
   const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
-  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, depositor, program.programId);
+  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, originalDepositor, program.programId);
   const [feeVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
+
+  // NFT token account for the holder (legacy SPL Token)
+  const nftTokenAccount = getAssociatedTokenAddressSync(
+    nftMint,
+    holder,
+    false,
+    TOKEN_PROGRAM_ID
+  );
 
   const tx = await (program.methods as any)
     .claimDepositorFees()
     .accounts({
-      depositor,
+      holder,
       sovereign: sovereignPDA,
+      originalDepositor,
       depositRecord: depositRecordPDA,
+      nftTokenAccount,
       feeVault: feeVaultPDA,
       systemProgram: SystemProgram.programId,
     })
     .transaction();
+
+  return tx;
+}
+
+// ============================================================
+// Claim Fees (SAMM Harvest)
+// ============================================================
+
+const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
+
+/**
+ * Build a claim_fees transaction to harvest trading fees from the SAMM LP position.
+ * This is step 1 of the fee flow: harvest fees from SAMM → fee vault.
+ * Step 2 is claimDepositorFees which distributes from fee vault → individual depositor.
+ *
+ * Anyone can call this (claimer doesn't need to be a depositor).
+ * Requires fetching the PermanentLock account to derive SAMM position accounts.
+ * 
+ * @param program - The Anchor program instance
+ * @param claimer - The wallet paying for the transaction (signer)
+ * @param sovereignId - The sovereign's numeric ID
+ * @param tokenMint - The sovereign's token mint
+ * @param connection - Solana connection (needed to fetch PermanentLock state)
+ */
+export async function buildClaimFeesTx(
+  program: SovereignLiquidityProgram,
+  claimer: PublicKey,
+  sovereignId: bigint | number,
+  tokenMint: PublicKey,
+  connection: Connection,
+): Promise<Transaction> {
+  const [protocolStatePDA] = getProtocolStatePDA(program.programId);
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [permanentLockPDA] = getPermanentLockPDA(sovereignPDA, program.programId);
+  const [feeVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
+  const [creatorFeeTrackerPDA] = getCreatorTrackerPDA(sovereignPDA, program.programId);
+
+  // Fetch sovereign state (for fee_mode, state, ammConfig, creator)
+  const sovereign = await fetchSovereign(program, sovereignPDA);
+
+  // Fetch the PermanentLock account to get position details
+  const lockAccount = await (program.account as any).permanentLock.fetch(permanentLockPDA);
+  const poolState = new PublicKey(lockAccount.poolState);
+  const positionMint = new PublicKey(lockAccount.positionMint);
+  const positionAccount = new PublicKey(lockAccount.position);
+  const positionTokenAccount = new PublicKey(lockAccount.positionTokenAccount);
+
+  // Sort mints for canonical ordering
+  const { mint0, mint1, wgorIs0 } = sortMints(WGOR_MINT, tokenMint);
+
+  // Derive SAMM PDAs
+  const [personalPosition] = getSammPersonalPositionPDA(positionMint);
+  const [protocolPosition] = getSammProtocolPositionPDA(poolState, MIN_TICK, MAX_TICK);
+  const [sammVault0] = getSammPoolVaultPDA(poolState, mint0);
+  const [sammVault1] = getSammPoolVaultPDA(poolState, mint1);
+  const tickArrayLowerStart = getTickArrayStartIndex(MIN_TICK);
+  const tickArrayUpperStart = getTickArrayStartIndex(MAX_TICK);
+  const [tickArrayLower] = getSammTickArrayPDA(poolState, tickArrayLowerStart);
+  const [tickArrayUpper] = getSammTickArrayPDA(poolState, tickArrayUpperStart);
+  const [tickArrayBitmapExtension] = getSammTickArrayBitmapPDA(poolState);
+
+  // Recipient token accounts for permanent_lock PDA
+  // Token 0 (WGOR): legacy SPL Token ATA
+  // Token 1 (sovereign token): Token-2022 ATA
+  // Need to determine which is which based on mint ordering
+  const recipientAta0 = getAssociatedTokenAddressSync(
+    mint0,
+    permanentLockPDA,
+    true, // allowOwnerOffCurve (PDA)
+    mint0.equals(WGOR_MINT) ? TOKEN_PROGRAM_ID : TOKEN_2022_PROGRAM_ID,
+  );
+  const recipientAta1 = getAssociatedTokenAddressSync(
+    mint1,
+    permanentLockPDA,
+    true,
+    mint1.equals(WGOR_MINT) ? TOKEN_PROGRAM_ID : TOKEN_2022_PROGRAM_ID,
+  );
+
+  // Pre-instructions: ensure recipient ATAs exist
+  const tx = new Transaction();
+
+  tx.add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      claimer,
+      recipientAta0,
+      permanentLockPDA,
+      mint0,
+      mint0.equals(WGOR_MINT) ? TOKEN_PROGRAM_ID : TOKEN_2022_PROGRAM_ID,
+    ),
+  );
+  tx.add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      claimer,
+      recipientAta1,
+      permanentLockPDA,
+      mint1,
+      mint1.equals(WGOR_MINT) ? TOKEN_PROGRAM_ID : TOKEN_2022_PROGRAM_ID,
+    ),
+  );
+
+  // Build remaining accounts for SAMM CPI (15 accounts in exact order)
+  const remainingAccounts: { pubkey: PublicKey; isWritable: boolean; isSigner: boolean }[] = [
+    { pubkey: positionTokenAccount, isWritable: false, isSigner: false },  // [0] nft_account
+    { pubkey: personalPosition, isWritable: true, isSigner: false },       // [1] personal_position
+    { pubkey: poolState, isWritable: true, isSigner: false },              // [2] pool_state
+    { pubkey: protocolPosition, isWritable: true, isSigner: false },       // [3] protocol_position
+    { pubkey: sammVault0, isWritable: true, isSigner: false },             // [4] token_vault_0
+    { pubkey: sammVault1, isWritable: true, isSigner: false },             // [5] token_vault_1
+    { pubkey: tickArrayLower, isWritable: true, isSigner: false },         // [6] tick_array_lower
+    { pubkey: tickArrayUpper, isWritable: true, isSigner: false },         // [7] tick_array_upper
+    { pubkey: recipientAta0, isWritable: true, isSigner: false },          // [8] recipient_token_account_0
+    { pubkey: recipientAta1, isWritable: true, isSigner: false },          // [9] recipient_token_account_1
+    { pubkey: TOKEN_2022_PROGRAM_ID, isWritable: false, isSigner: false }, // [10] token_program_2022
+    { pubkey: MEMO_PROGRAM_ID, isWritable: false, isSigner: false },       // [11] memo_program
+    { pubkey: mint0, isWritable: false, isSigner: false },                 // [12] vault_0_mint
+    { pubkey: mint1, isWritable: false, isSigner: false },                 // [13] vault_1_mint
+    { pubkey: tickArrayBitmapExtension, isWritable: true, isSigner: false }, // [14] tick_array_bitmap_extension
+  ];
+
+  // ---- Token fee routing accounts [15-18+] ----
+  // Determine fee_mode and state to decide which routing path the on-chain handler will take
+  const feeMode = Object.keys(sovereign.feeMode)[0]; // e.g. "recoveryBoost", "fairLaunch", "creatorRevenue"
+  const sovState = Object.keys(sovereign.state)[0];   // e.g. "recovery", "active"
+  const isRecovery = sovState === 'recovery';
+
+  const needsSwap = isRecovery && (feeMode === 'recoveryBoost' || feeMode === 'fairLaunch');
+  const needsBurn = !isRecovery && feeMode === 'fairLaunch';
+  const needsCreatorTransfer = feeMode === 'creatorRevenue' || (!isRecovery && feeMode === 'recoveryBoost');
+
+  if (needsSwap || needsBurn || needsCreatorTransfer) {
+    const ammConfig = new PublicKey(sovereign.ammConfig);
+    const [observationState] = getSammObservationPDA(poolState);
+    const creator = new PublicKey(sovereign.creator);
+
+    // Creator's Token-2022 ATA for the sovereign token (used in creator transfer path)
+    const creatorTokenAta = getAssociatedTokenAddressSync(
+      tokenMint,
+      creator,
+      false,
+      TOKEN_2022_PROGRAM_ID,
+    );
+
+    // If creator transfer path, ensure creator ATA exists
+    if (needsCreatorTransfer) {
+      tx.add(
+        createAssociatedTokenAccountIdempotentInstruction(
+          claimer,
+          creatorTokenAta,
+          creator,
+          tokenMint,
+          TOKEN_2022_PROGRAM_ID,
+        ),
+      );
+    }
+
+    remainingAccounts.push(
+      { pubkey: ammConfig, isWritable: false, isSigner: false },             // [15] amm_config
+      { pubkey: observationState, isWritable: true, isSigner: false },       // [16] observation_state
+      { pubkey: creatorTokenAta, isWritable: true, isSigner: false },        // [17] creator_token_ata
+    );
+
+    // Swap path needs tick arrays for token→WGOR swap [18+]
+    if (needsSwap) {
+      // Use the same tick arrays covering the full range
+      remainingAccounts.push(
+        { pubkey: tickArrayLower, isWritable: true, isSigner: false },       // [18] swap tick_array_0
+        { pubkey: tickArrayUpper, isWritable: true, isSigner: false },       // [19] swap tick_array_1
+      );
+    }
+  }
+
+  // Main instruction
+  const mainIx = await (program.methods as any)
+    .claimFees()
+    .accounts({
+      claimer,
+      protocolState: protocolStatePDA,
+      sovereign: sovereignPDA,
+      permanentLock: permanentLockPDA,
+      position: positionAccount,
+      tokenVaultA: sammVault0,
+      tokenVaultB: sammVault1,
+      feeVault: feeVaultPDA,
+      creatorFeeTracker: creatorFeeTrackerPDA,
+      sammProgram: SAMM_PROGRAM_ID,
+      tokenMint,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      tokenProgram2022: TOKEN_2022_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    })
+    .remainingAccounts(remainingAccounts)
+    .transaction();
+
+  tx.add(mainIx);
 
   return tx;
 }
@@ -955,33 +1167,58 @@ export async function buildRenounceSellFeeTx(
 
 /**
  * Build a harvest transfer fees transaction
- * Collects withheld fees from token accounts and routes them based on FeeMode
+ * Collects withheld fees from token accounts and routes them based on FeeMode:
+ *   - CreatorRevenue: fees → creatorTokenAccount
+ *   - RecoveryBoost/FairLaunch during Recovery: fees → recoveryTokenVault
+ *   - RecoveryBoost after Recovery: fees → creatorTokenAccount
+ *
+ * Remaining accounts = source Token-2022 accounts with withheld fees.
  */
 export async function buildHarvestTransferFeesTx(
   program: SovereignLiquidityProgram,
-  caller: PublicKey,
+  payer: PublicKey,
   sovereignId: bigint | number,
   sourceTokenAccounts: PublicKey[]
 ): Promise<Transaction> {
   const [protocolStatePDA] = getProtocolStatePDA(program.programId);
   const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
   const [creatorTrackerPDA] = getCreatorTrackerPDA(sovereignPDA, program.programId);
-  const [solVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
+  const [recoveryTokenVaultPDA] = getTokenVaultPDA(sovereignPDA, program.programId);
   
   const sovereign = await fetchSovereign(program, sovereignPDA);
   const tokenMint = new PublicKey(sovereign.tokenMint);
   const creatorWallet = new PublicKey(sovereign.creator);
 
-  const tx = await (program.methods as any)
+  // Creator's Token-2022 ATA for the sovereign token
+  const creatorTokenAccount = getAssociatedTokenAddressSync(
+    tokenMint,
+    creatorWallet,
+    false,
+    TOKEN_2022_PROGRAM_ID,
+  );
+
+  // Pre-instruction: ensure creator ATA exists (in case fees go to creator)
+  const tx = new Transaction();
+  tx.add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      payer,
+      creatorTokenAccount,
+      creatorWallet,
+      tokenMint,
+      TOKEN_2022_PROGRAM_ID,
+    ),
+  );
+
+  const mainIx = await (program.methods as any)
     .harvestTransferFees()
     .accounts({
-      caller,
+      payer,
       protocolState: protocolStatePDA,
       sovereign: sovereignPDA,
       tokenMint,
+      creatorTokenAccount,
+      recoveryTokenVault: recoveryTokenVaultPDA,
       creatorFeeTracker: creatorTrackerPDA,
-      creatorWallet,
-      solVault: solVaultPDA,
       tokenProgram2022: TOKEN_2022_PROGRAM_ID,
     })
     .remainingAccounts(
@@ -993,6 +1230,127 @@ export async function buildHarvestTransferFeesTx(
     )
     .transaction();
 
+  tx.add(mainIx);
+  return tx;
+}
+
+// ============================================================
+// Swap Recovery Tokens (Token-2022 sell fees → GOR for investors)
+// ============================================================
+
+/**
+ * Build a swap_recovery_tokens transaction.
+ * Swaps tokens held in recovery_token_vault to SOL via SAMM CPI,
+ * depositing SOL into fee_vault for investor recovery.
+ * 
+ * Only callable during Recovery with RecoveryBoost or FairLaunch fee mode.
+ * Permissionless — anyone can call this to advance recovery.
+ *
+ * Remaining accounts (9) = SAMM swap accounts:
+ *   [0] amm_config, [1] pool_state, [2] input_token_account (recovery vault),
+ *   [3] output_token_account (sovereign WGOR ATA), [4] input_vault,
+ *   [5] output_vault, [6] observation_state, [7-8+] tick_arrays
+ */
+export async function buildSwapRecoveryTokensTx(
+  program: SovereignLiquidityProgram,
+  payer: PublicKey,
+  sovereignId: bigint | number,
+  connection: Connection,
+): Promise<Transaction> {
+  const [protocolStatePDA] = getProtocolStatePDA(program.programId);
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [permanentLockPDA] = getPermanentLockPDA(sovereignPDA, program.programId);
+  const [feeVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
+  const [recoveryTokenVaultPDA] = getTokenVaultPDA(sovereignPDA, program.programId);
+
+  // Fetch sovereign to get token mint and amm config
+  const sovereign = await fetchSovereign(program, sovereignPDA);
+  const tokenMint = new PublicKey(sovereign.tokenMint);
+  const ammConfig = new PublicKey(sovereign.ammConfig);
+
+  // Fetch permanent lock to get pool state
+  const lockAccount = await (program.account as any).permanentLock.fetch(permanentLockPDA);
+  const poolState = new PublicKey(lockAccount.poolState);
+
+  // Sort mints for canonical ordering
+  const { mint0, mint1, wgorIs0 } = sortMints(WGOR_MINT, tokenMint);
+
+  // SAMM PDAs
+  const [sammVault0] = getSammPoolVaultPDA(poolState, mint0);
+  const [sammVault1] = getSammPoolVaultPDA(poolState, mint1);
+  const [observationState] = getSammObservationPDA(poolState);
+
+  // Determine input/output based on which mint is the sovereign token
+  // We're swapping sovereign token → WGOR
+  const inputVault = wgorIs0 ? sammVault1 : sammVault0;   // token vault in SAMM
+  const outputVault = wgorIs0 ? sammVault0 : sammVault1;  // WGOR vault in SAMM
+
+  // Sovereign PDA's WGOR ATA (legacy SPL Token since WGOR = native wrapped SOL)
+  const sovereignWgorAta = getAssociatedTokenAddressSync(
+    WGOR_MINT,
+    sovereignPDA,
+    true, // allowOwnerOffCurve (PDA)
+    TOKEN_PROGRAM_ID,
+  );
+
+  // Pre-instructions: ensure sovereign WGOR ATA exists
+  const tx = new Transaction();
+  tx.add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      payer,
+      sovereignWgorAta,
+      sovereignPDA,
+      WGOR_MINT,
+      TOKEN_PROGRAM_ID,
+    ),
+  );
+
+  // Tick arrays for the swap (covering current price range)
+  // For a full-range pool, we need tick arrays covering the current tick
+  const tickArrayLowerStart = getTickArrayStartIndex(MIN_TICK);
+  const tickArrayUpperStart = getTickArrayStartIndex(MAX_TICK);
+  const [tickArrayLower] = getSammTickArrayPDA(poolState, tickArrayLowerStart);
+  const [tickArrayUpper] = getSammTickArrayPDA(poolState, tickArrayUpperStart);
+  const [tickArrayBitmapExtension] = getSammTickArrayBitmapPDA(poolState);
+
+  // Build remaining accounts for SAMM swap CPI
+  const remainingAccounts = [
+    { pubkey: ammConfig, isWritable: false, isSigner: false },               // [0] amm_config
+    { pubkey: poolState, isWritable: true, isSigner: false },                // [1] pool_state
+    { pubkey: recoveryTokenVaultPDA, isWritable: true, isSigner: false },    // [2] input_token_account
+    { pubkey: sovereignWgorAta, isWritable: true, isSigner: false },         // [3] output_token_account
+    { pubkey: inputVault, isWritable: true, isSigner: false },               // [4] input_vault
+    { pubkey: outputVault, isWritable: true, isSigner: false },              // [5] output_vault
+    { pubkey: observationState, isWritable: true, isSigner: false },         // [6] observation_state
+    { pubkey: TOKEN_2022_PROGRAM_ID, isWritable: false, isSigner: false },   // [7] token_program_2022
+    { pubkey: MEMO_PROGRAM_ID, isWritable: false, isSigner: false },         // [8] memo_program
+    { pubkey: tokenMint, isWritable: false, isSigner: false },               // [9] input_token_mint
+    { pubkey: WGOR_MINT, isWritable: false, isSigner: false },               // [10] output_token_mint
+    { pubkey: tickArrayLower, isWritable: true, isSigner: false },           // [11] tick_array_0
+    { pubkey: tickArrayUpper, isWritable: true, isSigner: false },           // [12] tick_array_1
+    { pubkey: tickArrayBitmapExtension, isWritable: true, isSigner: false }, // [13] tick_array_bitmap
+  ];
+
+  // Main instruction
+  const mainIx = await (program.methods as any)
+    .swapRecoveryTokens()
+    .accounts({
+      payer,
+      protocolState: protocolStatePDA,
+      sovereign: sovereignPDA,
+      permanentLock: permanentLockPDA,
+      tokenMint,
+      recoveryTokenVault: recoveryTokenVaultPDA,
+      sovereignWgorAta,
+      feeVault: feeVaultPDA,
+      sammProgram: SAMM_PROGRAM_ID,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    })
+    .remainingAccounts(remainingAccounts)
+    .transaction();
+
+  tx.add(mainIx);
   return tx;
 }
 
@@ -1298,4 +1656,185 @@ export async function buildClaimUnwindTx(
     .transaction();
 
   return tx;
+}
+
+// ============================================================
+// Pending Fee Calculations (read-only)
+// ============================================================
+
+/**
+ * SAMM PoolState fee-related offsets (after 8-byte discriminator):
+ *   273: padding_3 (u16)
+ *   275: padding_4 (u16)
+ *   277-292: fee_growth_global_0_x64 (u128 LE)
+ *   293-308: fee_growth_global_1_x64 (u128 LE)
+ *
+ * SAMM PersonalPositionState offsets (after 8-byte discriminator):
+ *   9:     bump (u8)
+ *   10-41: nft_mint (Pubkey)
+ *   42-73: pool_id (Pubkey)
+ *   74-77: tick_lower_index (i32)
+ *   78-81: tick_upper_index (i32)
+ *   82-97: liquidity (u128 LE)
+ *   98-113:  fee_growth_inside_0_last_x64 (u128 LE)
+ *   114-129: fee_growth_inside_1_last_x64 (u128 LE)
+ *   130-137: token_fees_owed_0 (u64 LE)
+ *   138-145: token_fees_owed_1 (u64 LE)
+ */
+
+/** Read a u128 (little-endian) from a Buffer as BigInt */
+function readU128LE(buf: Buffer, offset: number): bigint {
+  const lo = buf.readBigUInt64LE(offset);
+  const hi = buf.readBigUInt64LE(offset + 8);
+  return (hi << 64n) | lo;
+}
+
+/** Read a u64 (little-endian) from a Buffer as BigInt */
+function readU64LE(buf: Buffer, offset: number): bigint {
+  return buf.readBigUInt64LE(offset);
+}
+
+export interface PendingHarvestFees {
+  /** Pending GOR fees in lamports (the WGOR side) */
+  pendingGorLamports: bigint;
+  /** Pending token fees in smallest units (the sovereign token side) */
+  pendingTokenUnits: bigint;
+  /** Pending GOR as a number (for display) */
+  pendingGor: number;
+  /** Pending tokens as a number (for display, adjusted by decimals) */
+  pendingTokens: number;
+  /** Which mint is token 0 vs 1 */
+  wgorIs0: boolean;
+}
+
+/**
+ * Calculate pending (unharvested) fees sitting in the SAMM position.
+ * Pure read — two getAccountInfo calls, client-side math.
+ *
+ * For full-range positions: fee_growth_inside = fee_growth_global
+ * so pending_i = (global_i - last_i) * liquidity / 2^64 + owed_i
+ */
+export async function fetchPendingHarvestFees(
+  connection: Connection,
+  poolState: PublicKey,
+  positionMint: PublicKey,
+  tokenMint: PublicKey,
+  tokenDecimals: number,
+): Promise<PendingHarvestFees | null> {
+  const [personalPositionPDA] = getSammPersonalPositionPDA(positionMint);
+
+  // Fetch both accounts in parallel
+  const [poolInfo, positionInfo] = await Promise.all([
+    connection.getAccountInfo(poolState),
+    connection.getAccountInfo(personalPositionPDA),
+  ]);
+
+  if (!poolInfo || !positionInfo) return null;
+
+  const poolData = poolInfo.data as Buffer;
+  const posData = positionInfo.data as Buffer;
+
+  if (poolData.length < 310 || posData.length < 146) return null;
+
+  // Parse pool state fee growth globals
+  const feeGrowthGlobal0 = readU128LE(poolData, 277);
+  const feeGrowthGlobal1 = readU128LE(poolData, 293);
+
+  // Parse personal position
+  // Layout after 8-byte discriminator:
+  //   8: bump (1), 9-40: nft_mint (32), 41-72: pool_id (32),
+  //   73-76: tick_lower (4), 77-80: tick_upper (4),
+  //   81-96: liquidity (16), 97-112: fee_growth_inside_0_last (16),
+  //   113-128: fee_growth_inside_1_last (16),
+  //   129-136: token_fees_owed_0 (8), 137-144: token_fees_owed_1 (8)
+  const liquidity = readU128LE(posData, 81);
+  const feeGrowthInside0Last = readU128LE(posData, 97);
+  const feeGrowthInside1Last = readU128LE(posData, 113);
+  const tokenFeesOwed0 = readU64LE(posData, 129);
+  const tokenFeesOwed1 = readU64LE(posData, 137);
+
+  // For full-range: fee_growth_inside = fee_growth_global
+  // pending = (global - last) * liquidity / 2^64 + owed
+  const Q64 = 1n << 64n;
+
+  const delta0 = feeGrowthGlobal0 >= feeGrowthInside0Last
+    ? feeGrowthGlobal0 - feeGrowthInside0Last
+    : 0n;
+  const delta1 = feeGrowthGlobal1 >= feeGrowthInside1Last
+    ? feeGrowthGlobal1 - feeGrowthInside1Last
+    : 0n;
+
+  const pending0 = (delta0 * liquidity) / Q64 + tokenFeesOwed0;
+  const pending1 = (delta1 * liquidity) / Q64 + tokenFeesOwed1;
+
+  // Determine which is GOR vs token
+  const { wgorIs0 } = sortMints(WGOR_MINT, tokenMint);
+
+  const pendingGorLamports = wgorIs0 ? pending0 : pending1;
+  const pendingTokenUnits = wgorIs0 ? pending1 : pending0;
+
+  return {
+    pendingGorLamports,
+    pendingTokenUnits,
+    pendingGor: Number(pendingGorLamports) / 1_000_000_000,
+    pendingTokens: Number(pendingTokenUnits) / (10 ** tokenDecimals),
+    wgorIs0,
+  };
+}
+
+export interface PendingClaimableFees {
+  /** Total claimable GOR in lamports */
+  claimableLamports: bigint;
+  /** Claimable GOR as a number */
+  claimableGor: number;
+  /** Fee vault total balance in lamports */
+  vaultBalanceLamports: bigint;
+  /** Fee vault balance as GOR */
+  vaultBalanceGor: number;
+}
+
+/**
+ * Calculate how much GOR a depositor can claim from the fee vault.
+ * claimable = (totalFeesCollected * depositAmount / totalDeposited) - feesClaimed
+ *
+ * Pure read — sovereign state, deposit record, and fee vault balance.
+ */
+export async function fetchPendingClaimableFees(
+  connection: Connection,
+  program: SovereignLiquidityProgram,
+  sovereignId: bigint | number,
+  depositor: PublicKey,
+): Promise<PendingClaimableFees | null> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [feeVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
+
+  // Fetch all in parallel
+  const [sovereign, depositRecord, vaultBalance] = await Promise.all([
+    fetchSovereignById(program, sovereignId),
+    fetchDepositRecord(program, sovereignPDA, depositor),
+    connection.getBalance(feeVaultPDA),
+  ]);
+
+  if (!sovereign || !depositRecord) return null;
+
+  const totalFeesCollected = BigInt(sovereign.totalFeesCollected.toString());
+  const depositAmount = BigInt(depositRecord.amount.toString());
+  const totalDeposited = BigInt(sovereign.totalDeposited.toString());
+  const feesClaimed = BigInt(depositRecord.feesClaimed.toString());
+
+  if (totalDeposited === 0n) return null;
+
+  // Same formula as on-chain: share_bps = amount * 10000 / totalDeposited
+  // total_share = totalFeesCollected * share_bps / 10000
+  // claimable = total_share - feesClaimed
+  const shareBps = (depositAmount * 10000n) / totalDeposited;
+  const totalShare = (totalFeesCollected * shareBps) / 10000n;
+  const claimable = totalShare > feesClaimed ? totalShare - feesClaimed : 0n;
+
+  return {
+    claimableLamports: claimable,
+    claimableGor: Number(claimable) / 1_000_000_000,
+    vaultBalanceLamports: BigInt(vaultBalance),
+    vaultBalanceGor: vaultBalance / 1_000_000_000,
+  };
 }

@@ -11,6 +11,9 @@ import {
   buildDepositTx, 
   buildWithdrawTx, 
   buildClaimDepositorFeesTx,
+  buildClaimFeesTx,
+  buildHarvestTransferFeesTx,
+  buildSwapRecoveryTokensTx,
   buildCreateSovereignTx,
   buildCreateTokenTx,
   buildFinalizeCreatePoolTx,
@@ -308,19 +311,28 @@ export function useClaimDepositorFees() {
 
   return useMutation({
     mutationFn: async ({ 
-      sovereignId 
+      sovereignId,
+      originalDepositor,
+      nftMint,
     }: { 
       sovereignId: string | number;
+      originalDepositor: string;
+      nftMint: string;
     }): Promise<TransactionResult> => {
       if (!program || !publicKey || !signTransaction) {
         throw new Error('Wallet not connected');
       }
 
+      const originalDepositorKey = new PublicKey(originalDepositor);
+      const nftMintKey = new PublicKey(nftMint);
+
       // Build the transaction
       const tx = await buildClaimDepositorFeesTx(
         program,
         publicKey,
-        BigInt(sovereignId)
+        originalDepositorKey,
+        BigInt(sovereignId),
+        nftMintKey
       );
 
       // Get recent blockhash
@@ -718,6 +730,176 @@ export function useMintGenesisNft() {
           )
         });
       }
+    },
+  });
+}
+
+/**
+ * Hook to harvest fees from the SAMM LP position (step 1 of fee flow).
+ * This collects trading fees from the SAMM pool and deposits them into the fee vault.
+ * Anyone can call this — no NFT or deposit required.
+ */
+export function useClaimFees() {
+  const program = useProgram();
+  const { publicKey, signTransaction, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sovereignId,
+      tokenMint,
+    }: {
+      sovereignId: string | number;
+      tokenMint: string;
+    }): Promise<TransactionResult> => {
+      if (!program || !publicKey || !signTransaction) {
+        throw new Error('Wallet not connected');
+      }
+
+      const tokenMintKey = new PublicKey(tokenMint);
+
+      // Build the transaction (includes SAMM CPI remaining accounts)
+      const tx = await buildClaimFeesTx(
+        program,
+        publicKey,
+        BigInt(sovereignId),
+        tokenMintKey,
+        connection,
+      );
+
+      // Get recent blockhash
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      // Send transaction
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      // Wait for confirmation
+      await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+    },
+  });
+}
+
+/**
+ * Hook to harvest Token-2022 transfer fees from token accounts.
+ * Routes fees based on FeeMode:
+ *   - CreatorRevenue: → creator's token account
+ *   - RecoveryBoost/FairLaunch during Recovery: → recovery token vault
+ *   - RecoveryBoost after Recovery: → creator's token account
+ * Anyone can call this — permissionless.
+ */
+export function useHarvestTransferFees() {
+  const program = useProgram();
+  const { publicKey, signTransaction, sendTransaction } = useWallet();
+  const queryClient = useQueryClient();
+  const { connection } = useConnection();
+
+  return useMutation({
+    mutationFn: async ({
+      sovereignId,
+      sourceTokenAccounts,
+    }: {
+      sovereignId: string | number;
+      sourceTokenAccounts: string[];
+    }): Promise<TransactionResult> => {
+      if (!program || !publicKey || !signTransaction) {
+        throw new Error('Wallet not connected');
+      }
+
+      const sourceKeys = sourceTokenAccounts.map((a) => new PublicKey(a));
+
+      const tx = await buildHarvestTransferFeesTx(
+        program,
+        publicKey,
+        BigInt(sovereignId),
+        sourceKeys,
+      );
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+    },
+  });
+}
+
+/**
+ * Hook to swap recovery tokens (Token-2022 sell fees) to SOL via SAMM.
+ * Converts tokens in recovery_token_vault → SOL in fee_vault for investors.
+ * Only callable during Recovery with RecoveryBoost or FairLaunch.
+ * Permissionless — anyone can call.
+ */
+export function useSwapRecoveryTokens() {
+  const program = useProgram();
+  const { publicKey, signTransaction, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sovereignId,
+    }: {
+      sovereignId: string | number;
+    }): Promise<TransactionResult> => {
+      if (!program || !publicKey || !signTransaction) {
+        throw new Error('Wallet not connected');
+      }
+
+      const tx = await buildSwapRecoveryTokensTx(
+        program,
+        publicKey,
+        BigInt(sovereignId),
+        connection,
+      );
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
     },
   });
 }

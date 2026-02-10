@@ -2,8 +2,9 @@
 
 import { useState, useMemo } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { useSovereigns, useSovereign, useDepositRecord } from '@/hooks/useSovereign';
+import { useSovereigns, useSovereign, useDepositRecord, usePendingHarvestFees, usePendingClaimableFees } from '@/hooks/useSovereign';
 import { useProposals, useVoteRecord, useProposeUnwind, useCastVote, useFinalizeVote, useClaimUnwind, getProposalStatusString } from '@/hooks/useGovernance';
+import { useClaimDepositorFees, useClaimFees } from '@/hooks/useTransactions';
 import { useTokenImage } from '@/hooks/useTokenImage';
 import { StatusBadge } from '@/components/StatusBadge';
 import { config, LAMPORTS_PER_GOR } from '@/lib/config';
@@ -321,6 +322,10 @@ export default function GovernancePage() {
   const { data: proposals, isLoading: proposalsLoading } = useProposals(selectedSovereignId ?? undefined);
   const { data: imageUrl } = useTokenImage(sovereign?.metadataUri);
   const proposeUnwind = useProposeUnwind();
+  const claimFees = useClaimDepositorFees();
+  const harvestFees = useClaimFees();
+  const { data: pendingHarvest } = usePendingHarvestFees(selectedSovereignId ?? undefined);
+  const { data: pendingClaim } = usePendingClaimableFees(selectedSovereignId ?? undefined);
 
   // Auth checks
   const hasDeposit = !!depositRecord;
@@ -673,6 +678,105 @@ export default function GovernancePage() {
               </div>
             )}
           </div>
+
+          {/* Harvest Fees from SAMM */}
+          {connected && (sovereign?.status === 'Recovery' || sovereign?.status === 'Active') && sovereign?.tokenMint && (
+            <div className="card card-clean p-4 mb-4">
+              <h3 className="h3 text-white mb-2">Harvest Fees</h3>
+              <p className="text-[var(--muted)] text-sm mb-3">
+                Collect accumulated trading fees from the SAMM pool into the fee vault. Anyone can call this.
+              </p>
+              {pendingHarvest && (pendingHarvest.pendingGor > 0 || pendingHarvest.pendingTokens > 0) && (
+                <div className="flex items-center gap-3 text-xs mb-3">
+                  <span className="text-[var(--slime)] font-medium">Pending:</span>
+                  {pendingHarvest.pendingGor > 0 && (
+                    <span className="text-white font-medium">{pendingHarvest.pendingGor.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR</span>
+                  )}
+                  {pendingHarvest.pendingGor > 0 && pendingHarvest.pendingTokens > 0 && (
+                    <span className="text-[var(--muted)]">+</span>
+                  )}
+                  {pendingHarvest.pendingTokens > 0 && (
+                    <span className="text-white font-medium">{pendingHarvest.pendingTokens.toLocaleString(undefined, { maximumFractionDigits: 2 })} {sovereign?.tokenSymbol || 'tokens'}</span>
+                  )}
+                </div>
+              )}
+              {sovereign && (
+                <div className="flex items-center gap-3 text-xs text-[var(--muted)] mb-3">
+                  <span>Total Recovered: <span className="text-white font-medium">{sovereign.totalRecoveredGor.toLocaleString()} GOR</span></span>
+                  <span>·</span>
+                  <span>Recovery Target: <span className="text-white font-medium">{sovereign.recoveryTargetGor.toLocaleString()} GOR</span></span>
+                </div>
+              )}
+              <button
+                onClick={async () => {
+                  if (!selectedSovereignId || !sovereign?.tokenMint) return;
+                  try {
+                    await harvestFees.mutateAsync({
+                      sovereignId: selectedSovereignId,
+                      tokenMint: sovereign.tokenMint,
+                    });
+                  } catch (err: any) {
+                    console.error('Harvest fees failed:', err);
+                  }
+                }}
+                disabled={harvestFees.isPending}
+                className="btn-money px-6 py-2"
+              >
+                {harvestFees.isPending ? 'Harvesting...' : 'Harvest Fees from Pool'}
+              </button>
+              {harvestFees.error && (
+                <p className="text-red-400 text-sm mt-2">{(harvestFees.error as Error).message}</p>
+              )}
+              {harvestFees.isSuccess && (
+                <p className="text-[var(--slime)] text-sm mt-2">Fees harvested successfully! You can now claim your share below.</p>
+              )}
+            </div>
+          )}
+
+          {/* Claim Fees */}
+          {connected && hasDeposit && hasNft && (sovereign?.status === 'Recovery' || sovereign?.status === 'Active') && (
+            <div className="card card-clean p-4 mb-4">
+              <h3 className="h3 text-white mb-2">Claim Fees</h3>
+              <p className="text-[var(--muted)] text-sm mb-3">
+                Claim your share of accumulated trading fees from the SAMM pool.
+              </p>
+              {pendingClaim && pendingClaim.claimableGor > 0 && (
+                <div className="flex items-center gap-3 text-xs mb-3">
+                  <span className="text-[var(--slime)] font-medium">Claimable:</span>
+                  <span className="text-white font-medium">{pendingClaim.claimableGor.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR</span>
+                </div>
+              )}
+              {depositRecord && (
+                <div className="flex items-center gap-3 text-xs text-[var(--muted)] mb-3">
+                  <span>Fees Claimed: <span className="text-white font-medium">{depositRecord.feesClaimedGor.toLocaleString()} GOR</span></span>
+                </div>
+              )}
+              <button
+                onClick={async () => {
+                  if (!selectedSovereignId) return;
+                  try {
+                    await claimFees.mutateAsync({ 
+                      sovereignId: selectedSovereignId,
+                      originalDepositor: originalDepositor!,
+                      nftMint: nftMint!,
+                    });
+                  } catch (err: any) {
+                    console.error('Claim fees failed:', err);
+                  }
+                }}
+                disabled={claimFees.isPending || !originalDepositor || !nftMint}
+                className="btn-money px-6 py-2"
+              >
+                {claimFees.isPending ? 'Claiming...' : 'Claim Fees'}
+              </button>
+              {claimFees.error && (
+                <p className="text-red-400 text-sm mt-2">{(claimFees.error as Error).message}</p>
+              )}
+              {claimFees.isSuccess && (
+                <p className="text-[var(--slime)] text-sm mt-2">Fees claimed successfully!</p>
+              )}
+            </div>
+          )}
 
           {/* Propose Unwind — only show when no active/passed proposal exists */}
           {connected && hasNft && !hasActiveOrPassedProposal && (

@@ -14,6 +14,8 @@ export {
   useSovereign, 
   useDepositRecord, 
   useWalletDeposits,
+  usePendingHarvestFees,
+  usePendingClaimableFees,
   QUERY_KEYS,
 } from './useSovereign';
 
@@ -22,6 +24,9 @@ export {
   useDeposit, 
   useWithdraw, 
   useClaimDepositorFees,
+  useClaimFees,
+  useHarvestTransferFees,
+  useSwapRecoveryTokens,
   useMintGenesisNft,
 } from './useTransactions';
 
