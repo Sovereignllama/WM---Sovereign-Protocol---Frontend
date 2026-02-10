@@ -15,9 +15,11 @@ import {
   getFeeModeString,
   fetchPendingHarvestFees,
   fetchPendingClaimableFees,
+  fetchTokenFeeStats,
   SovereignLiquidityProgram,
 } from '@/lib/program/client';
-import { getProtocolStatePDA, getSovereignPDA, getDepositRecordPDA } from '@/lib/program/pdas';
+import { getProtocolStatePDA, getSovereignPDA, getDepositRecordPDA, getTokenVaultPDA } from '@/lib/program/pdas';
+import { PublicKey } from '@solana/web3.js';
 import { PublicKey } from '@solana/web3.js';
 import { config, LAMPORTS_PER_GOR } from '@/lib/config';
 
@@ -31,6 +33,7 @@ export const QUERY_KEYS = {
   walletDeposits: (wallet: string) => ['walletDeposits', wallet],
   pendingHarvestFees: (sovereignId: string) => ['pendingHarvestFees', sovereignId],
   pendingClaimableFees: (sovereignId: string, depositor: string) => ['pendingClaimableFees', sovereignId, depositor],
+  tokenFeeStats: (sovereignId: string) => ['tokenFeeStats', sovereignId],
 } as const;
 
 /**
@@ -360,5 +363,32 @@ export function usePendingClaimableFees(sovereignId: string | number | undefined
     staleTime: 10_000,
     refetchInterval: 30_000,
     enabled: !!program && !!sovereignId && !!publicKey,
+  });
+}
+
+/**
+ * Hook to fetch Token-2022 transfer fee stats for a sovereign.
+ * Shows vault balance, harvestable withheld fees, and fee rate.
+ */
+export function useTokenFeeStats(sovereignId: string | number | undefined) {
+  const program = useReadOnlyProgram();
+  const { connection } = useConnection();
+  const sovereign = useSovereign(sovereignId);
+
+  return useQuery({
+    queryKey: QUERY_KEYS.tokenFeeStats(sovereignId?.toString() ?? ''),
+    queryFn: async () => {
+      if (!program || !sovereignId || !sovereign.data) return null;
+
+      const tokenMint = new PublicKey(sovereign.data.tokenMint);
+      const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+
+      return fetchTokenFeeStats(connection, tokenMint, sovereignPDA, program.programId);
+    },
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    enabled: !!program && !!sovereignId && !!sovereign.data &&
+      sovereign.data.sovereignType === 'TokenLaunch' &&
+      (sovereign.data.status === 'Recovery' || sovereign.data.status === 'Active'),
   });
 }

@@ -2,9 +2,9 @@
 
 import { useState, useMemo } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { useSovereigns, useSovereign, useDepositRecord, usePendingHarvestFees, usePendingClaimableFees } from '@/hooks/useSovereign';
+import { useSovereigns, useSovereign, useDepositRecord, usePendingHarvestFees, usePendingClaimableFees, useTokenFeeStats } from '@/hooks/useSovereign';
 import { useProposals, useVoteRecord, useProposeUnwind, useCastVote, useFinalizeVote, useClaimUnwind, getProposalStatusString } from '@/hooks/useGovernance';
-import { useClaimDepositorFees, useClaimFees } from '@/hooks/useTransactions';
+import { useClaimDepositorFees, useClaimFees, useHarvestTransferFees, useSwapRecoveryTokens } from '@/hooks/useTransactions';
 import { useTokenImage } from '@/hooks/useTokenImage';
 import { StatusBadge } from '@/components/StatusBadge';
 import { config, LAMPORTS_PER_GOR } from '@/lib/config';
@@ -324,8 +324,11 @@ export default function GovernancePage() {
   const proposeUnwind = useProposeUnwind();
   const claimFees = useClaimDepositorFees();
   const harvestFees = useClaimFees();
+  const harvestTransferFees = useHarvestTransferFees();
+  const swapRecoveryTokens = useSwapRecoveryTokens();
   const { data: pendingHarvest } = usePendingHarvestFees(selectedSovereignId ?? undefined);
   const { data: pendingClaim } = usePendingClaimableFees(selectedSovereignId ?? undefined);
+  const { data: tokenFeeStats } = useTokenFeeStats(selectedSovereignId ?? undefined);
 
   // Auth checks
   const hasDeposit = !!depositRecord;
@@ -774,6 +777,93 @@ export default function GovernancePage() {
               )}
               {claimFees.isSuccess && (
                 <p className="text-[var(--slime)] text-sm mt-2">Fees claimed successfully!</p>
+              )}
+            </div>
+          )}
+
+          {/* Token-2022 Transfer Fee Stats */}
+          {connected && (sovereign?.status === 'Recovery' || sovereign?.status === 'Active') && tokenFeeStats && (
+            <div className="card card-clean p-4 mb-4">
+              <h3 className="h3 text-white mb-2">Token Transfer Fees</h3>
+              <p className="text-[var(--muted)] text-sm mb-3">
+                Token-2022 transfer fees ({(tokenFeeStats.transferFeeBps / 100).toFixed(1)}%) are withheld on every token transfer. 
+                Harvest them into the vault, then swap to GOR for investor recovery.
+              </p>
+
+              {/* Stats */}
+              <div className="space-y-2 mb-4">
+                <div className="flex justify-between text-sm">
+                  <span className="text-[var(--muted)]">Harvestable (withheld)</span>
+                  <span className={`font-medium ${tokenFeeStats.totalHarvestable > 0 ? 'text-[var(--slime)]' : 'text-white'}`}>
+                    {tokenFeeStats.totalHarvestable.toLocaleString(undefined, { maximumFractionDigits: 4 })} {sovereign?.tokenSymbol || 'tokens'}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-[var(--muted)]">Vault Balance (harvested)</span>
+                  <span className={`font-medium ${tokenFeeStats.vaultBalance > 0 ? 'text-[var(--money-green)]' : 'text-white'}`}>
+                    {tokenFeeStats.vaultBalance.toLocaleString(undefined, { maximumFractionDigits: 4 })} {sovereign?.tokenSymbol || 'tokens'}
+                  </span>
+                </div>
+                {tokenFeeStats.accountsWithFees > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[var(--muted)]">Accounts with fees</span>
+                    <span className="text-white font-medium">{tokenFeeStats.accountsWithFees}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap gap-3">
+                {/* Harvest Transfer Fees */}
+                <button
+                  onClick={async () => {
+                    if (!selectedSovereignId || !tokenFeeStats.harvestableAccounts.length) return;
+                    try {
+                      await harvestTransferFees.mutateAsync({
+                        sovereignId: selectedSovereignId,
+                        sourceTokenAccounts: tokenFeeStats.harvestableAccounts,
+                      });
+                    } catch (err: any) {
+                      console.error('Harvest transfer fees failed:', err);
+                    }
+                  }}
+                  disabled={harvestTransferFees.isPending || tokenFeeStats.totalHarvestable === 0}
+                  className="btn-money px-5 py-2 text-sm"
+                >
+                  {harvestTransferFees.isPending ? 'Harvesting...' : `Harvest Fees (${tokenFeeStats.totalHarvestable.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${sovereign?.tokenSymbol || ''})`}
+                </button>
+
+                {/* Swap Recovery Tokens */}
+                <button
+                  onClick={async () => {
+                    if (!selectedSovereignId) return;
+                    try {
+                      await swapRecoveryTokens.mutateAsync({
+                        sovereignId: selectedSovereignId,
+                      });
+                    } catch (err: any) {
+                      console.error('Swap recovery tokens failed:', err);
+                    }
+                  }}
+                  disabled={swapRecoveryTokens.isPending || tokenFeeStats.vaultBalance === 0}
+                  className="btn-money px-5 py-2 text-sm"
+                >
+                  {swapRecoveryTokens.isPending ? 'Swapping...' : `Swap to GOR (${tokenFeeStats.vaultBalance.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${sovereign?.tokenSymbol || ''})`}
+                </button>
+              </div>
+
+              {/* Status messages */}
+              {harvestTransferFees.error && (
+                <p className="text-red-400 text-sm mt-2">{(harvestTransferFees.error as Error).message}</p>
+              )}
+              {harvestTransferFees.isSuccess && (
+                <p className="text-[var(--slime)] text-sm mt-2">Transfer fees harvested into vault! Now swap them to GOR.</p>
+              )}
+              {swapRecoveryTokens.error && (
+                <p className="text-red-400 text-sm mt-2">{(swapRecoveryTokens.error as Error).message}</p>
+              )}
+              {swapRecoveryTokens.isSuccess && (
+                <p className="text-[var(--slime)] text-sm mt-2">Tokens swapped to GOR and deposited into fee vault!</p>
               )}
             </div>
           )}

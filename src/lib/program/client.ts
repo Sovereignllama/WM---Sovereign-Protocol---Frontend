@@ -1,6 +1,6 @@
 import { Program, AnchorProvider, BN, Idl } from '@coral-xyz/anchor';
 import { Connection, PublicKey, Transaction, SystemProgram, Keypair, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
-import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, createAssociatedTokenAccountIdempotentInstruction } from '@solana/spl-token';
+import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, createAssociatedTokenAccountIdempotentInstruction, getAccount, getTransferFeeAmount, getMint, getTransferFeeConfig } from '@solana/spl-token';
 import { config } from '../config';
 import { 
   getProtocolStatePDA, 
@@ -1246,10 +1246,12 @@ export async function buildHarvestTransferFeesTx(
  * Only callable during Recovery with RecoveryBoost or FairLaunch fee mode.
  * Permissionless — anyone can call this to advance recovery.
  *
- * Remaining accounts (9) = SAMM swap accounts:
- *   [0] amm_config, [1] pool_state, [2] input_token_account (recovery vault),
- *   [3] output_token_account (sovereign WGOR ATA), [4] input_vault,
- *   [5] output_vault, [6] observation_state, [7-8+] tick_arrays
+ * Remaining accounts (8+) = SAMM swap CPI accounts (excluding input_token_account,
+ *   output_token_account, and input_vault_mint which are in named accounts):
+ *   [0] amm_config, [1] pool_state, [2] input_vault (SAMM),
+ *   [3] output_vault (SAMM), [4] observation_state,
+ *   [5] token_program_2022, [6] memo_program, [7] wgor_mint,
+ *   [8..N] tick_arrays
  */
 export async function buildSwapRecoveryTokensTx(
   program: SovereignLiquidityProgram,
@@ -1314,21 +1316,30 @@ export async function buildSwapRecoveryTokensTx(
   const [tickArrayBitmapExtension] = getSammTickArrayBitmapPDA(poolState);
 
   // Build remaining accounts for SAMM swap CPI
+  // NOTE: input_token_account, output_token_account, and input_vault_mint are
+  // already in named Anchor accounts (recoveryTokenVault, sovereignWgorAta, tokenMint),
+  // so they must NOT be duplicated here. Indices must match the handler:
+  //   ctx.remaining_accounts[0] = amm_config
+  //   ctx.remaining_accounts[1] = pool_state
+  //   ctx.remaining_accounts[2] = input_vault (SAMM token vault)
+  //   ctx.remaining_accounts[3] = output_vault (SAMM WGOR vault)
+  //   ctx.remaining_accounts[4] = observation_state
+  //   ctx.remaining_accounts[5] = token_program_2022
+  //   ctx.remaining_accounts[6] = memo_program
+  //   ctx.remaining_accounts[7] = wgor_mint (output_vault_mint)
+  //   ctx.remaining_accounts[8..N] = tick_arrays
   const remainingAccounts = [
     { pubkey: ammConfig, isWritable: false, isSigner: false },               // [0] amm_config
     { pubkey: poolState, isWritable: true, isSigner: false },                // [1] pool_state
-    { pubkey: recoveryTokenVaultPDA, isWritable: true, isSigner: false },    // [2] input_token_account
-    { pubkey: sovereignWgorAta, isWritable: true, isSigner: false },         // [3] output_token_account
-    { pubkey: inputVault, isWritable: true, isSigner: false },               // [4] input_vault
-    { pubkey: outputVault, isWritable: true, isSigner: false },              // [5] output_vault
-    { pubkey: observationState, isWritable: true, isSigner: false },         // [6] observation_state
-    { pubkey: TOKEN_2022_PROGRAM_ID, isWritable: false, isSigner: false },   // [7] token_program_2022
-    { pubkey: MEMO_PROGRAM_ID, isWritable: false, isSigner: false },         // [8] memo_program
-    { pubkey: tokenMint, isWritable: false, isSigner: false },               // [9] input_token_mint
-    { pubkey: WGOR_MINT, isWritable: false, isSigner: false },               // [10] output_token_mint
-    { pubkey: tickArrayLower, isWritable: true, isSigner: false },           // [11] tick_array_0
-    { pubkey: tickArrayUpper, isWritable: true, isSigner: false },           // [12] tick_array_1
-    { pubkey: tickArrayBitmapExtension, isWritable: true, isSigner: false }, // [13] tick_array_bitmap
+    { pubkey: inputVault, isWritable: true, isSigner: false },               // [2] input_vault (SAMM)
+    { pubkey: outputVault, isWritable: true, isSigner: false },              // [3] output_vault (SAMM)
+    { pubkey: observationState, isWritable: true, isSigner: false },         // [4] observation_state
+    { pubkey: TOKEN_2022_PROGRAM_ID, isWritable: false, isSigner: false },   // [5] token_program_2022
+    { pubkey: MEMO_PROGRAM_ID, isWritable: false, isSigner: false },         // [6] memo_program
+    { pubkey: WGOR_MINT, isWritable: false, isSigner: false },               // [7] output_vault_mint (WGOR)
+    { pubkey: tickArrayLower, isWritable: true, isSigner: false },           // [8] tick_array_0
+    { pubkey: tickArrayUpper, isWritable: true, isSigner: false },           // [9] tick_array_1
+    { pubkey: tickArrayBitmapExtension, isWritable: true, isSigner: false }, // [10] tick_array_bitmap
   ];
 
   // Main instruction
@@ -1837,4 +1848,101 @@ export async function fetchPendingClaimableFees(
     vaultBalanceLamports: BigInt(vaultBalance),
     vaultBalanceGor: vaultBalance / 1_000_000_000,
   };
+}
+
+// ============================================================
+// Token-2022 Transfer Fee Stats
+// ============================================================
+
+export interface TokenFeeStats {
+  /** Transfer fee in basis points (e.g. 100 = 1%) */
+  transferFeeBps: number;
+  /** Recovery token vault balance (already harvested, waiting to be swapped) */
+  vaultBalance: number;
+  /** Raw vault balance */
+  vaultBalanceRaw: bigint;
+  /** Total withheld fees across all token accounts (harvestable) */
+  totalHarvestable: number;
+  /** Raw harvestable amount */
+  totalHarvestableRaw: bigint;
+  /** Number of token accounts with withheld fees */
+  accountsWithFees: number;
+  /** List of token account pubkeys that have withheld fees (for passing to harvestTransferFees) */
+  harvestableAccounts: string[];
+  /** Token decimals */
+  decimals: number;
+}
+
+/**
+ * Fetch Token-2022 transfer fee stats for a sovereign:
+ *   - Vault balance (tokens already harvested into recovery_token_vault)
+ *   - Total harvestable (withheld fees sitting in individual token accounts)
+ *   - List of accounts with withheld fees (for calling harvestTransferFees)
+ */
+export async function fetchTokenFeeStats(
+  connection: Connection,
+  tokenMint: PublicKey,
+  sovereignPDA: PublicKey,
+  programId: PublicKey,
+): Promise<TokenFeeStats | null> {
+  try {
+    // Get mint info with transfer fee extension
+    const mintInfo = await getMint(connection, tokenMint, undefined, TOKEN_2022_PROGRAM_ID);
+    const feeConfig = getTransferFeeConfig(mintInfo);
+    const decimals = mintInfo.decimals;
+
+    if (!feeConfig) return null;
+
+    // Get active fee config
+    const epoch = await connection.getEpochInfo();
+    const activeFee = epoch.epoch >= Number(feeConfig.newerTransferFee.epoch)
+      ? feeConfig.newerTransferFee
+      : feeConfig.olderTransferFee;
+    const transferFeeBps = Number(activeFee.transferFeeBasisPoints);
+
+    // Get recovery_token_vault balance
+    const [tokenVaultPDA] = getTokenVaultPDA(sovereignPDA, programId);
+    let vaultBalanceRaw = 0n;
+    try {
+      const vaultAcct = await getAccount(connection, tokenVaultPDA, undefined, TOKEN_2022_PROGRAM_ID);
+      vaultBalanceRaw = vaultAcct.amount;
+    } catch {
+      // Vault may not exist yet
+    }
+
+    // Scan all token accounts for withheld fees
+    const largestAccounts = await connection.getTokenLargestAccounts(tokenMint);
+    let totalHarvestableRaw = 0n;
+    let accountsWithFees = 0;
+    const harvestableAccounts: string[] = [];
+
+    for (const acct of largestAccounts.value) {
+      try {
+        const tokenAcct = await getAccount(connection, acct.address, undefined, TOKEN_2022_PROGRAM_ID);
+        const withheld = getTransferFeeAmount(tokenAcct);
+        const withheldAmount = withheld?.withheldAmount || 0n;
+        if (withheldAmount > 0n) {
+          totalHarvestableRaw += withheldAmount;
+          accountsWithFees++;
+          harvestableAccounts.push(acct.address.toBase58());
+        }
+      } catch {
+        // Skip
+      }
+    }
+
+    const divisor = 10 ** decimals;
+    return {
+      transferFeeBps,
+      vaultBalance: Number(vaultBalanceRaw) / divisor,
+      vaultBalanceRaw,
+      totalHarvestable: Number(totalHarvestableRaw) / divisor,
+      totalHarvestableRaw,
+      accountsWithFees,
+      harvestableAccounts,
+      decimals,
+    };
+  } catch {
+    return null;
+  }
 }

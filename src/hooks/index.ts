@@ -16,6 +16,7 @@ export {
   useWalletDeposits,
   usePendingHarvestFees,
   usePendingClaimableFees,
+  useTokenFeeStats,
   QUERY_KEYS,
 } from './useSovereign';
 
