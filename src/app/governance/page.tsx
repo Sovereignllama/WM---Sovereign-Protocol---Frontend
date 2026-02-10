@@ -330,6 +330,11 @@ export default function GovernancePage() {
   const { data: pendingClaim } = usePendingClaimableFees(selectedSovereignId ?? undefined);
   const { data: tokenFeeStats } = useTokenFeeStats(selectedSovereignId ?? undefined);
 
+  // Collect-all fee state
+  const [collectAllStep, setCollectAllStep] = useState('');
+  const [collectAllError, setCollectAllError] = useState<string | null>(null);
+  const [collectAllDone, setCollectAllDone] = useState(false);
+
   // Auth checks
   const hasDeposit = !!depositRecord;
   const hasNft = depositRecord?.nftMinted === true;
@@ -363,7 +368,7 @@ export default function GovernancePage() {
       <div className="mb-6">
         <h1 className="h1 text-white mb-2">Governance</h1>
         <p className="text-[var(--muted)] text-sm">
-          Genesis NFT holders can propose and vote on sovereign unwind decisions.
+          $overeign NFT holders can propose and vote on sovereign unwind decisions.
         </p>
       </div>
 
@@ -645,13 +650,13 @@ export default function GovernancePage() {
                   You have no deposit in this sovereign.
                 </p>
                 <p className="text-xs text-[var(--muted)]">
-                  To participate in governance, you need a Genesis NFT. Deposit during bonding phase, then mint your NFT after finalization.
+                  To participate in governance, you need a $overeign NFT. Deposit during bonding phase, then mint your NFT after finalization.
                 </p>
               </div>
             ) : !hasNft ? (
               <div>
                 <p className="text-[var(--hazard-yellow)] text-sm mb-2">
-                  You have a deposit but your Genesis NFT has not been minted yet.
+                  You have a deposit but your $overeign NFT has not been minted yet.
                 </p>
                 <div className="flex items-center gap-3 text-xs text-[var(--muted)]">
                   <span>Deposit: <span className="text-white">{depositRecord?.amountGor.toLocaleString()} GOR</span></span>
@@ -669,7 +674,7 @@ export default function GovernancePage() {
             ) : (
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-[var(--money-green)] text-sm font-bold">Genesis NFT Active ✓</span>
+                  <span className="text-[var(--money-green)] text-sm font-bold">$overeign NFT Active ✓</span>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-[var(--muted)]">
                   <span>Voting Power: <span className="text-white font-bold">{depositRecord?.votingPowerPercent.toFixed(2)}%</span></span>
@@ -682,188 +687,163 @@ export default function GovernancePage() {
             )}
           </div>
 
-          {/* Harvest Fees from SAMM */}
+          {/* Fee Harvesting — combined SAMM fees + Token Transfer fees */}
           {connected && (sovereign?.status === 'Recovery' || sovereign?.status === 'Active') && sovereign?.tokenMint && (
             <div className="card card-clean p-4 mb-4">
-              <h3 className="h3 text-white mb-2">Harvest Fees</h3>
-              <p className="text-[var(--muted)] text-sm mb-3">
-                Collect accumulated trading fees from the SAMM pool into the fee vault. Anyone can call this.
+              <h3 className="h3 text-white mb-2">Fee Harvesting</h3>
+              <p className="text-[var(--muted)] text-sm mb-4">
+                Harvest all accumulated fees into the vault. One button runs all three transactions.
               </p>
-              {pendingHarvest && (pendingHarvest.pendingGor > 0 || pendingHarvest.pendingTokens > 0) && (
-                <div className="flex items-center gap-3 text-xs mb-3">
-                  <span className="text-[var(--slime)] font-medium">Pending:</span>
-                  {pendingHarvest.pendingGor > 0 && (
-                    <span className="text-white font-medium">{pendingHarvest.pendingGor.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR</span>
+
+              {/* SAMM Fees Breakdown */}
+              <div className="mb-4">
+                <div className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-2">SAMM Pool Fees</div>
+                <div className="space-y-1.5">
+                  {pendingHarvest && (pendingHarvest.pendingGor > 0 || pendingHarvest.pendingTokens > 0) && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-[var(--muted)]">Pending in Pool</span>
+                      <span className="text-[var(--slime)] font-medium">
+                        {pendingHarvest.pendingGor > 0 && `${pendingHarvest.pendingGor.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR`}
+                        {pendingHarvest.pendingGor > 0 && pendingHarvest.pendingTokens > 0 && ' + '}
+                        {pendingHarvest.pendingTokens > 0 && `${pendingHarvest.pendingTokens.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${sovereign?.tokenSymbol || 'tokens'}`}
+                      </span>
+                    </div>
                   )}
-                  {pendingHarvest.pendingGor > 0 && pendingHarvest.pendingTokens > 0 && (
-                    <span className="text-[var(--muted)]">+</span>
+                  {pendingClaim && pendingClaim.claimableGor > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-[var(--muted)]">Claimable (your share)</span>
+                      <span className="text-[var(--money-green)] font-medium">{pendingClaim.claimableGor.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR</span>
+                    </div>
                   )}
-                  {pendingHarvest.pendingTokens > 0 && (
-                    <span className="text-white font-medium">{pendingHarvest.pendingTokens.toLocaleString(undefined, { maximumFractionDigits: 2 })} {sovereign?.tokenSymbol || 'tokens'}</span>
+                  {depositRecord && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-[var(--muted)]">Previously Claimed</span>
+                      <span className="text-white font-medium">{depositRecord.feesClaimedGor.toLocaleString()} GOR</span>
+                    </div>
                   )}
                 </div>
-              )}
-              {sovereign && (
-                <div className="flex items-center gap-3 text-xs text-[var(--muted)] mb-3">
-                  <span>Total Recovered: <span className="text-white font-medium">{sovereign.totalRecoveredGor.toLocaleString()} GOR</span></span>
-                  <span>·</span>
-                  <span>Recovery Target: <span className="text-white font-medium">{sovereign.recoveryTargetGor.toLocaleString()} GOR</span></span>
+              </div>
+
+              {/* Token Transfer Fees Breakdown */}
+              {tokenFeeStats && (
+                <div className="mb-4">
+                  <div className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-2">Token Transfer Fees ({(tokenFeeStats.transferFeeBps / 100).toFixed(1)}%)</div>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-[var(--muted)]">Harvestable (withheld)</span>
+                      <span className={`font-medium ${tokenFeeStats.totalHarvestable > 0 ? 'text-[var(--slime)]' : 'text-white'}`}>
+                        {tokenFeeStats.totalHarvestable.toLocaleString(undefined, { maximumFractionDigits: 4 })} {sovereign?.tokenSymbol || 'tokens'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-[var(--muted)]">Vault Balance (ready to swap)</span>
+                      <span className={`font-medium ${tokenFeeStats.vaultBalance > 0 ? 'text-[var(--money-green)]' : 'text-white'}`}>
+                        {tokenFeeStats.vaultBalance.toLocaleString(undefined, { maximumFractionDigits: 4 })} {sovereign?.tokenSymbol || 'tokens'}
+                      </span>
+                    </div>
+                    {tokenFeeStats.accountsWithFees > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-[var(--muted)]">Accounts with fees</span>
+                        <span className="text-white font-medium">{tokenFeeStats.accountsWithFees}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
+
+              <div className="border-t border-[var(--border)] my-4" />
+
+              {/* Single Harvest All button */}
               <button
                 onClick={async () => {
                   if (!selectedSovereignId || !sovereign?.tokenMint) return;
+                  setCollectAllStep('');
+                  setCollectAllError(null);
+                  setCollectAllDone(false);
                   try {
+                    // Step 1: Harvest SAMM pool fees
+                    setCollectAllStep('Harvesting SAMM fees...');
                     await harvestFees.mutateAsync({
                       sovereignId: selectedSovereignId,
                       tokenMint: sovereign.tokenMint,
                     });
-                  } catch (err: any) {
-                    console.error('Harvest fees failed:', err);
-                  }
-                }}
-                disabled={harvestFees.isPending}
-                className="btn-money px-6 py-2"
-              >
-                {harvestFees.isPending ? 'Harvesting...' : 'Harvest Fees from Pool'}
-              </button>
-              {harvestFees.error && (
-                <p className="text-red-400 text-sm mt-2">{(harvestFees.error as Error).message}</p>
-              )}
-              {harvestFees.isSuccess && (
-                <p className="text-[var(--slime)] text-sm mt-2">Fees harvested successfully! You can now claim your share below.</p>
-              )}
-            </div>
-          )}
 
-          {/* Claim Fees */}
-          {connected && hasDeposit && hasNft && (sovereign?.status === 'Recovery' || sovereign?.status === 'Active') && (
-            <div className="card card-clean p-4 mb-4">
-              <h3 className="h3 text-white mb-2">Claim Fees</h3>
-              <p className="text-[var(--muted)] text-sm mb-3">
-                Claim your share of accumulated trading fees from the SAMM pool.
-              </p>
-              {pendingClaim && pendingClaim.claimableGor > 0 && (
-                <div className="flex items-center gap-3 text-xs mb-3">
-                  <span className="text-[var(--slime)] font-medium">Claimable:</span>
-                  <span className="text-white font-medium">{pendingClaim.claimableGor.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR</span>
-                </div>
-              )}
-              {depositRecord && (
-                <div className="flex items-center gap-3 text-xs text-[var(--muted)] mb-3">
-                  <span>Fees Claimed: <span className="text-white font-medium">{depositRecord.feesClaimedGor.toLocaleString()} GOR</span></span>
-                </div>
-              )}
-              <button
-                onClick={async () => {
-                  if (!selectedSovereignId) return;
-                  try {
-                    await claimFees.mutateAsync({ 
-                      sovereignId: selectedSovereignId,
-                      originalDepositor: originalDepositor!,
-                      nftMint: nftMint!,
-                    });
-                  } catch (err: any) {
-                    console.error('Claim fees failed:', err);
-                  }
-                }}
-                disabled={claimFees.isPending || !originalDepositor || !nftMint}
-                className="btn-money px-6 py-2"
-              >
-                {claimFees.isPending ? 'Claiming...' : 'Claim Fees'}
-              </button>
-              {claimFees.error && (
-                <p className="text-red-400 text-sm mt-2">{(claimFees.error as Error).message}</p>
-              )}
-              {claimFees.isSuccess && (
-                <p className="text-[var(--slime)] text-sm mt-2">Fees claimed successfully!</p>
-              )}
-            </div>
-          )}
-
-          {/* Token-2022 Transfer Fee Stats */}
-          {connected && (sovereign?.status === 'Recovery' || sovereign?.status === 'Active') && tokenFeeStats && (
-            <div className="card card-clean p-4 mb-4">
-              <h3 className="h3 text-white mb-2">Token Transfer Fees</h3>
-              <p className="text-[var(--muted)] text-sm mb-3">
-                Token-2022 transfer fees ({(tokenFeeStats.transferFeeBps / 100).toFixed(1)}%) are withheld on every token transfer. 
-                Harvest them into the vault, then swap to GOR for investor recovery.
-              </p>
-
-              {/* Stats */}
-              <div className="space-y-2 mb-4">
-                <div className="flex justify-between text-sm">
-                  <span className="text-[var(--muted)]">Harvestable (withheld)</span>
-                  <span className={`font-medium ${tokenFeeStats.totalHarvestable > 0 ? 'text-[var(--slime)]' : 'text-white'}`}>
-                    {tokenFeeStats.totalHarvestable.toLocaleString(undefined, { maximumFractionDigits: 4 })} {sovereign?.tokenSymbol || 'tokens'}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-[var(--muted)]">Vault Balance (harvested)</span>
-                  <span className={`font-medium ${tokenFeeStats.vaultBalance > 0 ? 'text-[var(--money-green)]' : 'text-white'}`}>
-                    {tokenFeeStats.vaultBalance.toLocaleString(undefined, { maximumFractionDigits: 4 })} {sovereign?.tokenSymbol || 'tokens'}
-                  </span>
-                </div>
-                {tokenFeeStats.accountsWithFees > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-[var(--muted)]">Accounts with fees</span>
-                    <span className="text-white font-medium">{tokenFeeStats.accountsWithFees}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-wrap gap-3">
-                {/* Harvest Transfer Fees */}
-                <button
-                  onClick={async () => {
-                    if (!selectedSovereignId || !tokenFeeStats.harvestableAccounts.length) return;
-                    try {
+                    // Step 2: Harvest Token-2022 transfer fees (if any)
+                    let didHarvestTokenFees = false;
+                    if (tokenFeeStats && tokenFeeStats.totalHarvestable > 0 && tokenFeeStats.harvestableAccounts.length > 0) {
+                      setCollectAllStep('Harvesting token transfer fees...');
                       await harvestTransferFees.mutateAsync({
                         sovereignId: selectedSovereignId,
                         sourceTokenAccounts: tokenFeeStats.harvestableAccounts,
                       });
-                    } catch (err: any) {
-                      console.error('Harvest transfer fees failed:', err);
+                      didHarvestTokenFees = true;
                     }
-                  }}
-                  disabled={harvestTransferFees.isPending || tokenFeeStats.totalHarvestable === 0}
-                  className="btn-money px-5 py-2 text-sm"
-                >
-                  {harvestTransferFees.isPending ? 'Harvesting...' : `Harvest Fees (${tokenFeeStats.totalHarvestable.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${sovereign?.tokenSymbol || ''})`}
-                </button>
 
-                {/* Swap Recovery Tokens */}
-                <button
-                  onClick={async () => {
-                    if (!selectedSovereignId) return;
-                    try {
+                    // Step 3: Swap recovery tokens to GOR (if vault had balance OR we just harvested into it)
+                    if (tokenFeeStats && (tokenFeeStats.vaultBalance > 0 || didHarvestTokenFees)) {
+                      setCollectAllStep('Swapping recovery tokens to GOR...');
                       await swapRecoveryTokens.mutateAsync({
                         sovereignId: selectedSovereignId,
                       });
-                    } catch (err: any) {
-                      console.error('Swap recovery tokens failed:', err);
                     }
-                  }}
-                  disabled={swapRecoveryTokens.isPending || tokenFeeStats.vaultBalance === 0}
-                  className="btn-money px-5 py-2 text-sm"
-                >
-                  {swapRecoveryTokens.isPending ? 'Swapping...' : `Swap to GOR (${tokenFeeStats.vaultBalance.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${sovereign?.tokenSymbol || ''})`}
-                </button>
-              </div>
+
+                    setCollectAllStep('');
+                    setCollectAllDone(true);
+                  } catch (err: any) {
+                    console.error('Collect all fees failed:', err);
+                    setCollectAllError(err.message || 'Transaction failed');
+                    setCollectAllStep('');
+                  }
+                }}
+                disabled={harvestFees.isPending || harvestTransferFees.isPending || swapRecoveryTokens.isPending || !!collectAllStep}
+                className="btn-money px-6 py-2 w-full"
+              >
+                {collectAllStep || 'Harvest All Fees'}
+              </button>
 
               {/* Status messages */}
-              {harvestTransferFees.error && (
-                <p className="text-red-400 text-sm mt-2">{(harvestTransferFees.error as Error).message}</p>
+              {collectAllError && (
+                <p className="text-red-400 text-sm mt-2">{collectAllError}</p>
               )}
-              {harvestTransferFees.isSuccess && (
-                <p className="text-[var(--slime)] text-sm mt-2">Transfer fees harvested into vault! Now swap them to GOR.</p>
+              {collectAllDone && (
+                <p className="text-[var(--slime)] text-sm mt-2">All fees harvested successfully!</p>
               )}
-              {swapRecoveryTokens.error && (
-                <p className="text-red-400 text-sm mt-2">{(swapRecoveryTokens.error as Error).message}</p>
-              )}
-              {swapRecoveryTokens.isSuccess && (
-                <p className="text-[var(--slime)] text-sm mt-2">Tokens swapped to GOR and deposited into fee vault!</p>
+
+              {/* Claim Your Share — only when there are claimable fees and user has NFT */}
+              {hasDeposit && hasNft && pendingClaim && pendingClaim.claimableGor > 0 && (
+                <>
+                  <div className="border-t border-[var(--border)] my-4" />
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <div className="text-sm text-[var(--muted)]">Your Claimable Share</div>
+                      <div className="text-lg font-bold text-[var(--money-green)]">{pendingClaim.claimableGor.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!selectedSovereignId || !originalDepositor || !nftMint) return;
+                      try {
+                        await claimFees.mutateAsync({
+                          sovereignId: selectedSovereignId,
+                          originalDepositor,
+                          nftMint,
+                        });
+                      } catch (err: any) {
+                        console.error('Claim fees failed:', err);
+                      }
+                    }}
+                    disabled={claimFees.isPending || !originalDepositor || !nftMint}
+                    className="btn-money px-6 py-2 w-full"
+                  >
+                    {claimFees.isPending ? 'Claiming...' : 'Claim Your Share'}
+                  </button>
+                  {claimFees.error && (
+                    <p className="text-red-400 text-sm mt-2">{(claimFees.error as Error).message}</p>
+                  )}
+                  {claimFees.isSuccess && (
+                    <p className="text-[var(--slime)] text-sm mt-2">Fees claimed successfully!</p>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -917,7 +897,7 @@ export default function GovernancePage() {
                 </p>
                 {!hasNft && connected && hasDeposit && (
                   <p className="text-xs text-[var(--muted)] mt-2">
-                    Mint your Genesis NFT to create the first proposal.
+                    Mint your $overeign NFT to create the first proposal.
                   </p>
                 )}
               </div>
@@ -942,7 +922,7 @@ export default function GovernancePage() {
               <h3 className="h3 text-[var(--money-green)] mb-2">Claim Unwind Proceeds</h3>
               <p className="text-[var(--muted)] text-sm mb-3">
                 The sovereign has been unwound. You can claim your proportional share of GOR.
-                This will burn your Genesis NFT.
+                This will burn your $overeign NFT.
               </p>
               <div className="flex items-center gap-3 text-sm mb-3">
                 <span className="text-[var(--muted)]">Your deposit:</span>

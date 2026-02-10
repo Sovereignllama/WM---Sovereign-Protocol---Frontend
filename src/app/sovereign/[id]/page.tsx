@@ -99,7 +99,7 @@ export default function SovereignDetailPage() {
     try {
       await mintGenesisNft.mutateAsync({ sovereignId });
     } catch (err: any) {
-      console.error('Mint Genesis NFT failed:', err);
+      console.error('Mint $overeign NFT failed:', err);
     }
   };
 
@@ -361,7 +361,7 @@ export default function SovereignDetailPage() {
             )}
             <div className="flex justify-between">
               <span className="text-[var(--muted)]">Pool Restricted</span>
-              <span className="text-white">{sovereign.poolRestricted ? 'Genesis NFT Only' : 'Open'}</span>
+              <span className="text-white">{sovereign.poolRestricted ? '$overeign NFT Only' : 'Open'}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-[var(--muted)]">Fee Control</span>
@@ -383,6 +383,8 @@ export default function SovereignDetailPage() {
           <h3 className="h3 text-white mb-3">Your Position</h3>
           {!connected ? (
             <p className="text-[var(--muted)] text-sm">Connect wallet to view your position</p>
+          ) : isCreator ? (
+            <p className="text-[var(--muted)] text-sm">You are the creator of this sovereign</p>
           ) : !depositRecord ? (
             <p className="text-[var(--muted)] text-sm">No deposit yet</p>
           ) : (
@@ -400,7 +402,7 @@ export default function SovereignDetailPage() {
                 <span className="text-white">{depositRecord.feesClaimedGor.toLocaleString()} GOR</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-[var(--muted)]">Genesis NFT</span>
+                <span className="text-[var(--muted)]">$overeign NFT</span>
                 {depositRecord.nftMinted ? (
                   <span className="text-[var(--money-green)] font-bold">Minted ✓</span>
                 ) : (sovereign.status === 'Recovery' || sovereign.status === 'Active') ? (

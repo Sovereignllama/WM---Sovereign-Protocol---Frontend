@@ -241,6 +241,11 @@ export function useDepositRecord(sovereignId: string | number | undefined) {
       const record = await fetchDepositRecord(program, sovereignPDA, publicKey);
       
       if (!record) return null;
+      
+      // Creator's deposit creates the PDA via init_if_needed but stores
+      // amount in creator_escrow, not in the deposit record.  An empty
+      // record (amount === 0) means no real investor deposit exists.
+      if (Number(record.amount) === 0) return null;
 
       // Compute shares client-side as fallback when on-chain shares_bps is 0
       // (shares_bps was not set on-chain prior to the fix)

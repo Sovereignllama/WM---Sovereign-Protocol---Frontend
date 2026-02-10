@@ -28,7 +28,7 @@ export default function DocsPage() {
             <li><a href="#recovery" className="hover:text-[var(--hazard-yellow)]">→ Recovery-First Mechanics</a></li>
             <li><a href="#fees" className="hover:text-[var(--hazard-yellow)]">→ Fees & Revenue</a></li>
             <li><a href="#governance" className="hover:text-[var(--hazard-yellow)]">→ Governance & Unwind</a></li>
-            <li><a href="#genesis-nft" className="hover:text-[var(--hazard-yellow)]">→ Genesis NFTs</a></li>
+            <li><a href="#genesis-nft" className="hover:text-[var(--hazard-yellow)]">→ $overeign NFTs</a></li>
           </ul>
         </div>
 
@@ -110,9 +110,9 @@ export default function DocsPage() {
               <h3 className="h3 mb-2" style={{ color: 'var(--text-light)' }}>2. Recovery Phase</h3>
               <p className="text-[var(--muted)]">
                 Once bonding completes, a liquidity pool is created and trading begins. Investors receive 
-                <strong style={{ color: 'var(--hazard-yellow)' }}> Genesis NFTs</strong> representing their share of the pool. During this phase, 
-                <strong style={{ color: 'var(--profit)' }}> 100% of all trading fees go to Genesis NFT holders</strong> until 
-                they've recovered their original GOR deposit. The LP is locked and only Genesis NFT holders 
+                <strong style={{ color: 'var(--hazard-yellow)' }}> $overeign NFTs</strong> representing their share of the pool. During this phase, 
+                <strong style={{ color: 'var(--profit)' }}> 100% of all trading fees go to $overeign NFT holders</strong> until 
+                they've recovered their original GOR deposit. The LP is locked and only $overeign NFT holders 
                 can earn fees. Liquidity can be unlocked via governance during this phase.
               </p>
             </div>
@@ -122,7 +122,7 @@ export default function DocsPage() {
               <p className="text-[var(--muted)]">
                 After investors recover their principal, the $overeign enters the Active phase. 
                 The LP is locked, external liquidity providers can join, and 
-                trading continues normally. Fees still flow to Genesis NFT holders. Liquidity can only be unlocked through the on-chain low volume mechanic.
+                trading continues normally. Fees still flow to $overeign NFT holders. Liquidity can only be unlocked through the on-chain low volume mechanic.
               </p>
             </div>
           </div>
@@ -246,10 +246,10 @@ export default function DocsPage() {
 
         {/* Genesis NFT */}
         <section id="genesis-nft" className="mb-10">
-          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>Genesis NFTs</h2>
+          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>$overeign NFTs</h2>
           <div className="space-y-4 text-[var(--text-light)]">
             <p>
-              When bonding completes, each investor receives a <strong>Genesis NFT</strong> representing 
+              When bonding completes, each investor receives a <strong>$overeign NFT</strong> representing 
               their share of the liquidity position:
             </p>
             <ul className="space-y-2 ml-4">
@@ -260,7 +260,7 @@ export default function DocsPage() {
             </ul>
             <div className="card mt-4">
               <p className="text-sm text-[var(--muted)]">
-                <strong>Note:</strong> Creators do NOT receive Genesis NFTs. They cannot claim LP fees — 
+                <strong>Note:</strong> Creators do NOT receive $overeign NFTs. They cannot claim LP fees — 
                 their only revenue is from sell fees (if configured).
               </p>
             </div>
