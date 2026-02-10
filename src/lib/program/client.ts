@@ -594,12 +594,13 @@ export async function buildClaimFeesTx(
       { pubkey: creatorTokenAta, isWritable: true, isSigner: false },        // [17] creator_token_ata
     );
 
-    // Swap path needs tick arrays for token→WGOR swap [18+]
+    // Swap path needs tick arrays + bitmap extension for token→WGOR swap [18+]
     if (needsSwap) {
-      // Use the same tick arrays covering the full range
+      // Use the same tick arrays covering the full range, plus bitmap extension
       remainingAccounts.push(
-        { pubkey: tickArrayLower, isWritable: true, isSigner: false },       // [18] swap tick_array_0
-        { pubkey: tickArrayUpper, isWritable: true, isSigner: false },       // [19] swap tick_array_1
+        { pubkey: tickArrayLower, isWritable: true, isSigner: false },         // [18] swap tick_array_0
+        { pubkey: tickArrayUpper, isWritable: true, isSigner: false },         // [19] swap tick_array_1
+        { pubkey: tickArrayBitmapExtension, isWritable: true, isSigner: false }, // [20] swap tick_array_bitmap_extension
       );
     }
   }
