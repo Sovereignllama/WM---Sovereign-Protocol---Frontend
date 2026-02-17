@@ -3,6 +3,7 @@ export const config = {
   rpcUrl: process.env.NEXT_PUBLIC_GORBAGANA_RPC_URL || 'https://rpc.trashscan.io',
   network: process.env.NEXT_PUBLIC_NETWORK || 'mainnet-beta',
   programId: process.env.NEXT_PUBLIC_PROGRAM_ID || '',
+  engineProgramId: process.env.NEXT_PUBLIC_ENGINE_PROGRAM_ID || 'Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt',
   appName: process.env.NEXT_PUBLIC_APP_NAME || 'Sovereign Protocol',
   appUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
   explorerUrl: process.env.NEXT_PUBLIC_EXPLORER_URL || 'https://trashscan.io',

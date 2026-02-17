@@ -11,13 +11,15 @@ import {
   buildDepositTx, 
   buildWithdrawTx, 
   buildClaimDepositorFeesTx,
-  buildClaimFeesTx,
+  buildClaimPoolLpFeesTx,
+  buildClaimPoolCreatorFeesTx,
   buildHarvestTransferFeesTx,
-  buildSwapRecoveryTokensTx,
+  buildFinalizeEnginePoolTx,
+  buildSwapBuyTx,
+  buildSwapSellTx,
+  buildExecuteEngineUnwindTx,
   buildCreateSovereignTx,
   buildCreateTokenTx,
-  buildFinalizeCreatePoolTx,
-  buildFinalizeAddLiquidityTx,
   buildEmergencyUnlockTx,
   buildEmergencyWithdrawTx,
   buildEmergencyWithdrawCreatorTx,
@@ -116,7 +118,7 @@ export function useCreateSovereign() {
       }
 
       // Step 3: If creator buy-in specified, deposit as creator escrow
-      if (params.creatorBuyIn && params.creatorBuyIn > 0n) {
+      if (params.creatorBuyIn && params.creatorBuyIn > BigInt(0)) {
         const sovereignIdNum = BigInt(sovereignId);
         const depositTx = await buildDepositTx(
           program,
@@ -370,10 +372,10 @@ export function useClaimDepositorFees() {
 }
 
 /**
- * Hook to finalize step 1: create the SAMM pool
- * Transitions from Finalizing -> PoolCreated
+ * Hook to finalize: create the engine pool (single step)
+ * Transitions from Finalizing -> Recovery
  */
-export function useFinalizeCreatePool() {
+export function useFinalizeEnginePool() {
   const program = useProgram();
   const { publicKey, sendTransaction } = useWallet();
   const { connection } = useConnection();
@@ -382,23 +384,17 @@ export function useFinalizeCreatePool() {
   return useMutation({
     mutationFn: async ({
       sovereignId,
-      tokenMint,
-      ammConfig,
     }: {
       sovereignId: string | number;
-      tokenMint: string;
-      ammConfig: string;
     }): Promise<TransactionResult> => {
       if (!program || !publicKey) {
         throw new Error('Wallet not connected');
       }
 
-      const tx = await buildFinalizeCreatePoolTx(
+      const tx = await buildFinalizeEnginePoolTx(
         program,
         publicKey,
         BigInt(sovereignId),
-        new PublicKey(tokenMint),
-        new PublicKey(ammConfig),
       );
 
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
@@ -408,64 +404,6 @@ export function useFinalizeCreatePool() {
       const signature = await sendTransaction(tx, connection, {
         skipPreflight: true,
         preflightCommitment: 'confirmed',
-      });
-
-      await connection.confirmTransaction({
-        signature,
-        blockhash,
-        lastValidBlockHeight,
-      }, 'confirmed');
-
-      return { signature, success: true };
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereigns });
-    },
-  });
-}
-
-/**
- * Hook to finalize step 2: add liquidity to the SAMM pool
- * Transitions from PoolCreated -> Recovery
- */
-export function useFinalizeAddLiquidity() {
-  const program = useProgram();
-  const { publicKey, sendTransaction } = useWallet();
-  const { connection } = useConnection();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      sovereignId,
-      tokenMint,
-      poolState,
-    }: {
-      sovereignId: string | number;
-      tokenMint: string;
-      poolState: string;
-    }): Promise<TransactionResult> => {
-      if (!program || !publicKey) {
-        throw new Error('Wallet not connected');
-      }
-
-      const { tx, positionNftMint } = await buildFinalizeAddLiquidityTx(
-        program,
-        publicKey,
-        BigInt(sovereignId),
-        new PublicKey(tokenMint),
-        new PublicKey(poolState),
-      );
-
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
-      tx.recentBlockhash = blockhash;
-      tx.feePayer = publicKey;
-
-      // positionNftMint Keypair must sign the tx alongside the wallet
-      const signature = await sendTransaction(tx, connection, {
-        skipPreflight: true,
-        preflightCommitment: 'confirmed',
-        signers: [positionNftMint],
       });
 
       await connection.confirmTransaction({
@@ -735,11 +673,11 @@ export function useMintGenesisNft() {
 }
 
 /**
- * Hook to harvest fees from the SAMM LP position (step 1 of fee flow).
- * This collects trading fees from the SAMM pool and deposits them into the fee vault.
- * Anyone can call this — no NFT or deposit required.
+ * Hook to claim LP fees from the engine pool.
+ * NFT bearer (whoever holds the Genesis NFT) claims their proportional share
+ * of accumulated swap fees.
  */
-export function useClaimFees() {
+export function useClaimPoolLpFees() {
   const program = useProgram();
   const { publicKey, signTransaction, sendTransaction } = useWallet();
   const { connection } = useConnection();
@@ -748,38 +686,34 @@ export function useClaimFees() {
   return useMutation({
     mutationFn: async ({
       sovereignId,
-      tokenMint,
+      originalDepositor,
+      nftMint,
     }: {
       sovereignId: string | number;
-      tokenMint: string;
+      originalDepositor: string;
+      nftMint: string;
     }): Promise<TransactionResult> => {
       if (!program || !publicKey || !signTransaction) {
         throw new Error('Wallet not connected');
       }
 
-      const tokenMintKey = new PublicKey(tokenMint);
-
-      // Build the transaction (includes SAMM CPI remaining accounts)
-      const tx = await buildClaimFeesTx(
+      const tx = await buildClaimPoolLpFeesTx(
         program,
         publicKey,
+        new PublicKey(originalDepositor),
         BigInt(sovereignId),
-        tokenMintKey,
-        connection,
+        new PublicKey(nftMint),
       );
 
-      // Get recent blockhash
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
       tx.recentBlockhash = blockhash;
       tx.feePayer = publicKey;
 
-      // Send transaction
       const signature = await sendTransaction(tx, connection, {
         skipPreflight: true,
         preflightCommitment: 'confirmed',
       });
 
-      // Wait for confirmation
       await connection.confirmTransaction({
         signature,
         blockhash,
@@ -790,6 +724,159 @@ export function useClaimFees() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+    },
+  });
+}
+
+/**
+ * Hook to claim creator fees from the engine pool.
+ * Only available when sovereign is in Active state.
+ */
+export function useClaimPoolCreatorFees() {
+  const program = useProgram();
+  const { publicKey, signTransaction, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sovereignId,
+    }: {
+      sovereignId: string | number;
+    }): Promise<TransactionResult> => {
+      if (!program || !publicKey || !signTransaction) {
+        throw new Error('Wallet not connected');
+      }
+
+      const tx = await buildClaimPoolCreatorFeesTx(
+        program,
+        publicKey,
+        BigInt(sovereignId),
+      );
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+    },
+  });
+}
+
+/**
+ * Hook to update the engine pool bin size (creator-controlled price granularity).
+ * CPIs to sovereign_engine::update_bin_size via main program.
+ */
+export function useUpdateBinSize() {
+  const program = useProgram();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sovereignId,
+      newBinSize,
+    }: {
+      sovereignId: string | number;
+      newBinSize: string; // raw lamports as string
+    }): Promise<TransactionResult> => {
+      if (!program || !publicKey) {
+        throw new Error('Wallet not connected');
+      }
+
+      const tx = await buildUpdateBinSizeTx(
+        program,
+        publicKey,
+        BigInt(sovereignId),
+        new BN(newBinSize),
+      );
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['enginePool', variables.sovereignId.toString()] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+    },
+  });
+}
+
+/**
+ * Hook to execute engine pool unwind.
+ * Drains all liquidity from the engine pool after governance approval.
+ * Permissionless — anyone can call after observation period ends.
+ */
+export function useExecuteEngineUnwind() {
+  const program = useProgram();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sovereignId,
+    }: {
+      sovereignId: string | number;
+    }): Promise<TransactionResult> => {
+      if (!program || !publicKey) {
+        throw new Error('Wallet not connected');
+      }
+
+      const tx = await buildExecuteEngineUnwindTx(
+        program,
+        publicKey,
+        BigInt(sovereignId),
+      );
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereigns });
     },
   });
 }
@@ -853,32 +940,88 @@ export function useHarvestTransferFees() {
 }
 
 /**
- * Hook to swap recovery tokens (Token-2022 sell fees) to SOL via SAMM.
- * Converts tokens in recovery_token_vault → SOL in fee_vault for investors.
- * Only callable during Recovery with RecoveryBoost or FairLaunch.
- * Permissionless — anyone can call.
+ * Hook to swap buy (GOR → Tokens) via engine pool.
  */
-export function useSwapRecoveryTokens() {
+export function useSwapBuy() {
   const program = useProgram();
-  const { publicKey, signTransaction, sendTransaction } = useWallet();
+  const { publicKey, sendTransaction } = useWallet();
   const { connection } = useConnection();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({
       sovereignId,
+      gorAmount,
+      minTokensOut = BigInt(0),
     }: {
       sovereignId: string | number;
+      gorAmount: bigint;
+      minTokensOut?: bigint;
     }): Promise<TransactionResult> => {
-      if (!program || !publicKey || !signTransaction) {
+      if (!program || !publicKey) {
         throw new Error('Wallet not connected');
       }
 
-      const tx = await buildSwapRecoveryTokensTx(
+      const tx = await buildSwapBuyTx(
         program,
         publicKey,
         BigInt(sovereignId),
-        connection,
+        gorAmount,
+        minTokensOut,
+      );
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+    },
+  });
+}
+
+/**
+ * Hook to swap sell (Tokens → GOR) via engine pool.
+ */
+export function useSwapSell() {
+  const program = useProgram();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sovereignId,
+      tokenAmount,
+      minGorOut = BigInt(0),
+    }: {
+      sovereignId: string | number;
+      tokenAmount: bigint;
+      minGorOut?: bigint;
+    }): Promise<TransactionResult> => {
+      if (!program || !publicKey) {
+        throw new Error('Wallet not connected');
+      }
+
+      const tx = await buildSwapSellTx(
+        program,
+        publicKey,
+        BigInt(sovereignId),
+        tokenAmount,
+        minGorOut,
       );
 
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');

@@ -93,11 +93,16 @@ export default function SovereignsPage() {
   const counts: Record<FilterType, number> = useMemo(() => ({
     all: sovereigns.length,
     Bonding: sovereigns.filter(s => s.status === 'Bonding').length,
+    Finalizing: sovereigns.filter(s => s.status === 'Finalizing').length,
+    PoolCreated: sovereigns.filter(s => s.status === 'PoolCreated').length,
     Recovery: sovereigns.filter(s => s.status === 'Recovery').length,
     Active: sovereigns.filter(s => s.status === 'Active').length,
-    lowVolume: sovereigns.filter(s => s.activityCheckInitiated).length,
-    Failed: sovereigns.filter(s => s.status === 'Failed').length,
+    Unwinding: sovereigns.filter(s => s.status === 'Unwinding').length,
     Unwound: sovereigns.filter(s => s.status === 'Unwound').length,
+    Failed: sovereigns.filter(s => s.status === 'Failed').length,
+    EmergencyUnlocked: sovereigns.filter(s => s.status === 'EmergencyUnlocked').length,
+    Retired: sovereigns.filter(s => s.status === 'Retired').length,
+    lowVolume: sovereigns.filter(s => s.activityCheckInitiated).length,
   }), [sovereigns]);
 
   const isLoading = sovereignsLoading || protocolLoading;

@@ -28,7 +28,6 @@ interface FormData {
   tokenDescription: string;
   sellFeeBps: number;
   feeMode: FeeMode;
-  treasuryAddress: string;
   
   // Step 2: Token Config (BYO)
   existingMint: string;
@@ -54,7 +53,7 @@ const defaultFormData: FormData = {
   tokenDescription: '',
   sellFeeBps: 0,
   feeMode: 'FairLaunch',
-  treasuryAddress: '',
+
   existingMint: '',
   depositAmount: '',
   bondTarget: '50',
@@ -512,19 +511,7 @@ export default function MintPage() {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="input-label">Treasury Address (Optional)</label>
-                    <input
-                      type="text"
-                      className="input font-mono text-sm"
-                      placeholder="Wallet address to receive sell fees"
-                      value={formData.treasuryAddress}
-                      onChange={(e) => updateForm({ treasuryAddress: e.target.value })}
-                    />
-                    <div className="text-xs text-[var(--faint)] mt-2">
-                      Leave empty to use creator wallet
-                    </div>
-                  </div>
+
                 </>
               )}
 

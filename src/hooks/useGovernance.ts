@@ -5,6 +5,9 @@ import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { BN } from '@coral-xyz/anchor';
 import { useProgram, useReadOnlyProgram, useWalletAddress } from './useProgram';
+
+/** Safely convert BN to number without throwing on >53-bit values */
+const safeNum = (bn: any): number => Number(bn.toString());
 import { QUERY_KEYS } from './useSovereign';
 import {
   fetchProposal,
@@ -81,7 +84,7 @@ export function useProposals(sovereignId: string | number | undefined) {
           votingEndsAt: new Date(Number(account.votingEndsAt) * 1000),
           timelockEndsAt: new Date(Number(account.timelockEndsAt) * 1000),
           createdAt: new Date(Number(account.createdAt) * 1000),
-          executedAt: account.executedAt.toNumber() > 0
+          executedAt: safeNum(account.executedAt) > 0
             ? new Date(Number(account.executedAt) * 1000)
             : null,
         }))
@@ -120,7 +123,7 @@ export function useProposal(sovereignId: string | number | undefined, proposalId
         votingEndsAt: new Date(Number(account.votingEndsAt) * 1000),
         timelockEndsAt: new Date(Number(account.timelockEndsAt) * 1000),
         createdAt: new Date(Number(account.createdAt) * 1000),
-        executedAt: account.executedAt.toNumber() > 0
+        executedAt: safeNum(account.executedAt) > 0
           ? new Date(Number(account.executedAt) * 1000)
           : null,
       };
@@ -312,11 +315,9 @@ export function useFinalizeVote() {
     mutationFn: async ({
       sovereignId,
       proposalId,
-      poolState,
     }: {
       sovereignId: string | number;
       proposalId: string | number;
-      poolState?: string;
     }): Promise<TransactionResult> => {
       if (!program || !publicKey) throw new Error('Wallet not connected');
 
@@ -325,7 +326,6 @@ export function useFinalizeVote() {
         publicKey,
         BigInt(sovereignId),
         BigInt(proposalId),
-        poolState ? new PublicKey(poolState) : undefined
       );
 
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');

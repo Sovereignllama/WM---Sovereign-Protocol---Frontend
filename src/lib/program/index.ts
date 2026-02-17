@@ -4,4 +4,4 @@ export * from './pdas';
 export * from './client';
 
 // IDL exports
-export { SovereignLiquidityIDL } from './idl';
+export { SovereignLiquidityIDL, SovereignEngineIDL } from './idl';

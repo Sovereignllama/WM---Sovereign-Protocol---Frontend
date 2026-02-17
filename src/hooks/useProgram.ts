@@ -5,8 +5,8 @@ import { useConnection, useAnchorWallet, useWallet } from '@solana/wallet-adapte
 import { AnchorProvider, Program, Idl } from '@coral-xyz/anchor';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { config } from '@/lib/config';
-import { getProgram, SovereignLiquidityProgram } from '@/lib/program/client';
-import { SovereignLiquidityIDL } from '@/lib/program/idl';
+import { getProgram, getEngineProgram, SovereignLiquidityProgram, SovereignEngineProgram } from '@/lib/program/client';
+import { SovereignLiquidityIDL, SovereignEngineIDL } from '@/lib/program/idl';
 
 /**
  * Hook to get the Anchor Provider
@@ -45,6 +45,22 @@ export function useProgram(): SovereignLiquidityProgram | null {
 }
 
 /**
+ * Hook to get the Sovereign Engine Program instance
+ */
+export function useEngineProgram(): SovereignEngineProgram | null {
+  const provider = useAnchorProvider();
+
+  const program = useMemo(() => {
+    if (!provider) {
+      return null;
+    }
+    return getEngineProgram(provider);
+  }, [provider]);
+
+  return program;
+}
+
+/**
  * Hook to get read-only program (doesn't require wallet connection)
  */
 export function useReadOnlyProgram(): SovereignLiquidityProgram {
@@ -63,6 +79,29 @@ export function useReadOnlyProgram(): SovereignLiquidityProgram {
     });
 
     return new Program(SovereignLiquidityIDL as Idl, provider);
+  }, [connection]);
+
+  return program;
+}
+
+/**
+ * Hook to get read-only engine program (doesn't require wallet connection)
+ */
+export function useReadOnlyEngineProgram(): SovereignEngineProgram {
+  const { connection } = useConnection();
+
+  const program = useMemo(() => {
+    const dummyWallet = {
+      publicKey: PublicKey.default,
+      signTransaction: async <T extends Transaction>(tx: T): Promise<T> => tx,
+      signAllTransactions: async <T extends Transaction>(txs: T[]): Promise<T[]> => txs,
+    };
+
+    const provider = new AnchorProvider(connection, dummyWallet as any, {
+      commitment: 'confirmed',
+    });
+
+    return new Program(SovereignEngineIDL as Idl, provider);
   }, [connection]);
 
   return program;

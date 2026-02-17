@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useSovereign, useDepositRecord } from '@/hooks/useSovereign';
-import { useDeposit, useWithdraw, useFinalizeCreatePool, useFinalizeAddLiquidity, useEmergencyUnlock, useEmergencyWithdraw, useEmergencyWithdrawCreator, useMintGenesisNft } from '@/hooks/useTransactions';
+import { useDeposit, useWithdraw, useFinalizeEnginePool, useEmergencyUnlock, useEmergencyWithdraw, useEmergencyWithdrawCreator, useMintGenesisNft } from '@/hooks/useTransactions';
 import { useTokenImage } from '@/hooks/useTokenImage';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LAMPORTS_PER_GOR, config } from '@/lib/config';
@@ -21,8 +21,7 @@ export default function SovereignDetailPage() {
   const { data: depositRecord } = useDepositRecord(sovereignId);
   const deposit = useDeposit();
   const withdraw = useWithdraw();
-  const finalizeCreatePool = useFinalizeCreatePool();
-  const finalizeAddLiquidity = useFinalizeAddLiquidity();
+  const finalizeEnginePool = useFinalizeEnginePool();
   const emergencyUnlock = useEmergencyUnlock();
   const emergencyWithdraw = useEmergencyWithdraw();
   const emergencyWithdrawCreator = useEmergencyWithdrawCreator();
@@ -107,23 +106,9 @@ export default function SovereignDetailPage() {
     if (!connected || !sovereign) return;
     try {
       if (sovereign.status === 'Finalizing') {
-        // Step 1: Create pool — ammConfig stored on sovereign at creation
-        const ammConfig = sovereign.ammConfig;
-        if (!ammConfig || ammConfig === '11111111111111111111111111111111') {
-          console.error('Sovereign has no AMM config set');
-          return;
-        }
-        await finalizeCreatePool.mutateAsync({
+        // Single-step engine pool finalization
+        await finalizeEnginePool.mutateAsync({
           sovereignId,
-          tokenMint: sovereign.tokenMint,
-          ammConfig,
-        });
-      } else if (sovereign.status === 'PoolCreated') {
-        // Step 2: Add liquidity
-        await finalizeAddLiquidity.mutateAsync({
-          sovereignId,
-          tokenMint: sovereign.tokenMint,
-          poolState: sovereign.poolState || '',
         });
       }
     } catch (err: any) {
@@ -530,45 +515,21 @@ export default function SovereignDetailPage() {
           {sovereign.status === 'Finalizing' && (
             <div>
               <p className="text-sm text-[var(--muted)] mb-3">
-                Bond target reached! Step 1: Create the SAMM liquidity pool.
+                Bond target reached! Create the engine pool to start trading.
               </p>
               <button
                 onClick={handleFinalize}
-                disabled={finalizeCreatePool.isPending}
+                disabled={finalizeEnginePool.isPending}
                 className="btn-money px-6 w-full"
               >
-                {finalizeCreatePool.isPending ? 'Creating Pool...' : 'Step 1: Create Pool'}
+                {finalizeEnginePool.isPending ? 'Creating Engine Pool...' : 'Finalize: Create Engine Pool'}
               </button>
-              {finalizeCreatePool.error && (
-                <p className="text-red-400 text-sm mt-2">{(finalizeCreatePool.error as Error).message}</p>
+              {finalizeEnginePool.error && (
+                <p className="text-red-400 text-sm mt-2">{(finalizeEnginePool.error as Error).message}</p>
               )}
-              {finalizeCreatePool.isSuccess && (
+              {finalizeEnginePool.isSuccess && (
                 <p className="text-[var(--slime)] text-sm mt-2">
-                  Pool created! Refreshing for step 2...
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Add liquidity button - shown when sovereign is in PoolCreated state */}
-          {sovereign.status === 'PoolCreated' && (
-            <div>
-              <p className="text-sm text-[var(--muted)] mb-3">
-                Pool created. Step 2: Add initial liquidity and transition to Recovery.
-              </p>
-              <button
-                onClick={handleFinalize}
-                disabled={finalizeAddLiquidity.isPending}
-                className="btn-money px-6 w-full"
-              >
-                {finalizeAddLiquidity.isPending ? 'Adding Liquidity...' : 'Step 2: Add Liquidity'}
-              </button>
-              {finalizeAddLiquidity.error && (
-                <p className="text-red-400 text-sm mt-2">{(finalizeAddLiquidity.error as Error).message}</p>
-              )}
-              {finalizeAddLiquidity.isSuccess && (
-                <p className="text-[var(--slime)] text-sm mt-2">
-                  Sovereign finalized successfully! Refreshing...
+                  Engine pool created! Sovereign is now in Recovery. Refreshing...
                 </p>
               )}
             </div>

@@ -54,8 +54,16 @@ export type SovereignStateAccount = {
   creationFeeEscrowed: BN;
   ammConfig: PublicKey;
   swapFeeBps: number;
+  presetParameter: PublicKey;
+  binStep: number;
+  activeIdAtLaunch: number;
+  lowerBinId: number;
+  upperBinId: number;
+  positionBase: PublicKey;
   poolState: PublicKey;
+  lbPair: PublicKey;
   positionMint: PublicKey;
+  position: PublicKey;
   poolRestricted: boolean;
   recoveryTarget: BN;
   totalSolFeesDistributed: BN;
@@ -121,13 +129,19 @@ export type CreatorFeeTrackerAccount = {
 
 export type PermanentLockAccount = {
   sovereign: PublicKey;
+  lbPair: PublicKey;
   poolState: PublicKey;
   positionMint: PublicKey;
   position: PublicKey;
+  positionBase: PublicKey;
   positionTokenAccount: PublicKey;
   liquidity: BN;
   tickLowerIndex: number;
   tickUpperIndex: number;
+  lowerBinId: number;
+  upperBinId: number;
+  binStep: number;
+  positionWidth: number;
   unwound: boolean;
   createdAt: BN;
   unwoundAt: BN;

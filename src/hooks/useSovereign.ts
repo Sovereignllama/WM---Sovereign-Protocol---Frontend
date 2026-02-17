@@ -13,15 +13,18 @@ import {
   getSovereignStatusString,
   getSovereignTypeString,
   getFeeModeString,
-  fetchPendingHarvestFees,
+  fetchPendingEngineLpFees,
   fetchPendingClaimableFees,
   fetchTokenFeeStats,
+  fetchEnginePool,
   SovereignLiquidityProgram,
 } from '@/lib/program/client';
 import { getProtocolStatePDA, getSovereignPDA, getDepositRecordPDA, getTokenVaultPDA } from '@/lib/program/pdas';
 import { PublicKey } from '@solana/web3.js';
-import { PublicKey } from '@solana/web3.js';
 import { config, LAMPORTS_PER_GOR } from '@/lib/config';
+
+/** Safely convert BN to number without throwing on >53-bit values */
+const safeNum = (bn: any): number => Number(bn.toString());
 
 // Query keys
 export const QUERY_KEYS = {
@@ -101,7 +104,8 @@ export function useSovereigns() {
         bondDeadline: new Date(Number(account.bondDeadline) * 1000),
         sellFeeBps: account.sellFeeBps,
         swapFeeBps: account.swapFeeBps,
-        ammConfig: account.ammConfig.toBase58(),
+        ammConfig: '11111111111111111111111111111111', // legacy padding
+        presetParameter: '11111111111111111111111111111111', // legacy padding
         recoveryTarget: account.recoveryTarget.toString(),
         recoveryTargetGor: Number(account.recoveryTarget) / LAMPORTS_PER_GOR,
         totalRecovered: account.totalRecovered.toString(),
@@ -109,11 +113,11 @@ export function useSovereigns() {
         recoveryComplete: account.recoveryComplete,
         createdAt: new Date(Number(account.createdAt) * 1000),
         // Progress calculations
-        bondingProgress: account.bondTarget.toNumber() > 0 
-          ? (account.totalDeposited.toNumber() / account.bondTarget.toNumber()) * 100 
+        bondingProgress: safeNum(account.bondTarget) > 0 
+          ? (safeNum(account.totalDeposited) / safeNum(account.bondTarget)) * 100 
           : 0,
-        recoveryProgress: account.recoveryTarget.toNumber() > 0
-          ? (account.totalRecovered.toNumber() / account.recoveryTarget.toNumber()) * 100
+        recoveryProgress: safeNum(account.recoveryTarget) > 0
+          ? (safeNum(account.totalRecovered) / safeNum(account.recoveryTarget)) * 100
           : 0,
       }));
     },
@@ -156,14 +160,21 @@ export function useSovereign(sovereignId: string | number | undefined) {
         bondDuration: account.bondDuration.toString(),
         sellFeeBps: account.sellFeeBps,
         swapFeeBps: account.swapFeeBps,
-        ammConfig: account.ammConfig.toBase58(),
+        ammConfig: '11111111111111111111111111111111', // legacy padding
+        presetParameter: '11111111111111111111111111111111', // legacy padding
         feeControlRenounced: account.feeControlRenounced,
         creatorEscrow: account.creatorEscrow.toString(),
         creatorEscrowGor: Number(account.creatorEscrow) / LAMPORTS_PER_GOR,
         tokenSupplyDeposited: account.tokenSupplyDeposited.toString(),
-        poolState: account.poolState.toBase58(),
-        positionMint: account.positionMint.toBase58(),
-        poolRestricted: account.poolRestricted,
+        tokenTotalSupply: account.tokenTotalSupply.toString(),
+        tokenTotalSupplyFormatted: Number(account.tokenTotalSupply) / LAMPORTS_PER_GOR,
+        totalSupply: '0', // legacy padding
+        totalSupplyFormatted: 0, // legacy padding
+        poolState: '11111111111111111111111111111111',       // legacy padding
+        positionMint: '11111111111111111111111111111111', // legacy padding
+        lbPair: '11111111111111111111111111111111',             // legacy padding
+        position: '11111111111111111111111111111111',         // legacy padding
+        poolRestricted: false, // legacy padding
         recoveryTarget: account.recoveryTarget.toString(),
         recoveryTargetGor: Number(account.recoveryTarget) / LAMPORTS_PER_GOR,
         totalRecovered: account.totalRecovered.toString(),
@@ -192,20 +203,20 @@ export function useSovereign(sovereignId: string | number | undefined) {
           : null,
         totalSolFeesDistributed: account.totalSolFeesDistributed.toString(),
         totalSolFeesDistributedGor: Number(account.totalSolFeesDistributed) / LAMPORTS_PER_GOR,
-        totalTokenFeesDistributed: account.totalTokenFeesDistributed.toString(),
+        totalTokenFeesDistributed: '0', // legacy padding
         unwoundAt: account.unwoundAt && Number(account.unwoundAt) > 0
           ? new Date(Number(account.unwoundAt) * 1000)
           : null,
         createdAt: new Date(Number(account.createdAt) * 1000),
-        finalizedAt: account.finalizedAt.toNumber() > 0 
-          ? new Date(Number(account.finalizedAt) * 1000) 
+        finalizedAt: safeNum(account.finalizedAt) > 0 
+          ? new Date(safeNum(account.finalizedAt) * 1000) 
           : null,
         // Progress calculations
-        bondingProgress: account.bondTarget.toNumber() > 0 
-          ? (account.totalDeposited.toNumber() / account.bondTarget.toNumber()) * 100 
+        bondingProgress: safeNum(account.bondTarget) > 0 
+          ? (safeNum(account.totalDeposited) / safeNum(account.bondTarget)) * 100 
           : 0,
-        recoveryProgress: account.recoveryTarget.toNumber() > 0
-          ? (account.totalRecovered.toNumber() / account.recoveryTarget.toNumber()) * 100
+        recoveryProgress: safeNum(account.recoveryTarget) > 0
+          ? (safeNum(account.totalRecovered) / safeNum(account.recoveryTarget)) * 100
           : 0,
         // Time remaining
         bondingTimeRemaining: Math.max(0, Number(account.bondDeadline) * 1000 - Date.now()),
@@ -318,32 +329,93 @@ export function useWalletDeposits() {
 }
 
 /**
- * Hook to fetch pending (unharvested) fees sitting in the SAMM position.
- * Shows how much GOR + tokens can be harvested by calling Harvest Fees.
+ * Hook to fetch pending LP fees from the engine pool for the connected wallet.
+ * Shows how much GOR the depositor can claim from swap fee accumulation.
  */
-export function usePendingHarvestFees(sovereignId: string | number | undefined) {
+export function usePendingEngineLpFees(sovereignId: string | number | undefined) {
   const program = useReadOnlyProgram();
-  const { connection } = useConnection();
-  const sovereign = useSovereign(sovereignId);
+  const { publicKey } = useWalletAddress();
 
   return useQuery({
     queryKey: QUERY_KEYS.pendingHarvestFees(sovereignId?.toString() ?? ''),
     queryFn: async () => {
-      if (!program || !sovereignId || !sovereign.data) return null;
-
-      const poolState = new PublicKey(sovereign.data.poolState);
-      const positionMint = new PublicKey(sovereign.data.positionMint);
-      const tokenMint = new PublicKey(sovereign.data.tokenMint);
-
-      // Default to 9 decimals for sovereign tokens (Token-2022 with default decimals)
-      const tokenDecimals = 9;
-
-      return fetchPendingHarvestFees(connection, poolState, positionMint, tokenMint, tokenDecimals);
+      if (!program || !sovereignId || !publicKey) return null;
+      return fetchPendingEngineLpFees(program, BigInt(sovereignId), publicKey);
     },
-    staleTime: 15_000, // 15 seconds — fees accumulate slowly
+    staleTime: 15_000, // 15 seconds — fees accumulate with trades
     refetchInterval: 30_000, // Auto-refresh every 30s
-    enabled: !!program && !!sovereignId && !!sovereign.data && 
-      (sovereign.data.status === 'Recovery' || sovereign.data.status === 'Active'),
+    enabled: !!program && !!sovereignId && !!publicKey,
+  });
+}
+
+/**
+ * Hook to fetch the engine pool state for a sovereign.
+ * Returns pool stats: prices, volumes, fees, tier info, etc.
+ */
+export function useEnginePool(sovereignId: string | number | undefined) {
+  const program = useReadOnlyProgram();
+
+  return useQuery({
+    queryKey: ['enginePool', sovereignId?.toString() ?? ''],
+    queryFn: async () => {
+      if (!program || !sovereignId) return null;
+      const pool = await fetchEnginePool(program, BigInt(sovereignId));
+      if (!pool) return null;
+
+      return {
+        poolStatus: pool.poolStatus?.trading ? 'Trading'
+          : pool.poolStatus?.paused ? 'Paused'
+          : pool.poolStatus?.unwound ? 'Unwound'
+          : 'Uninitialized',
+        authority: pool.authority.toBase58(),
+        creator: pool.creator.toBase58(),
+        sovereign: pool.sovereign.toBase58(),
+        tokenMint: pool.tokenMint.toBase58(),
+        gorVault: pool.gorVault.toBase58(),
+        tokenVault: pool.tokenVault.toBase58(),
+        totalTokenSupply: pool.totalTokenSupply.toString(),
+        totalTokenSupplyFormatted: Number(pool.totalTokenSupply) / LAMPORTS_PER_GOR,
+        tokenReserve: pool.tokenReserve.toString(),
+        tokenReserveFormatted: Number(pool.tokenReserve) / LAMPORTS_PER_GOR,
+        gorReserve: pool.gorReserve.toString(),
+        gorReserveGor: Number(pool.gorReserve) / LAMPORTS_PER_GOR,
+        initialGorReserve: pool.initialGorReserve.toString(),
+        initialGorReserveGor: Number(pool.initialGorReserve) / LAMPORTS_PER_GOR,
+        totalTokensSold: pool.totalTokensSold.toString(),
+        totalTokensSoldFormatted: Number(pool.totalTokensSold) / LAMPORTS_PER_GOR,
+        // V3: BinArray fields
+        numBins: pool.numBins,
+        binCapacity: pool.binCapacity.toString(),
+        binCapacityFormatted: Number(pool.binCapacity) / LAMPORTS_PER_GOR,
+        activeBin: pool.activeBin,
+        highestAllocatedPage: pool.highestAllocatedPage,
+        swapFeeBps: pool.swapFeeBps,
+        creatorFeeShareBps: pool.creatorFeeShareBps,
+        binFeeShareBps: pool.binFeeShareBps,
+        // V3: spot price = gor_reserve / token_reserve (precision-scaled ×1e9)
+        spotPrice: Number(pool.tokenReserve) > 0
+          ? (Number(pool.gorReserve) / Number(pool.tokenReserve)) * 1_000_000_000
+          : 0,
+        lastPrice: pool.lastPrice.toString(),
+        totalFeesCollected: pool.totalFeesCollected.toString(),
+        totalFeesCollectedGor: Number(pool.totalFeesCollected) / LAMPORTS_PER_GOR,
+        lpFeesAccumulated: pool.lpFeesAccumulated.toString(),
+        creatorFeesAccumulated: pool.creatorFeesAccumulated.toString(),
+        lpFeesClaimed: pool.lpFeesClaimed.toString(),
+        creatorFeesClaimed: pool.creatorFeesClaimed.toString(),
+        recoveryTarget: pool.recoveryTarget.toString(),
+        totalRecovered: pool.totalRecovered.toString(),
+        recoveryComplete: pool.recoveryComplete,
+        totalTrades: Number(pool.totalTrades),
+        isPaused: pool.isPaused,
+        // V3: bin fee accounting
+        totalEligibleWeight: pool.totalEligibleWeight.toString(),
+        totalBinFeesDistributed: pool.totalBinFeesDistributed.toString(),
+        totalBinFeesDistributedGor: Number(pool.totalBinFeesDistributed) / LAMPORTS_PER_GOR,
+      };
+    },
+    staleTime: 10_000,
+    enabled: !!program && !!sovereignId,
   });
 }
 
@@ -386,7 +458,7 @@ export function useTokenFeeStats(sovereignId: string | number | undefined) {
       if (!program || !sovereignId || !sovereign.data) return null;
 
       const tokenMint = new PublicKey(sovereign.data.tokenMint);
-      const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+      const [sovereignPDA] = getSovereignPDA(BigInt(sovereignId), program.programId);
 
       return fetchTokenFeeStats(connection, tokenMint, sovereignPDA, program.programId);
     },

@@ -1,8 +1,10 @@
 // Program hooks
 export { 
   useAnchorProvider, 
-  useProgram, 
-  useReadOnlyProgram, 
+  useProgram,
+  useEngineProgram,
+  useReadOnlyProgram,
+  useReadOnlyEngineProgram,
   useWalletAddress, 
   useWalletReady 
 } from './useProgram';
@@ -14,9 +16,10 @@ export {
   useSovereign, 
   useDepositRecord, 
   useWalletDeposits,
-  usePendingHarvestFees,
+  usePendingEngineLpFees,
   usePendingClaimableFees,
   useTokenFeeStats,
+  useEnginePool,
   QUERY_KEYS,
 } from './useSovereign';
 
@@ -25,9 +28,14 @@ export {
   useDeposit, 
   useWithdraw, 
   useClaimDepositorFees,
-  useClaimFees,
+  useClaimPoolLpFees,
+  useClaimPoolCreatorFees,
+  useUpdateBinSize,
   useHarvestTransferFees,
-  useSwapRecoveryTokens,
+  useFinalizeEnginePool,
+  useSwapBuy,
+  useSwapSell,
+  useExecuteEngineUnwind,
   useMintGenesisNft,
 } from './useTransactions';
 

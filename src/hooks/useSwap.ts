@@ -147,7 +147,7 @@ export function useSwapQuote(params: {
   const [quote, setQuote] = useState<SwapQuote | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const fetchQuoteDebounced = useCallback(async () => {
     if (!params.poolAddress || !params.tokenMint || !params.amount || params.amount === '0') {

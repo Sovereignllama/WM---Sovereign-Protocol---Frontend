@@ -1,0 +1,2694 @@
+{
+  "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt",
+  "metadata": {
+    "name": "sovereign_engine_v3",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "$overeign Liquid — CPAMM + BinArray Settlement Engine (V3)"
+  },
+  "instructions": [
+    {
+      "name": "allocate_bin_page",
+      "docs": [
+        "Allocate the next BinArray page (permissionless).",
+        "Anyone can call this to prepare pages for future swaps."
+      ],
+      "discriminator": [
+        180,
+        180,
+        207,
+        22,
+        195,
+        2,
+        14,
+        89
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sovereign",
+          "relations": [
+            "engine_pool"
+          ]
+        },
+        {
+          "name": "engine_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bin_array",
+          "docs": [
+            "New BinArray page — created here"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  105,
+                  110,
+                  95,
+                  97,
+                  114,
+                  114,
+                  97,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              },
+              {
+                "kind": "arg",
+                "path": "page_index"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "page_index",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "claim_creator_fees",
+      "docs": [
+        "Creator fee claim (their share of swap fees, post-recovery)."
+      ],
+      "discriminator": [
+        0,
+        23,
+        125,
+        234,
+        156,
+        118,
+        134,
+        89
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sovereign",
+          "relations": [
+            "engine_pool"
+          ]
+        },
+        {
+          "name": "engine_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "engine_gor_vault",
+          "docs": [
+            "GOR vault to pay from"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  103,
+                  111,
+                  114,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claim_lp_fees",
+      "docs": [
+        "LP fee claim — authority-gated, called via CPI from main program."
+      ],
+      "discriminator": [
+        72,
+        86,
+        212,
+        142,
+        60,
+        38,
+        74,
+        75
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "The authority (sovereign PDA) — signs via CPI from main program"
+          ],
+          "signer": true,
+          "relations": [
+            "engine_pool"
+          ]
+        },
+        {
+          "name": "recipient",
+          "docs": [
+            "Recipient of claimed GOR (the NFT holder, passed by main program)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "sovereign",
+          "relations": [
+            "engine_pool"
+          ]
+        },
+        {
+          "name": "engine_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "lp_claim",
+          "docs": [
+            "LP claim record — init_if_needed for first-time claims"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  108,
+                  112,
+                  95,
+                  99,
+                  108,
+                  97,
+                  105,
+                  109
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "engine_pool"
+              },
+              {
+                "kind": "arg",
+                "path": "depositor"
+              }
+            ]
+          }
+        },
+        {
+          "name": "engine_gor_vault",
+          "docs": [
+            "Engine pool GOR vault (native SOL PDA)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  103,
+                  111,
+                  114,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Pays for claim record init if needed"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "depositor",
+          "type": "pubkey"
+        },
+        {
+          "name": "deposit_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "create_pool",
+      "docs": [
+        "Create a new engine pool with BinArray page 0.",
+        "Called via CPI from the main sovereign-liquidity program."
+      ],
+      "discriminator": [
+        233,
+        146,
+        209,
+        142,
+        207,
+        104,
+        64,
+        188
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "docs": [
+            "Authority — must be the sovereign PDA (signs via CPI)"
+          ],
+          "signer": true
+        },
+        {
+          "name": "sovereign"
+        },
+        {
+          "name": "engine_pool",
+          "docs": [
+            "The engine pool account to initialize"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bin_array",
+          "docs": [
+            "BinArray page 0 — pre-allocated by the caller (sovereign-liquidity)",
+            "because Solana limits realloc to 10,240 bytes inside CPI.",
+            "The caller creates the account with the correct size + PDA before CPI.",
+            "We verify the seeds/owner and then load_init() here.",
+            "Seeds are validated above. We call load_init() to initialize the zero_copy data."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  105,
+                  110,
+                  95,
+                  97,
+                  114,
+                  114,
+                  97,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint",
+          "docs": [
+            "The sovereign token mint"
+          ]
+        },
+        {
+          "name": "engine_gor_vault",
+          "docs": [
+            "Engine GOR vault (native SOL PDA)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  103,
+                  111,
+                  114,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "engine_token_vault",
+          "docs": [
+            "Engine token vault — initialized here"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "source_token_vault",
+          "docs": [
+            "Source token vault (main program's token_vault)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "creator_token_account",
+          "docs": [
+            "Optional: Creator's token ATA for buy-in tokens"
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "CreatePoolParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "drain_legacy",
+      "docs": [
+        "Migrate GOR from legacy vault to engine vault."
+      ],
+      "discriminator": [
+        98,
+        219,
+        123,
+        11,
+        36,
+        126,
+        71,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "engine_pool"
+          ]
+        },
+        {
+          "name": "sovereign",
+          "relations": [
+            "engine_pool"
+          ]
+        },
+        {
+          "name": "engine_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "legacy_gor_vault",
+          "docs": [
+            "Old GOR vault to drain from"
+          ],
+          "writable": true
+        },
+        {
+          "name": "engine_gor_vault",
+          "docs": [
+            "New engine GOR vault"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  103,
+                  111,
+                  114,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "drain_pool",
+      "docs": [
+        "Emergency drain of all pool assets — governance only."
+      ],
+      "discriminator": [
+        22,
+        179,
+        191,
+        145,
+        255,
+        51,
+        125,
+        70
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Authority (sovereign PDA) — signs via CPI"
+          ],
+          "signer": true,
+          "relations": [
+            "engine_pool"
+          ]
+        },
+        {
+          "name": "sovereign",
+          "relations": [
+            "engine_pool"
+          ]
+        },
+        {
+          "name": "engine_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "engine_gor_vault",
+          "docs": [
+            "Engine GOR vault"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  103,
+                  111,
+                  114,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "engine_token_vault",
+          "docs": [
+            "Engine token vault"
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_mint",
+          "docs": [
+            "Token mint"
+          ]
+        },
+        {
+          "name": "recipient_sol",
+          "docs": [
+            "Recipient for drained GOR (main program's sol_vault)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "recipient_token",
+          "docs": [
+            "Recipient for drained tokens (main program's token_vault)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "extend_bin_array",
+      "docs": [
+        "Extend a pre-allocated BinArray to target_len bytes (max +10,240 per call).",
+        "Call multiple times to reach BinArray::LEN (32,816 bytes)."
+      ],
+      "discriminator": [
+        51,
+        204,
+        198,
+        234,
+        232,
+        223,
+        38,
+        136
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sovereign"
+        },
+        {
+          "name": "bin_array",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  105,
+                  110,
+                  95,
+                  97,
+                  114,
+                  114,
+                  97,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "target_len",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "pause_pool",
+      "docs": [
+        "Pause trading — governance only."
+      ],
+      "discriminator": [
+        160,
+        15,
+        12,
+        189,
+        160,
+        0,
+        243,
+        245
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "engine_pool"
+          ]
+        },
+        {
+          "name": "sovereign",
+          "relations": [
+            "engine_pool"
+          ]
+        },
+        {
+          "name": "engine_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "prepare_bin_array",
+      "docs": [
+        "Pre-allocate BinArray page 0 for a sovereign.",
+        "Must be called BEFORE finalize_engine_pool (typically in the same tx).",
+        "Needed because Solana limits CPI account allocations to 10,240 bytes."
+      ],
+      "discriminator": [
+        103,
+        150,
+        203,
+        4,
+        72,
+        207,
+        167,
+        54
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sovereign"
+        },
+        {
+          "name": "bin_array",
+          "docs": [
+            "Seeds validated by constraint; account must not already exist."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  105,
+                  110,
+                  95,
+                  97,
+                  114,
+                  114,
+                  97,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "swap_buy",
+      "docs": [
+        "Buy tokens with GOR (native SOL). CPAMM pricing within bins.",
+        "Pass overflow BinArray page in remaining_accounts[0] if buy",
+        "may cross a 512-bin page boundary."
+      ],
+      "discriminator": [
+        76,
+        98,
+        154,
+        93,
+        42,
+        113,
+        62,
+        139
+      ],
+      "accounts": [
+        {
+          "name": "trader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sovereign",
+          "relations": [
+            "engine_pool"
+          ]
+        },
+        {
+          "name": "engine_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint"
+        },
+        {
+          "name": "engine_gor_vault",
+          "docs": [
+            "Engine GOR vault PDA (native SOL)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  103,
+                  111,
+                  114,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "engine_token_vault",
+          "docs": [
+            "Engine token vault"
+          ],
+          "writable": true
+        },
+        {
+          "name": "trader_token_account",
+          "docs": [
+            "Trader's token ATA"
+          ],
+          "writable": true
+        },
+        {
+          "name": "bin_array",
+          "docs": [
+            "Active BinArray page (contains the current frontier bin).",
+            "Loaded via manual bytemuck cast (no AccountLoader overhead)."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "gor_input",
+          "type": "u64"
+        },
+        {
+          "name": "min_tokens_out",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "swap_sell",
+      "docs": [
+        "Sell tokens for GOR. Locked-rate settlement from bins.",
+        "Pass lower BinArray page in remaining_accounts[0] if sell",
+        "may cross DOWN a page boundary."
+      ],
+      "discriminator": [
+        176,
+        40,
+        55,
+        165,
+        110,
+        62,
+        84,
+        97
+      ],
+      "accounts": [
+        {
+          "name": "trader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sovereign",
+          "relations": [
+            "engine_pool"
+          ]
+        },
+        {
+          "name": "engine_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint"
+        },
+        {
+          "name": "engine_gor_vault",
+          "docs": [
+            "Engine GOR vault PDA (native SOL)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  103,
+                  111,
+                  114,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "engine_token_vault",
+          "docs": [
+            "Engine token vault"
+          ],
+          "writable": true
+        },
+        {
+          "name": "trader_token_account",
+          "docs": [
+            "Trader's token ATA"
+          ],
+          "writable": true
+        },
+        {
+          "name": "bin_array",
+          "docs": [
+            "Active BinArray page (contains the current frontier bin).",
+            "Loaded via manual bytemuck cast (no AccountLoader overhead)."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "token_input",
+          "type": "u64"
+        },
+        {
+          "name": "min_gor_out",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "unpause_pool",
+      "docs": [
+        "Unpause trading — governance only."
+      ],
+      "discriminator": [
+        241,
+        148,
+        129,
+        243,
+        222,
+        125,
+        125,
+        160
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "engine_pool"
+          ]
+        },
+        {
+          "name": "sovereign",
+          "relations": [
+            "engine_pool"
+          ]
+        },
+        {
+          "name": "engine_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "update_fees",
+      "docs": [
+        "Update swap/creator/bin fee bps — governance only."
+      ],
+      "discriminator": [
+        225,
+        27,
+        13,
+        6,
+        69,
+        84,
+        172,
+        191
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "engine_pool"
+          ]
+        },
+        {
+          "name": "sovereign",
+          "relations": [
+            "engine_pool"
+          ]
+        },
+        {
+          "name": "engine_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "new_swap_fee_bps",
+          "type": {
+            "option": "u16"
+          }
+        },
+        {
+          "name": "new_creator_fee_share_bps",
+          "type": {
+            "option": "u16"
+          }
+        },
+        {
+          "name": "new_bin_fee_share_bps",
+          "type": {
+            "option": "u16"
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "BinArray",
+      "discriminator": [
+        92,
+        142,
+        92,
+        220,
+        5,
+        148,
+        70,
+        181
+      ]
+    },
+    {
+      "name": "EngineLpClaim",
+      "discriminator": [
+        192,
+        153,
+        152,
+        113,
+        30,
+        59,
+        15,
+        117
+      ]
+    },
+    {
+      "name": "EnginePool",
+      "discriminator": [
+        33,
+        170,
+        235,
+        4,
+        158,
+        212,
+        146,
+        169
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "BinEmptied",
+      "discriminator": [
+        103,
+        119,
+        152,
+        209,
+        117,
+        189,
+        209,
+        150
+      ]
+    },
+    {
+      "name": "BinFeeSettled",
+      "discriminator": [
+        190,
+        212,
+        196,
+        101,
+        114,
+        215,
+        185,
+        226
+      ]
+    },
+    {
+      "name": "BinFilled",
+      "discriminator": [
+        51,
+        245,
+        212,
+        220,
+        77,
+        218,
+        118,
+        171
+      ]
+    },
+    {
+      "name": "BinPageAllocated",
+      "discriminator": [
+        34,
+        209,
+        18,
+        210,
+        129,
+        129,
+        176,
+        67
+      ]
+    },
+    {
+      "name": "CreatorFeeClaimed",
+      "discriminator": [
+        54,
+        120,
+        193,
+        26,
+        161,
+        47,
+        187,
+        207
+      ]
+    },
+    {
+      "name": "LpFeeClaimed",
+      "discriminator": [
+        145,
+        162,
+        180,
+        193,
+        81,
+        200,
+        198,
+        147
+      ]
+    },
+    {
+      "name": "PoolCreated",
+      "discriminator": [
+        202,
+        44,
+        41,
+        88,
+        104,
+        220,
+        157,
+        82
+      ]
+    },
+    {
+      "name": "PoolDrained",
+      "discriminator": [
+        210,
+        92,
+        25,
+        247,
+        117,
+        182,
+        3,
+        51
+      ]
+    },
+    {
+      "name": "PoolStatusChanged",
+      "discriminator": [
+        148,
+        190,
+        81,
+        62,
+        81,
+        239,
+        137,
+        188
+      ]
+    },
+    {
+      "name": "RecoveryComplete",
+      "discriminator": [
+        125,
+        91,
+        195,
+        23,
+        239,
+        223,
+        59,
+        133
+      ]
+    },
+    {
+      "name": "Swap",
+      "discriminator": [
+        81,
+        108,
+        227,
+        190,
+        205,
+        208,
+        10,
+        196
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "MathOverflow",
+      "msg": "Math overflow in engine computation"
+    },
+    {
+      "code": 6001,
+      "name": "PoolPaused",
+      "msg": "Pool is paused"
+    },
+    {
+      "code": 6002,
+      "name": "PoolNotTrading",
+      "msg": "Pool is not in Trading status"
+    },
+    {
+      "code": 6003,
+      "name": "PoolNotPaused",
+      "msg": "Pool is not paused"
+    },
+    {
+      "code": 6004,
+      "name": "PoolAlreadyInitialized",
+      "msg": "Pool already initialized"
+    },
+    {
+      "code": 6005,
+      "name": "InsufficientTokens",
+      "msg": "Insufficient tokens in pool to fulfill buy"
+    },
+    {
+      "code": 6006,
+      "name": "InsufficientReserves",
+      "msg": "Insufficient GOR reserves to fulfill sell"
+    },
+    {
+      "code": 6007,
+      "name": "SolvencyViolation",
+      "msg": "Solvency violation: GOR reserve would drop below initial bonding principal"
+    },
+    {
+      "code": 6008,
+      "name": "ZeroAmount",
+      "msg": "Swap amount must be greater than zero"
+    },
+    {
+      "code": 6009,
+      "name": "SlippageExceeded",
+      "msg": "Slippage tolerance exceeded"
+    },
+    {
+      "code": 6010,
+      "name": "SwapFeeExceedsMax",
+      "msg": "Swap fee exceeds maximum allowed (10%)"
+    },
+    {
+      "code": 6011,
+      "name": "CreatorFeeShareExceedsMax",
+      "msg": "Creator fee share exceeds maximum allowed (50%)"
+    },
+    {
+      "code": 6012,
+      "name": "FeeControlRenounced",
+      "msg": "Fee control has been renounced"
+    },
+    {
+      "code": 6013,
+      "name": "NoFeesToClaim",
+      "msg": "No fees available to claim"
+    },
+    {
+      "code": 6014,
+      "name": "InvalidBinConfig",
+      "msg": "Invalid bin configuration"
+    },
+    {
+      "code": 6015,
+      "name": "ZeroBondingAmount",
+      "msg": "Bonding amount must be greater than zero"
+    },
+    {
+      "code": 6016,
+      "name": "ZeroTokenSupply",
+      "msg": "Token supply must be greater than zero"
+    },
+    {
+      "code": 6017,
+      "name": "RecoveryNotComplete",
+      "msg": "Recovery not yet complete — creator fees locked"
+    },
+    {
+      "code": 6018,
+      "name": "Unauthorized",
+      "msg": "Unauthorized: not the pool authority"
+    },
+    {
+      "code": 6019,
+      "name": "PoolAlreadyDrained",
+      "msg": "Pool has already been drained"
+    },
+    {
+      "code": 6020,
+      "name": "MissingCreatorTokenAccount",
+      "msg": "Creator token account required for buy-in"
+    },
+    {
+      "code": 6021,
+      "name": "BinArrayMismatch",
+      "msg": "BinArray does not belong to this pool's sovereign"
+    },
+    {
+      "code": 6022,
+      "name": "BinPageNotLoaded",
+      "msg": "Required BinArray page is not loaded in accounts"
+    },
+    {
+      "code": 6023,
+      "name": "BinPageNotAllocated",
+      "msg": "BinArray page has not been allocated yet"
+    },
+    {
+      "code": 6024,
+      "name": "BinPageAlreadyExists",
+      "msg": "BinArray page already exists"
+    },
+    {
+      "code": 6025,
+      "name": "BinPageNotSequential",
+      "msg": "BinArray page index is not sequential (gap in allocation)"
+    },
+    {
+      "code": 6026,
+      "name": "BinCountOutOfRange",
+      "msg": "Number of bins outside allowed range"
+    },
+    {
+      "code": 6027,
+      "name": "AllTokensSold",
+      "msg": "All tokens in pool have been sold — no more bins to fill"
+    },
+    {
+      "code": 6028,
+      "name": "InsufficientGor",
+      "msg": "Insufficient GOR in vault"
+    },
+    {
+      "code": 6029,
+      "name": "InvalidFeeConfig",
+      "msg": "Invalid fee configuration"
+    },
+    {
+      "code": 6030,
+      "name": "InvalidBinArrayOwner",
+      "msg": "BinArray account owner is not the engine program"
+    },
+    {
+      "code": 6031,
+      "name": "InvalidBinArraySize",
+      "msg": "BinArray account data length is incorrect"
+    }
+  ],
+  "types": [
+    {
+      "name": "Bin",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tokens",
+            "docs": [
+              "Tokens currently in this bin.",
+              "Empty:   tokens == bin_capacity (all tokens present)",
+              "Partial: 0 < tokens < bin_capacity (being filled)",
+              "Filled:  tokens == 0 (all purchased, GOR locked)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "gor_locked",
+            "docs": [
+              "Actual GOR accumulated from CPAMM purchases.",
+              "Empty:   0",
+              "Partial: sum of GOR paid so far into this bin",
+              "Filled:  total GOR locked (the settlement record)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "Bin status: 0=Empty, 1=Partial, 2=Filled"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "_padding",
+            "docs": [
+              "Alignment padding"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                7
+              ]
+            }
+          },
+          {
+            "name": "fee_snapshot_lo",
+            "docs": [
+              "Accumulator snapshot (lower 64 bits) — set when bin becomes Filled.",
+              "Only earns fees after this point (prevents retroactive claims)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "fee_snapshot_hi",
+            "docs": [
+              "Accumulator snapshot (upper 64 bits)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "fee_credit",
+            "docs": [
+              "Accumulated fee bonus GOR for this bin (settled lazily on sell).",
+              "Boosts the sell rate: effective_rate = (gor_locked + fee_credit) / tokens_outstanding"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "_reserved",
+            "docs": [
+              "Reserved for future use"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "_reserved2",
+            "docs": [
+              "Extra padding so size_of::<Bin>() == 64 (matches Bin::LEN)"
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BinArray",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sovereign",
+            "docs": [
+              "The sovereign this page belongs to"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "page_index",
+            "docs": [
+              "Page index (0-based). Global bin index = page_index * 512 + offset."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "initialized_bins",
+            "docs": [
+              "Number of bins initialized on this page (≤ BINS_PER_PAGE).",
+              "Last page may have fewer than 512 active bins."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "bins",
+            "docs": [
+              "The bin data"
+            ],
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "Bin"
+                  }
+                },
+                128
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "BinEmptied",
+      "docs": [
+        "Emitted when a bin returns to Empty (all tokens returned via sells)"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "bin_index",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BinFeeSettled",
+      "docs": [
+        "Emitted when a bin's fee credit is settled during a sell"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "bin_index",
+            "type": "u32"
+          },
+          {
+            "name": "credit_delta",
+            "type": "u64"
+          },
+          {
+            "name": "total_credit",
+            "type": "u64"
+          },
+          {
+            "name": "accumulator",
+            "type": "u128"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BinFilled",
+      "docs": [
+        "Emitted when a bin becomes fully Filled (all tokens purchased)"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "bin_index",
+            "type": "u32"
+          },
+          {
+            "name": "gor_locked",
+            "type": "u64"
+          },
+          {
+            "name": "bin_capacity",
+            "type": "u64"
+          },
+          {
+            "name": "locked_rate",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BinPageAllocated",
+      "docs": [
+        "Emitted when a new BinArray page is allocated"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "page_index",
+            "type": "u32"
+          },
+          {
+            "name": "bins_on_page",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CreatePoolParams",
+      "docs": [
+        "Parameters for pool creation"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "creator",
+            "docs": [
+              "Creator wallet address"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "total_token_supply",
+            "docs": [
+              "Total token supply deposited into the pool"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bonding_gor",
+            "docs": [
+              "Total GOR from bonding (already in gor_vault)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "num_bins",
+            "docs": [
+              "Number of bins (governance-controlled granularity)"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "swap_fee_bps",
+            "docs": [
+              "Swap fee in basis points"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "creator_fee_share_bps",
+            "docs": [
+              "Creator fee share in bps (of total swap fees, after recovery)"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "creator_escrow",
+            "docs": [
+              "Creator's escrowed GOR for market buy-in (0 if none)"
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CreatorFeeClaimed",
+      "docs": [
+        "Emitted when creator fees are claimed"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "total_claimed",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EngineLpClaim",
+      "docs": [
+        "Tracks how much LP fee each depositor has already claimed.",
+        "PDA seeds: [\"engine_lp_claim\", pool.key(), depositor.key()]"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "depositor",
+            "type": "pubkey"
+          },
+          {
+            "name": "deposit_amount",
+            "type": "u64"
+          },
+          {
+            "name": "last_fee_per_share",
+            "type": "u128"
+          },
+          {
+            "name": "total_claimed",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EnginePool",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool_status",
+            "docs": [
+              "Current pool lifecycle status"
+            ],
+            "type": {
+              "defined": {
+                "name": "PoolStatus"
+              }
+            }
+          },
+          {
+            "name": "authority",
+            "docs": [
+              "Authority (sovereign PDA from main program)"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "creator",
+            "docs": [
+              "Creator wallet (for creator fee claims)"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "sovereign",
+            "docs": [
+              "The sovereign this pool belongs to"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "docs": [
+              "The sovereign token mint"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "gor_vault",
+            "docs": [
+              "System account PDA holding GOR reserves (native SOL)"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_vault",
+            "docs": [
+              "Token account holding unsold sovereign tokens"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "total_token_supply",
+            "docs": [
+              "Total token supply deposited into pool at creation (immutable)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "token_reserve",
+            "docs": [
+              "Tokens currently held in the pool (unsold / returned via sells)",
+              "CPAMM spot_price = gor_reserve / token_reserve"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "gor_reserve",
+            "docs": [
+              "GOR backing the pool (trading reserve, EXCLUDES accumulated fees)",
+              "Invariant: gor_reserve >= initial_gor_reserve (solvency floor)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "initial_gor_reserve",
+            "docs": [
+              "Initial GOR reserve from bonding (solvency floor, immutable)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_tokens_sold",
+            "docs": [
+              "Total tokens currently sold (circulating outside pool)",
+              "Invariant: total_tokens_sold + token_reserve == total_token_supply"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "num_bins",
+            "docs": [
+              "Total number of bins for this pool (set at creation, immutable)"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "bin_capacity",
+            "docs": [
+              "Tokens per bin = total_token_supply / num_bins"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "active_bin",
+            "docs": [
+              "Global index of the current active (frontier) bin.",
+              "Bins 0..active_bin-1 = Filled (GOR locked)",
+              "Bin active_bin       = frontier (Empty or Partial)",
+              "Bins active_bin+1..  = Empty (all tokens, untouched)"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "highest_allocated_page",
+            "docs": [
+              "Index of the highest allocated BinArray page.",
+              "Pages 0..highest_allocated_page exist on-chain."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "swap_fee_bps",
+            "docs": [
+              "Swap fee in basis points (applied on every trade)"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "creator_fee_share_bps",
+            "docs": [
+              "Creator's share of fees AFTER recovery, in bps of total fees"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "recovery_target",
+            "docs": [
+              "Target GOR for investors to recover (= initial_gor_reserve)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_recovered",
+            "docs": [
+              "Total LP fees distributed toward recovery"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "recovery_complete",
+            "docs": [
+              "Whether recovery is complete (enables creator fee share)"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "total_fees_collected",
+            "docs": [
+              "Lifetime total fees collected (GOR)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "lp_fees_accumulated",
+            "docs": [
+              "LP fees accumulated (claimable by investors)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "creator_fees_accumulated",
+            "docs": [
+              "Creator fees accumulated (claimable after recovery)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "lp_fees_claimed",
+            "docs": [
+              "Total LP fees claimed by investors"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "creator_fees_claimed",
+            "docs": [
+              "Total creator fees claimed"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "lp_fee_per_share",
+            "docs": [
+              "Per-share fee accumulator (scaled by FEE_PRECISION 1e12)"
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "last_price",
+            "docs": [
+              "Last trade execution price (precision-scaled)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "twap_accumulator",
+            "docs": [
+              "Time-weighted price accumulator"
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "twap_last_slot",
+            "docs": [
+              "Slot of last TWAP update"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_volume_buy",
+            "docs": [
+              "Lifetime buy volume in GOR"
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "total_volume_sell",
+            "docs": [
+              "Lifetime sell volume in GOR"
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "total_trades",
+            "docs": [
+              "Total trade count"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_eligible_weight",
+            "docs": [
+              "Sum of gor_locked for all currently-Filled bins (eligible weight)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bin_fee_accumulator",
+            "docs": [
+              "Global fee-per-weight accumulator (scaled by FEE_PRECISION 1e12).",
+              "Updated: A += ΔF × FEE_PRECISION / W  on every fee deposit."
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "bin_fee_share_bps",
+            "docs": [
+              "Percentage of swap fees routed to bin rewards (bps, e.g. 3000 = 30%)"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "total_bin_fees_distributed",
+            "docs": [
+              "Lifetime bin fee GOR distributed (accounting)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "is_paused",
+            "docs": [
+              "Emergency pause flag"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "_padding",
+            "type": {
+              "array": [
+                "u8",
+                30
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "LpFeeClaimed",
+      "docs": [
+        "Emitted when LP fees are claimed"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "depositor",
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "deposit_amount",
+            "type": "u64"
+          },
+          {
+            "name": "fee_per_share",
+            "type": "u128"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PoolCreated",
+      "docs": [
+        "Emitted when a pool is created"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sovereign",
+            "type": "pubkey"
+          },
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "initial_gor_reserve",
+            "type": "u64"
+          },
+          {
+            "name": "total_token_supply",
+            "type": "u64"
+          },
+          {
+            "name": "num_bins",
+            "type": "u32"
+          },
+          {
+            "name": "bin_capacity",
+            "type": "u64"
+          },
+          {
+            "name": "swap_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "creator_fee_share_bps",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PoolDrained",
+      "docs": [
+        "Emitted when pool is drained (unwind)"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "gor_drained",
+            "type": "u64"
+          },
+          {
+            "name": "tokens_drained",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PoolStatus",
+      "docs": [
+        "Lifecycle status of an engine pool."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Uninitialized"
+          },
+          {
+            "name": "Trading"
+          },
+          {
+            "name": "Paused"
+          },
+          {
+            "name": "Unwound"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PoolStatusChanged",
+      "docs": [
+        "Emitted when pool status changes"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "old_status",
+            "type": "u8"
+          },
+          {
+            "name": "new_status",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RecoveryComplete",
+      "docs": [
+        "Emitted when recovery completes"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "total_recovered",
+            "type": "u64"
+          },
+          {
+            "name": "recovery_target",
+            "type": "u64"
+          },
+          {
+            "name": "trade_count",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Swap",
+      "docs": [
+        "Emitted on every swap (buy or sell)"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "is_buy",
+            "type": "bool"
+          },
+          {
+            "name": "gor_amount",
+            "type": "u64"
+          },
+          {
+            "name": "token_amount",
+            "type": "u64"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "execution_price",
+            "type": "u64"
+          },
+          {
+            "name": "gor_reserve",
+            "type": "u64"
+          },
+          {
+            "name": "token_reserve",
+            "type": "u64"
+          },
+          {
+            "name": "active_bin",
+            "type": "u32"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 import { Program, AnchorProvider, BN, Idl } from '@coral-xyz/anchor';
-import { Connection, PublicKey, Transaction, SystemProgram, Keypair, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction, SystemProgram, Keypair, SYSVAR_RENT_PUBKEY, ComputeBudgetProgram } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, createAssociatedTokenAccountIdempotentInstruction, getAccount, getTransferFeeAmount, getMint, getTransferFeeConfig } from '@solana/spl-token';
 import { config } from '../config';
 import { 
@@ -8,7 +8,6 @@ import {
   getDepositRecordPDA, 
   getSolVaultPDA,
   getCreatorTrackerPDA,
-  getCreationFeeEscrowPDA,
   getTokenVaultPDA,
   getTokenMintPDA,
   getExtraAccountMetasPDA,
@@ -16,6 +15,11 @@ import {
   getGenesisNftMintPDA,
   getProposalPDA,
   getVoteRecordPDA,
+  getEnginePoolPDA,
+  getEngineGorVaultPDA,
+  getEngineTokenVaultPDA,
+  getEngineLpClaimPDA,
+  getEngineBinArrayPDA,
 } from './pdas';
 import { 
   CreateSovereignParams as OnChainCreateSovereignParams, 
@@ -24,10 +28,14 @@ import {
 } from './idl/types';
 
 // Import the IDL
-import { SovereignLiquidityIDL } from './idl';
+import { SovereignLiquidityIDL, SovereignEngineIDL } from './idl';
 
 // Type alias for program (using any for Anchor 0.30+ compatibility)
 export type SovereignLiquidityProgram = Program;
+export type SovereignEngineProgram = Program;
+
+// Engine program ID (V3 — BinArray settlement engine)
+const ENGINE_PROGRAM_ID = new PublicKey('Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt');
 
 /**
  * Get the Anchor Program instance
@@ -35,6 +43,20 @@ export type SovereignLiquidityProgram = Program;
  */
 export function getProgram(provider: AnchorProvider): SovereignLiquidityProgram {
   return new Program(SovereignLiquidityIDL as Idl, provider);
+}
+
+/**
+ * Get the Engine Program instance
+ */
+export function getEngineProgram(provider: AnchorProvider): SovereignEngineProgram {
+  return new Program(SovereignEngineIDL as Idl, provider);
+}
+
+/**
+ * Get engine program from an existing main program (shares the provider)
+ */
+function engineFromMain(mainProgram: SovereignLiquidityProgram): SovereignEngineProgram {
+  return getEngineProgram(mainProgram.provider as AnchorProvider);
 }
 
 /**
@@ -194,8 +216,10 @@ export async function buildCreateSovereignTx(
   // Derive the sovereign PDA using the next ID
   const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
   const [creatorTrackerPDA] = getCreatorTrackerPDA(sovereignPDA, program.programId);
-  const [creationFeeEscrowPDA] = getCreationFeeEscrowPDA(sovereignPDA, program.programId);
   const [tokenVaultPDA] = getTokenVaultPDA(sovereignPDA, program.programId);
+  
+  // Protocol treasury - receives non-refundable creation fee
+  const treasury = new PublicKey('4RKDExub3WSqgairnZBGFLzvrxmJLxM2ocPaVDr7GXnL');
   
   // Convert frontend params to on-chain params
   const sovereignType: OnChainSovereignType = params.sovereignType === 'TokenLaunch' 
@@ -235,7 +259,7 @@ export async function buildCreateSovereignTx(
     protocolState: protocolStatePDA,
     sovereign: sovereignPDA,
     creatorTracker: creatorTrackerPDA,
-    creationFeeEscrow: creationFeeEscrowPDA,
+    treasury,
     tokenMint: params.existingMint || null,
     creatorTokenAccount: params.existingMint 
       ? getAssociatedTokenAddressSync(params.existingMint, creator)
@@ -438,275 +462,10 @@ export async function buildClaimDepositorFeesTx(
 }
 
 // ============================================================
-// Claim Fees (SAMM Harvest)
+// Engine Pool Constants
 // ============================================================
 
-const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
-
-/**
- * Build a claim_fees transaction to harvest trading fees from the SAMM LP position.
- * This is step 1 of the fee flow: harvest fees from SAMM → fee vault.
- * Step 2 is claimDepositorFees which distributes from fee vault → individual depositor.
- *
- * Anyone can call this (claimer doesn't need to be a depositor).
- * Requires fetching the PermanentLock account to derive SAMM position accounts.
- * 
- * @param program - The Anchor program instance
- * @param claimer - The wallet paying for the transaction (signer)
- * @param sovereignId - The sovereign's numeric ID
- * @param tokenMint - The sovereign's token mint
- * @param connection - Solana connection (needed to fetch PermanentLock state)
- */
-export async function buildClaimFeesTx(
-  program: SovereignLiquidityProgram,
-  claimer: PublicKey,
-  sovereignId: bigint | number,
-  tokenMint: PublicKey,
-  connection: Connection,
-): Promise<Transaction> {
-  const [protocolStatePDA] = getProtocolStatePDA(program.programId);
-  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
-  const [permanentLockPDA] = getPermanentLockPDA(sovereignPDA, program.programId);
-  const [feeVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
-  const [creatorFeeTrackerPDA] = getCreatorTrackerPDA(sovereignPDA, program.programId);
-
-  // Fetch sovereign state (for fee_mode, state, ammConfig, creator)
-  const sovereign = await fetchSovereign(program, sovereignPDA);
-
-  // Fetch the PermanentLock account to get position details
-  const lockAccount = await (program.account as any).permanentLock.fetch(permanentLockPDA);
-  const poolState = new PublicKey(lockAccount.poolState);
-  const positionMint = new PublicKey(lockAccount.positionMint);
-  const positionAccount = new PublicKey(lockAccount.position);
-  const positionTokenAccount = new PublicKey(lockAccount.positionTokenAccount);
-
-  // Sort mints for canonical ordering
-  const { mint0, mint1, wgorIs0 } = sortMints(WGOR_MINT, tokenMint);
-
-  // Derive SAMM PDAs
-  const [personalPosition] = getSammPersonalPositionPDA(positionMint);
-  const [protocolPosition] = getSammProtocolPositionPDA(poolState, MIN_TICK, MAX_TICK);
-  const [sammVault0] = getSammPoolVaultPDA(poolState, mint0);
-  const [sammVault1] = getSammPoolVaultPDA(poolState, mint1);
-  const tickArrayLowerStart = getTickArrayStartIndex(MIN_TICK);
-  const tickArrayUpperStart = getTickArrayStartIndex(MAX_TICK);
-  const [tickArrayLower] = getSammTickArrayPDA(poolState, tickArrayLowerStart);
-  const [tickArrayUpper] = getSammTickArrayPDA(poolState, tickArrayUpperStart);
-  const [tickArrayBitmapExtension] = getSammTickArrayBitmapPDA(poolState);
-
-  // Recipient token accounts for permanent_lock PDA
-  // Token 0 (WGOR): legacy SPL Token ATA
-  // Token 1 (sovereign token): Token-2022 ATA
-  // Need to determine which is which based on mint ordering
-  const recipientAta0 = getAssociatedTokenAddressSync(
-    mint0,
-    permanentLockPDA,
-    true, // allowOwnerOffCurve (PDA)
-    mint0.equals(WGOR_MINT) ? TOKEN_PROGRAM_ID : TOKEN_2022_PROGRAM_ID,
-  );
-  const recipientAta1 = getAssociatedTokenAddressSync(
-    mint1,
-    permanentLockPDA,
-    true,
-    mint1.equals(WGOR_MINT) ? TOKEN_PROGRAM_ID : TOKEN_2022_PROGRAM_ID,
-  );
-
-  // Pre-instructions: ensure recipient ATAs exist
-  const tx = new Transaction();
-
-  tx.add(
-    createAssociatedTokenAccountIdempotentInstruction(
-      claimer,
-      recipientAta0,
-      permanentLockPDA,
-      mint0,
-      mint0.equals(WGOR_MINT) ? TOKEN_PROGRAM_ID : TOKEN_2022_PROGRAM_ID,
-    ),
-  );
-  tx.add(
-    createAssociatedTokenAccountIdempotentInstruction(
-      claimer,
-      recipientAta1,
-      permanentLockPDA,
-      mint1,
-      mint1.equals(WGOR_MINT) ? TOKEN_PROGRAM_ID : TOKEN_2022_PROGRAM_ID,
-    ),
-  );
-
-  // Build remaining accounts for SAMM CPI (15 accounts in exact order)
-  const remainingAccounts: { pubkey: PublicKey; isWritable: boolean; isSigner: boolean }[] = [
-    { pubkey: positionTokenAccount, isWritable: false, isSigner: false },  // [0] nft_account
-    { pubkey: personalPosition, isWritable: true, isSigner: false },       // [1] personal_position
-    { pubkey: poolState, isWritable: true, isSigner: false },              // [2] pool_state
-    { pubkey: protocolPosition, isWritable: true, isSigner: false },       // [3] protocol_position
-    { pubkey: sammVault0, isWritable: true, isSigner: false },             // [4] token_vault_0
-    { pubkey: sammVault1, isWritable: true, isSigner: false },             // [5] token_vault_1
-    { pubkey: tickArrayLower, isWritable: true, isSigner: false },         // [6] tick_array_lower
-    { pubkey: tickArrayUpper, isWritable: true, isSigner: false },         // [7] tick_array_upper
-    { pubkey: recipientAta0, isWritable: true, isSigner: false },          // [8] recipient_token_account_0
-    { pubkey: recipientAta1, isWritable: true, isSigner: false },          // [9] recipient_token_account_1
-    { pubkey: TOKEN_2022_PROGRAM_ID, isWritable: false, isSigner: false }, // [10] token_program_2022
-    { pubkey: MEMO_PROGRAM_ID, isWritable: false, isSigner: false },       // [11] memo_program
-    { pubkey: mint0, isWritable: false, isSigner: false },                 // [12] vault_0_mint
-    { pubkey: mint1, isWritable: false, isSigner: false },                 // [13] vault_1_mint
-    { pubkey: tickArrayBitmapExtension, isWritable: true, isSigner: false }, // [14] tick_array_bitmap_extension
-  ];
-
-  // ---- Token fee routing accounts [15-18+] ----
-  // Determine fee_mode and state to decide which routing path the on-chain handler will take
-  const feeMode = Object.keys(sovereign.feeMode)[0]; // e.g. "recoveryBoost", "fairLaunch", "creatorRevenue"
-  const sovState = Object.keys(sovereign.state)[0];   // e.g. "recovery", "active"
-  const isRecovery = sovState === 'recovery';
-
-  const needsSwap = isRecovery && (feeMode === 'recoveryBoost' || feeMode === 'fairLaunch');
-  const needsBurn = !isRecovery && feeMode === 'fairLaunch';
-  const needsCreatorTransfer = feeMode === 'creatorRevenue' || (!isRecovery && feeMode === 'recoveryBoost');
-
-  if (needsSwap || needsBurn || needsCreatorTransfer) {
-    const ammConfig = new PublicKey(sovereign.ammConfig);
-    const [observationState] = getSammObservationPDA(poolState);
-    const creator = new PublicKey(sovereign.creator);
-
-    // Creator's Token-2022 ATA for the sovereign token (used in creator transfer path)
-    const creatorTokenAta = getAssociatedTokenAddressSync(
-      tokenMint,
-      creator,
-      false,
-      TOKEN_2022_PROGRAM_ID,
-    );
-
-    // If creator transfer path, ensure creator ATA exists
-    if (needsCreatorTransfer) {
-      tx.add(
-        createAssociatedTokenAccountIdempotentInstruction(
-          claimer,
-          creatorTokenAta,
-          creator,
-          tokenMint,
-          TOKEN_2022_PROGRAM_ID,
-        ),
-      );
-    }
-
-    remainingAccounts.push(
-      { pubkey: ammConfig, isWritable: false, isSigner: false },             // [15] amm_config
-      { pubkey: observationState, isWritable: true, isSigner: false },       // [16] observation_state
-      { pubkey: creatorTokenAta, isWritable: true, isSigner: false },        // [17] creator_token_ata
-    );
-
-    // Swap path needs tick arrays + bitmap extension for token→WGOR swap [18+]
-    if (needsSwap) {
-      // Use the same tick arrays covering the full range, plus bitmap extension
-      remainingAccounts.push(
-        { pubkey: tickArrayLower, isWritable: true, isSigner: false },         // [18] swap tick_array_0
-        { pubkey: tickArrayUpper, isWritable: true, isSigner: false },         // [19] swap tick_array_1
-        { pubkey: tickArrayBitmapExtension, isWritable: true, isSigner: false }, // [20] swap tick_array_bitmap_extension
-      );
-    }
-  }
-
-  // Main instruction
-  const mainIx = await (program.methods as any)
-    .claimFees()
-    .accounts({
-      claimer,
-      protocolState: protocolStatePDA,
-      sovereign: sovereignPDA,
-      permanentLock: permanentLockPDA,
-      position: positionAccount,
-      tokenVaultA: sammVault0,
-      tokenVaultB: sammVault1,
-      feeVault: feeVaultPDA,
-      creatorFeeTracker: creatorFeeTrackerPDA,
-      sammProgram: SAMM_PROGRAM_ID,
-      tokenMint,
-      tokenProgram: TOKEN_PROGRAM_ID,
-      tokenProgram2022: TOKEN_2022_PROGRAM_ID,
-      systemProgram: SystemProgram.programId,
-    })
-    .remainingAccounts(remainingAccounts)
-    .transaction();
-
-  tx.add(mainIx);
-
-  return tx;
-}
-
-// ============================================================
-// SAMM Constants and PDA Derivation
-// ============================================================
-
-const SAMM_PROGRAM_ID = new PublicKey('WTzkPUoprVx7PDc1tfKA5sS7k1ynCgU89WtwZhksHX5');
-const WGOR_MINT = new PublicKey('So11111111111111111111111111111111111111112');
 const METAPLEX_PROGRAM_ID = new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
-
-// Full-range tick constants (aligned to tick_spacing=10)
-const MIN_TICK = -443630;
-const MAX_TICK = 443630;
-const DEFAULT_TICK_SPACING = 10;
-
-/** Sort two mints into canonical order (lower pubkey bytes first) */
-function sortMints(mintA: PublicKey, mintB: PublicKey): { mint0: PublicKey; mint1: PublicKey; wgorIs0: boolean } {
-  const cmp = Buffer.compare(mintA.toBuffer(), mintB.toBuffer());
-  const mint0 = cmp < 0 ? mintA : mintB;
-  const mint1 = cmp < 0 ? mintB : mintA;
-  return { mint0, mint1, wgorIs0: mint0.equals(WGOR_MINT) };
-}
-
-function getSammPoolStatePDA(ammConfig: PublicKey, mint0: PublicKey, mint1: PublicKey): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from('pool'), ammConfig.toBuffer(), mint0.toBuffer(), mint1.toBuffer()],
-    SAMM_PROGRAM_ID,
-  );
-}
-
-function getSammPoolVaultPDA(poolState: PublicKey, tokenMint: PublicKey): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from('pool_vault'), poolState.toBuffer(), tokenMint.toBuffer()],
-    SAMM_PROGRAM_ID,
-  );
-}
-
-function getSammObservationPDA(poolState: PublicKey): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from('observation'), poolState.toBuffer()],
-    SAMM_PROGRAM_ID,
-  );
-}
-
-function getSammTickArrayBitmapPDA(poolState: PublicKey): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from('pool_tick_array_bitmap_extension'), poolState.toBuffer()],
-    SAMM_PROGRAM_ID,
-  );
-}
-
-function getSammTickArrayPDA(poolState: PublicKey, startIndex: number): [PublicKey, number] {
-  const buf = Buffer.alloc(4);
-  buf.writeInt32BE(startIndex); // Raydium CLMM uses big-endian for tick array PDA seeds
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from('tick_array'), poolState.toBuffer(), buf],
-    SAMM_PROGRAM_ID,
-  );
-}
-
-function getSammPersonalPositionPDA(nftMint: PublicKey): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from('position'), nftMint.toBuffer()],
-    SAMM_PROGRAM_ID,
-  );
-}
-
-function getSammProtocolPositionPDA(poolState: PublicKey, tickLower: number, tickUpper: number): [PublicKey, number] {
-  const lBuf = Buffer.alloc(4);
-  lBuf.writeInt32BE(tickLower); // Raydium CLMM uses big-endian for protocol position PDA seeds
-  const uBuf = Buffer.alloc(4);
-  uBuf.writeInt32BE(tickUpper);
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from('protocol_position'), poolState.toBuffer(), lBuf, uBuf],
-    SAMM_PROGRAM_ID,
-  );
-}
 
 function getMetaplexMetadataPDA(mint: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
@@ -715,64 +474,313 @@ function getMetaplexMetadataPDA(mint: PublicKey): [PublicKey, number] {
   );
 }
 
-function getTickArrayStartIndex(tick: number): number {
-  const ticksPerArray = 60 * DEFAULT_TICK_SPACING; // 600
-  return Math.floor(tick / ticksPerArray) * ticksPerArray;
-}
-
 // ============================================================
-// Finalize Step 1: Create Pool
+// Finalize: Create Engine Pool (single step)
 // ============================================================
 
 /**
- * Build the finalize_create_pool transaction (Finalizing -> PoolCreated).
- * Creates the SAMM CLMM pool with initial price derived from SOL/token ratio.
- *
- * @param ammConfig - The SAMM AMM config account (e.g. fee-tier config)
+ * Build a finalize_engine_pool transaction.
+ * Single-step finalization: creates the engine pool, transfers GOR + tokens
+ * from bonding vaults to engine vaults, transitions Finalizing → Recovery.
  */
-export async function buildFinalizeCreatePoolTx(
+export async function buildFinalizeEnginePoolTx(
   program: SovereignLiquidityProgram,
   payer: PublicKey,
   sovereignId: bigint | number,
-  tokenMint: PublicKey,
-  ammConfig: PublicKey,
 ): Promise<Transaction> {
   const [protocolStatePDA] = getProtocolStatePDA(program.programId);
   const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
   const [solVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
   const [tokenVaultPDA] = getTokenVaultPDA(sovereignPDA, program.programId);
+  const [enginePoolPDA] = getEnginePoolPDA(sovereignPDA);
+  const [engineGorVaultPDA] = getEngineGorVaultPDA(sovereignPDA);
+  const [engineTokenVaultPDA] = getEngineTokenVaultPDA(sovereignPDA);
+  const [binArrayPDA] = getEngineBinArrayPDA(sovereignPDA, 0); // page 0 initialized with pool
 
-  // Sort mints for canonical ordering
-  const { mint0, mint1 } = sortMints(WGOR_MINT, tokenMint);
+  // Fetch sovereign to get the token_mint and check creator escrow
+  const sovereignAccount = await (program.account as any).sovereignState.fetch(sovereignPDA);
+  const tokenMint: PublicKey = sovereignAccount.tokenMint;
+  const creatorEscrow: BN = sovereignAccount.creatorEscrow;
 
-  // Derive SAMM PDAs
-  const [poolStatePDA] = getSammPoolStatePDA(ammConfig, mint0, mint1);
-  const [sammVault0PDA] = getSammPoolVaultPDA(poolStatePDA, mint0);
-  const [sammVault1PDA] = getSammPoolVaultPDA(poolStatePDA, mint1);
-  const [observationPDA] = getSammObservationPDA(poolStatePDA);
-  const [tickArrayBitmapPDA] = getSammTickArrayBitmapPDA(poolStatePDA);
+  // Determine the token program (Token-2022 for TokenLaunch, Token for BYO)
+  const mintAccountInfo = await program.provider.connection.getAccountInfo(tokenMint);
+  const tokenProgramId = mintAccountInfo?.owner || TOKEN_2022_PROGRAM_ID;
+
+  // ── Pre-allocate BinArray page 0 via engine program ──
+  // BinArray is 8,240 bytes (128 bins × 64 bytes + header) — fits in a
+  // single prepare_bin_array call (under the 10,240-byte per-ix limit).
+  const engineProg = engineFromMain(program);
+  const binArrayAccounts = {
+    payer,
+    sovereign: sovereignPDA,
+    binArray: binArrayPDA,
+    systemProgram: SystemProgram.programId,
+  };
+
+  const prepareBinArrayIx = await (engineProg.methods as any)
+    .prepareBinArray()
+    .accounts(binArrayAccounts)
+    .instruction();
+
+  // ── Top-up sol_vault to cover rent-exempt gap ──
+  // The vault holds exactly total_deposited + creator_escrow, but the on-chain
+  // check subtracts rent_exempt(0) before comparing, causing a shortfall of
+  // ~890,880 lamports. Prepend a small SOL transfer to cover the gap.
+  const solVaultBalance = await program.provider.connection.getBalance(solVaultPDA);
+  const rentExempt = await program.provider.connection.getMinimumBalanceForRentExemption(0);
+  const totalNeeded = new BN(sovereignAccount.totalDeposited.toString())
+    .add(new BN(creatorEscrow.toString()))
+    .toNumber();
+  const available = solVaultBalance - rentExempt;
+  const preInstructions: any[] = [prepareBinArrayIx];
+  if (available < totalNeeded) {
+    const topUp = totalNeeded - available;
+    preInstructions.push(
+      SystemProgram.transfer({
+        fromPubkey: payer,
+        toPubkey: solVaultPDA,
+        lamports: topUp,
+      })
+    );
+  }
+
+  // If creator has escrowed SOL, we need to pass their token ATA for the buy-in
+  let creatorTokenAccount: PublicKey | null = null;
+  if (creatorEscrow && !creatorEscrow.isZero()) {
+    const creator: PublicKey = sovereignAccount.creator;
+    creatorTokenAccount = getAssociatedTokenAddressSync(
+      tokenMint,
+      creator,
+      true, // allowOwnerOffCurve
+      tokenProgramId,
+    );
+    // Ensure the ATA exists (idempotent — no-op if already created)
+    preInstructions.push(
+      createAssociatedTokenAccountIdempotentInstruction(
+        payer,
+        creatorTokenAccount,
+        creator,
+        tokenMint,
+        tokenProgramId,
+      )
+    );
+  }
+
+  const accounts: Record<string, PublicKey | null> = {
+    payer,
+    protocolState: protocolStatePDA,
+    sovereign: sovereignPDA,
+    enginePool: enginePoolPDA,
+    binArray: binArrayPDA,
+    tokenMint,
+    solVault: solVaultPDA,
+    tokenVault: tokenVaultPDA,
+    engineGorVault: engineGorVaultPDA,
+    engineTokenVault: engineTokenVaultPDA,
+    creatorTokenAccount,
+    engineProgram: ENGINE_PROGRAM_ID,
+    tokenProgram: tokenProgramId,
+    systemProgram: SystemProgram.programId,
+  };
 
   const tx = await (program.methods as any)
-    .finalizeCreatePool()
-    .accounts({
-      payer,
-      protocolState: protocolStatePDA,
-      sovereign: sovereignPDA,
+    .finalizeEnginePool()
+    .accounts(accounts)
+    .preInstructions(preInstructions)
+    .transaction();
+
+  return tx;
+}
+
+// ============================================================
+// Engine Pool Swap: Buy (GOR → Tokens)
+// ============================================================
+
+/**
+ * Build a swap_buy transaction.
+ * Trader sends GOR (native SOL), receives sovereign tokens from the engine pool.
+ * Now routes directly to the sovereign-engine program.
+ *
+ * @param gorInput - Amount of GOR to spend (in lamports)
+ * @param minTokensOut - Minimum tokens to receive (slippage protection)
+ */
+export async function buildSwapBuyTx(
+  program: SovereignLiquidityProgram,
+  trader: PublicKey,
+  sovereignId: bigint | number,
+  gorInput: bigint,
+  minTokensOut: bigint,
+): Promise<Transaction> {
+  const engineProgram = engineFromMain(program);
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [enginePoolPDA] = getEnginePoolPDA(sovereignPDA);
+  const [engineGorVaultPDA] = getEngineGorVaultPDA(sovereignPDA);
+  const [engineTokenVaultPDA] = getEngineTokenVaultPDA(sovereignPDA);
+
+  // Fetch engine pool to get token_mint and active_bin page
+  const poolAccount = await (engineProgram.account as any).enginePool.fetch(enginePoolPDA);
+  const tokenMint: PublicKey = poolAccount.tokenMint;
+  const activeBin: number = poolAccount.activeBin;
+  const activePage = Math.floor(activeBin / 128);
+  const [binArrayPDA] = getEngineBinArrayPDA(sovereignPDA, activePage);
+
+  // Determine the token program
+  const mintAccountInfo = await program.provider.connection.getAccountInfo(tokenMint);
+  const tokenProgramId = mintAccountInfo?.owner || TOKEN_2022_PROGRAM_ID;
+
+  // Trader's token account
+  const traderTokenAccount = getAssociatedTokenAddressSync(
+    tokenMint,
+    trader,
+    false,
+    tokenProgramId,
+  );
+
+  // Ensure trader's ATA exists
+  const tx = new Transaction();
+  tx.add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      trader,
+      traderTokenAccount,
+      trader,
       tokenMint,
-      wgorMint: WGOR_MINT,
-      solVault: solVaultPDA,
-      tokenVault: tokenVaultPDA,
-      sammProgram: SAMM_PROGRAM_ID,
-      ammConfig,
-      poolState: poolStatePDA,
-      sammTokenVault0: sammVault0PDA,
-      sammTokenVault1: sammVault1PDA,
-      observationState: observationPDA,
-      tickArrayBitmap: tickArrayBitmapPDA,
-      tokenProgram: TOKEN_PROGRAM_ID,
-      tokenProgram2022: TOKEN_2022_PROGRAM_ID,
+      tokenProgramId,
+    ),
+  );
+
+  const mainIx = await (engineProgram.methods as any)
+    .swapBuy(new BN(gorInput.toString()), new BN(minTokensOut.toString()))
+    .accounts({
+      trader,
+      sovereign: sovereignPDA,
+      enginePool: enginePoolPDA,
+      tokenMint,
+      engineGorVault: engineGorVaultPDA,
+      engineTokenVault: engineTokenVaultPDA,
+      traderTokenAccount,
+      binArray: binArrayPDA,
+      tokenProgram: tokenProgramId,
       systemProgram: SystemProgram.programId,
-      rent: SYSVAR_RENT_PUBKEY,
+    })
+    .transaction();
+
+  tx.add(mainIx);
+  return tx;
+}
+
+// ============================================================
+// Engine Pool Swap: Sell (Tokens → GOR)
+// ============================================================
+
+/**
+ * Build a swap_sell transaction.
+ * Trader sends sovereign tokens, receives GOR (native SOL) from the engine pool.
+ * Now routes directly to the sovereign-engine program.
+ *
+ * @param tokenInput - Amount of tokens to sell
+ * @param minGorOut - Minimum GOR to receive (slippage protection)
+ */
+export async function buildSwapSellTx(
+  program: SovereignLiquidityProgram,
+  trader: PublicKey,
+  sovereignId: bigint | number,
+  tokenInput: bigint,
+  minGorOut: bigint,
+): Promise<Transaction> {
+  const engineProgram = engineFromMain(program);
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [enginePoolPDA] = getEnginePoolPDA(sovereignPDA);
+  const [engineGorVaultPDA] = getEngineGorVaultPDA(sovereignPDA);
+  const [engineTokenVaultPDA] = getEngineTokenVaultPDA(sovereignPDA);
+
+  // Fetch engine pool to get token_mint and active_bin page
+  const poolAccount = await (engineProgram.account as any).enginePool.fetch(enginePoolPDA);
+  const tokenMint: PublicKey = poolAccount.tokenMint;
+  const activeBin: number = poolAccount.activeBin;
+  const activePage = Math.floor(activeBin / 128);
+  const [binArrayPDA] = getEngineBinArrayPDA(sovereignPDA, activePage);
+
+  // Determine the token program
+  const mintAccountInfo = await program.provider.connection.getAccountInfo(tokenMint);
+  const tokenProgramId = mintAccountInfo?.owner || TOKEN_2022_PROGRAM_ID;
+
+  // Trader's token account
+  const traderTokenAccount = getAssociatedTokenAddressSync(
+    tokenMint,
+    trader,
+    false,
+    tokenProgramId,
+  );
+
+  const tx = new Transaction();
+
+  const swapIx = await (engineProgram.methods as any)
+    .swapSell(new BN(tokenInput.toString()), new BN(minGorOut.toString()))
+    .accounts({
+      trader,
+      sovereign: sovereignPDA,
+      enginePool: enginePoolPDA,
+      tokenMint,
+      engineGorVault: engineGorVaultPDA,
+      engineTokenVault: engineTokenVaultPDA,
+      traderTokenAccount,
+      binArray: binArrayPDA,
+      tokenProgram: tokenProgramId,
+      systemProgram: SystemProgram.programId,
+    })
+    .instruction();
+
+  tx.add(swapIx);
+  return tx;
+}
+
+// ============================================================
+// Claim Engine Pool LP Fees (NFT bearer claims)
+// ============================================================
+
+/**
+ * Build a claim_pool_lp_fees transaction.
+ * NFT bearer (whoever holds the Genesis NFT) claims their proportional share
+ * of accumulated swap fees from the engine pool.
+ *
+ * @param holder - Current NFT holder (signer)
+ * @param originalDepositor - The wallet that originally deposited (for PDA derivation)
+ * @param nftMint - The Genesis NFT mint pubkey
+ */
+export async function buildClaimPoolLpFeesTx(
+  program: SovereignLiquidityProgram,
+  holder: PublicKey,
+  originalDepositor: PublicKey,
+  sovereignId: bigint | number,
+  nftMint: PublicKey,
+): Promise<Transaction> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, originalDepositor, program.programId);
+  const [enginePoolPDA] = getEnginePoolPDA(sovereignPDA);
+  const [engineGorVaultPDA] = getEngineGorVaultPDA(sovereignPDA);
+  const [lpClaimPDA] = getEngineLpClaimPDA(enginePoolPDA, originalDepositor);
+
+  // NFT token account for the holder (legacy SPL Token)
+  const nftTokenAccount = getAssociatedTokenAddressSync(
+    nftMint,
+    holder,
+    false,
+    TOKEN_PROGRAM_ID,
+  );
+
+  const tx = await (program.methods as any)
+    .claimPoolLpFees()
+    .accounts({
+      holder,
+      sovereign: sovereignPDA,
+      enginePool: enginePoolPDA,
+      originalDepositor,
+      depositRecord: depositRecordPDA,
+      nftTokenAccount,
+      lpClaim: lpClaimPDA,
+      engineGorVault: engineGorVaultPDA,
+      engineProgram: ENGINE_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
     })
     .transaction();
 
@@ -780,143 +788,115 @@ export async function buildFinalizeCreatePoolTx(
 }
 
 // ============================================================
-// Finalize Step 2: Add Liquidity
+// Claim Engine Pool Creator Fees
 // ============================================================
 
 /**
- * Build the finalize_add_liquidity transaction (PoolCreated -> Recovery).
- * Wraps SOL to WGOR, transfers tokens, opens full-range position on SAMM.
- *
- * Returns both the Transaction and the positionNftMint Keypair.
- * The Keypair MUST be included as a signer when sending the transaction.
+ * Build a claim_pool_creator_fees transaction.
+ * Creator claims their share of engine pool swap fees.
+ * Now routes directly to the sovereign-engine program.
  */
-export async function buildFinalizeAddLiquidityTx(
+export async function buildClaimPoolCreatorFeesTx(
   program: SovereignLiquidityProgram,
-  payer: PublicKey,
+  creator: PublicKey,
   sovereignId: bigint | number,
-  tokenMint: PublicKey,
-  poolState: PublicKey,
-): Promise<{ tx: Transaction; positionNftMint: Keypair }> {
-  const [protocolStatePDA] = getProtocolStatePDA(program.programId);
+): Promise<Transaction> {
+  const engineProgram = engineFromMain(program);
   const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
-  const [solVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
-  const [tokenVaultPDA] = getTokenVaultPDA(sovereignPDA, program.programId);
-  const [permanentLockPDA] = getPermanentLockPDA(sovereignPDA, program.programId);
+  const [enginePoolPDA] = getEnginePoolPDA(sovereignPDA);
+  const [engineGorVaultPDA] = getEngineGorVaultPDA(sovereignPDA);
 
-  // Generate fresh keypair for position NFT mint
-  const positionNftMint = Keypair.generate();
-
-  // Position NFT ATA for permanent_lock
-  const positionNftAccount = getAssociatedTokenAddressSync(
-    positionNftMint.publicKey,
-    permanentLockPDA,
-    true, // allowOwnerOffCurve (PDA owner)
-  );
-
-  // WGOR ATA for permanent_lock (native SOL wrapper, uses legacy SPL Token)
-  const lockWgorAccount = getAssociatedTokenAddressSync(
-    WGOR_MINT,
-    permanentLockPDA,
-    true,
-  );
-
-  // Sovereign token ATA for permanent_lock (Token-2022)
-  const lockTokenAccount = getAssociatedTokenAddressSync(
-    tokenMint,
-    permanentLockPDA,
-    true,
-    TOKEN_2022_PROGRAM_ID,
-  );
-
-  // Metaplex metadata PDA for position NFT
-  const [metadataAccount] = getMetaplexMetadataPDA(positionNftMint.publicKey);
-
-  // SAMM PDAs
-  const [personalPosition] = getSammPersonalPositionPDA(positionNftMint.publicKey);
-  const [protocolPosition] = getSammProtocolPositionPDA(poolState, MIN_TICK, MAX_TICK);
-
-  // Tick arrays for full range
-  const tickArrayLowerStart = getTickArrayStartIndex(MIN_TICK);
-  const tickArrayUpperStart = getTickArrayStartIndex(MAX_TICK);
-  const [tickArrayLower] = getSammTickArrayPDA(poolState, tickArrayLowerStart);
-  const [tickArrayUpper] = getSammTickArrayPDA(poolState, tickArrayUpperStart);
-
-  // SAMM pool vaults
-  const { mint0, mint1 } = sortMints(WGOR_MINT, tokenMint);
-  const [sammVault0] = getSammPoolVaultPDA(poolState, mint0);
-  const [sammVault1] = getSammPoolVaultPDA(poolState, mint1);
-
-  // Observation state
-  const [observationState] = getSammObservationPDA(poolState);
-
-  // Tick array bitmap extension (required for full-range positions)
-  const [tickArrayBitmapExtension] = getSammTickArrayBitmapPDA(poolState);
-
-  // Pre-instructions: create ATAs for the permanent lock PDA
-  const tx = new Transaction();
-
-  // Create WGOR ATA for permanent_lock
-  tx.add(
-    createAssociatedTokenAccountIdempotentInstruction(
-      payer,
-      lockWgorAccount,
-      permanentLockPDA,
-      WGOR_MINT,
-    ),
-  );
-
-  // Create sovereign token ATA for permanent_lock (Token-2022)
-  tx.add(
-    createAssociatedTokenAccountIdempotentInstruction(
-      payer,
-      lockTokenAccount,
-      permanentLockPDA,
-      tokenMint,
-      TOKEN_2022_PROGRAM_ID,
-    ),
-  );
-
-  // Main instruction
-  const mainIx = await (program.methods as any)
-    .finalizeAddLiquidity()
+  const tx = await (engineProgram.methods as any)
+    .claimCreatorFees()
     .accounts({
-      payer,
-      protocolState: protocolStatePDA,
+      creator,
       sovereign: sovereignPDA,
-      tokenMint,
-      wgorMint: WGOR_MINT,
-      solVault: solVaultPDA,
-      tokenVault: tokenVaultPDA,
-      permanentLock: permanentLockPDA,
-      lockWgorAccount,
-      lockTokenAccount,
-      sammProgram: SAMM_PROGRAM_ID,
-      poolState,
-      positionNftMint: positionNftMint.publicKey,
-      positionNftAccount,
-      metadataAccount,
-      protocolPosition,
-      tickArrayLower,
-      tickArrayUpper,
-      personalPosition,
-      sammTokenVault0: sammVault0,
-      sammTokenVault1: sammVault1,
-      observationState,
-      vault0Mint: mint0,
-      vault1Mint: mint1,
-      tickArrayBitmapExtension,
-      metadataProgram: METAPLEX_PROGRAM_ID,
-      tokenProgram: TOKEN_PROGRAM_ID,
-      tokenProgram2022: TOKEN_2022_PROGRAM_ID,
-      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      enginePool: enginePoolPDA,
+      engineGorVault: engineGorVaultPDA,
       systemProgram: SystemProgram.programId,
-      rent: SYSVAR_RENT_PUBKEY,
     })
     .transaction();
 
-  tx.add(mainIx);
+  return tx;
+}
 
-  return { tx, positionNftMint };
+// ============================================================
+// Execute Engine Pool Unwind
+// ============================================================
+
+/**
+ * Build an execute_engine_unwind transaction.
+ * Drains all liquidity from the engine pool back to sovereign vaults,
+ * takes protocol fee, sets up investor claim distribution.
+ * State must be Unwinding (set by governance vote).
+ * Permissionless — anyone can call after observation period ends.
+ */
+export async function buildExecuteEngineUnwindTx(
+  program: SovereignLiquidityProgram,
+  executor: PublicKey,
+  sovereignId: bigint | number,
+): Promise<Transaction> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [protocolStatePDA] = getProtocolStatePDA(program.programId);
+  const [enginePoolPDA] = getEnginePoolPDA(sovereignPDA);
+  const [engineGorVaultPDA] = getEngineGorVaultPDA(sovereignPDA);
+  const [engineTokenVaultPDA] = getEngineTokenVaultPDA(sovereignPDA);
+  const [solVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
+  const [tokenVaultPDA] = getTokenVaultPDA(sovereignPDA, program.programId);
+
+  // Fetch sovereign + protocol to get token_mint and treasury 
+  const sovereignAccount = await (program.account as any).sovereignState.fetch(sovereignPDA);
+  const tokenMint: PublicKey = sovereignAccount.tokenMint;
+  const protocolState = await (program.account as any).protocolState.fetch(protocolStatePDA);
+  const treasury: PublicKey = protocolState.treasury;
+
+  // Determine the token program
+  const mintAccountInfo = await program.provider.connection.getAccountInfo(tokenMint);
+  const tokenProgramId = mintAccountInfo?.owner || TOKEN_2022_PROGRAM_ID;
+
+  const tx = await (program.methods as any)
+    .executeEngineUnwind()
+    .accounts({
+      executor,
+      sovereign: sovereignPDA,
+      protocolState: protocolStatePDA,
+      treasury,
+      enginePool: enginePoolPDA,
+      engineGorVault: engineGorVaultPDA,
+      engineTokenVault: engineTokenVaultPDA,
+      tokenMint,
+      solVault: solVaultPDA,
+      tokenVault: tokenVaultPDA,
+      engineProgram: ENGINE_PROGRAM_ID,
+      tokenProgram: tokenProgramId,
+      systemProgram: SystemProgram.programId,
+    })
+    .transaction();
+
+  return tx;
+}
+
+// ============================================================
+// Engine Pool Read Functions
+// ============================================================
+
+/**
+ * Fetch the engine pool state for a sovereign.
+ * Uses the engine program (account is owned by sovereign-engine).
+ * Returns null if pool doesn't exist yet (pre-finalization).
+ */
+export async function fetchEnginePool(
+  program: SovereignLiquidityProgram,
+  sovereignId: bigint | number,
+) {
+  const engineProgram = engineFromMain(program);
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [enginePoolPDA] = getEnginePoolPDA(sovereignPDA);
+  try {
+    return await (engineProgram.account as any).enginePool.fetch(enginePoolPDA);
+  } catch {
+    return null;
+  }
 }
 
 // ============================================================
@@ -999,7 +979,6 @@ export async function buildEmergencyWithdrawCreatorTx(
 ): Promise<Transaction> {
   const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
   const [solVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
-  const [creationFeeEscrowPDA] = getCreationFeeEscrowPDA(sovereignPDA, program.programId);
   const [tokenVaultPDA] = getTokenVaultPDA(sovereignPDA, program.programId);
 
   // Fetch sovereign to get the token_mint
@@ -1038,7 +1017,6 @@ export async function buildEmergencyWithdrawCreatorTx(
       creator,
       sovereign: sovereignPDA,
       solVault: solVaultPDA,
-      creationFeeEscrow: creationFeeEscrowPDA,
       tokenVault: tokenVaultPDA,
       creatorTokenAccount,
       tokenMint,
@@ -1229,137 +1207,6 @@ export async function buildHarvestTransferFeesTx(
         isSigner: false,
       }))
     )
-    .transaction();
-
-  tx.add(mainIx);
-  return tx;
-}
-
-// ============================================================
-// Swap Recovery Tokens (Token-2022 sell fees → GOR for investors)
-// ============================================================
-
-/**
- * Build a swap_recovery_tokens transaction.
- * Swaps tokens held in recovery_token_vault to SOL via SAMM CPI,
- * depositing SOL into fee_vault for investor recovery.
- * 
- * Only callable during Recovery with RecoveryBoost or FairLaunch fee mode.
- * Permissionless — anyone can call this to advance recovery.
- *
- * Remaining accounts (8+) = SAMM swap CPI accounts (excluding input_token_account,
- *   output_token_account, and input_vault_mint which are in named accounts):
- *   [0] amm_config, [1] pool_state, [2] input_vault (SAMM),
- *   [3] output_vault (SAMM), [4] observation_state,
- *   [5] token_program_2022, [6] memo_program, [7] wgor_mint,
- *   [8..N] tick_arrays
- */
-export async function buildSwapRecoveryTokensTx(
-  program: SovereignLiquidityProgram,
-  payer: PublicKey,
-  sovereignId: bigint | number,
-  connection: Connection,
-): Promise<Transaction> {
-  const [protocolStatePDA] = getProtocolStatePDA(program.programId);
-  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
-  const [permanentLockPDA] = getPermanentLockPDA(sovereignPDA, program.programId);
-  const [feeVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
-  const [recoveryTokenVaultPDA] = getTokenVaultPDA(sovereignPDA, program.programId);
-
-  // Fetch sovereign to get token mint and amm config
-  const sovereign = await fetchSovereign(program, sovereignPDA);
-  const tokenMint = new PublicKey(sovereign.tokenMint);
-  const ammConfig = new PublicKey(sovereign.ammConfig);
-
-  // Fetch permanent lock to get pool state
-  const lockAccount = await (program.account as any).permanentLock.fetch(permanentLockPDA);
-  const poolState = new PublicKey(lockAccount.poolState);
-
-  // Sort mints for canonical ordering
-  const { mint0, mint1, wgorIs0 } = sortMints(WGOR_MINT, tokenMint);
-
-  // SAMM PDAs
-  const [sammVault0] = getSammPoolVaultPDA(poolState, mint0);
-  const [sammVault1] = getSammPoolVaultPDA(poolState, mint1);
-  const [observationState] = getSammObservationPDA(poolState);
-
-  // Determine input/output based on which mint is the sovereign token
-  // We're swapping sovereign token → WGOR
-  const inputVault = wgorIs0 ? sammVault1 : sammVault0;   // token vault in SAMM
-  const outputVault = wgorIs0 ? sammVault0 : sammVault1;  // WGOR vault in SAMM
-
-  // Sovereign PDA's WGOR ATA (legacy SPL Token since WGOR = native wrapped SOL)
-  const sovereignWgorAta = getAssociatedTokenAddressSync(
-    WGOR_MINT,
-    sovereignPDA,
-    true, // allowOwnerOffCurve (PDA)
-    TOKEN_PROGRAM_ID,
-  );
-
-  // Pre-instructions: ensure sovereign WGOR ATA exists
-  const tx = new Transaction();
-  tx.add(
-    createAssociatedTokenAccountIdempotentInstruction(
-      payer,
-      sovereignWgorAta,
-      sovereignPDA,
-      WGOR_MINT,
-      TOKEN_PROGRAM_ID,
-    ),
-  );
-
-  // Tick arrays for the swap (covering current price range)
-  // For a full-range pool, we need tick arrays covering the current tick
-  const tickArrayLowerStart = getTickArrayStartIndex(MIN_TICK);
-  const tickArrayUpperStart = getTickArrayStartIndex(MAX_TICK);
-  const [tickArrayLower] = getSammTickArrayPDA(poolState, tickArrayLowerStart);
-  const [tickArrayUpper] = getSammTickArrayPDA(poolState, tickArrayUpperStart);
-  const [tickArrayBitmapExtension] = getSammTickArrayBitmapPDA(poolState);
-
-  // Build remaining accounts for SAMM swap CPI
-  // NOTE: input_token_account, output_token_account, and input_vault_mint are
-  // already in named Anchor accounts (recoveryTokenVault, sovereignWgorAta, tokenMint),
-  // so they must NOT be duplicated here. Indices must match the handler:
-  //   ctx.remaining_accounts[0] = amm_config
-  //   ctx.remaining_accounts[1] = pool_state
-  //   ctx.remaining_accounts[2] = input_vault (SAMM token vault)
-  //   ctx.remaining_accounts[3] = output_vault (SAMM WGOR vault)
-  //   ctx.remaining_accounts[4] = observation_state
-  //   ctx.remaining_accounts[5] = token_program_2022
-  //   ctx.remaining_accounts[6] = memo_program
-  //   ctx.remaining_accounts[7] = wgor_mint (output_vault_mint)
-  //   ctx.remaining_accounts[8..N] = tick_arrays
-  const remainingAccounts = [
-    { pubkey: ammConfig, isWritable: false, isSigner: false },               // [0] amm_config
-    { pubkey: poolState, isWritable: true, isSigner: false },                // [1] pool_state
-    { pubkey: inputVault, isWritable: true, isSigner: false },               // [2] input_vault (SAMM)
-    { pubkey: outputVault, isWritable: true, isSigner: false },              // [3] output_vault (SAMM)
-    { pubkey: observationState, isWritable: true, isSigner: false },         // [4] observation_state
-    { pubkey: TOKEN_2022_PROGRAM_ID, isWritable: false, isSigner: false },   // [5] token_program_2022
-    { pubkey: MEMO_PROGRAM_ID, isWritable: false, isSigner: false },         // [6] memo_program
-    { pubkey: WGOR_MINT, isWritable: false, isSigner: false },               // [7] output_vault_mint (WGOR)
-    { pubkey: tickArrayLower, isWritable: true, isSigner: false },           // [8] tick_array_0
-    { pubkey: tickArrayUpper, isWritable: true, isSigner: false },           // [9] tick_array_1
-    { pubkey: tickArrayBitmapExtension, isWritable: true, isSigner: false }, // [10] tick_array_bitmap
-  ];
-
-  // Main instruction
-  const mainIx = await (program.methods as any)
-    .swapRecoveryTokens()
-    .accounts({
-      payer,
-      protocolState: protocolStatePDA,
-      sovereign: sovereignPDA,
-      permanentLock: permanentLockPDA,
-      tokenMint,
-      recoveryTokenVault: recoveryTokenVaultPDA,
-      sovereignWgorAta,
-      feeVault: feeVaultPDA,
-      sammProgram: SAMM_PROGRAM_ID,
-      tokenProgram: TOKEN_PROGRAM_ID,
-      systemProgram: SystemProgram.programId,
-    })
-    .remainingAccounts(remainingAccounts)
     .transaction();
 
   tx.add(mainIx);
@@ -1586,41 +1433,31 @@ export async function buildCastVoteTx(
 /**
  * Build a finalize_vote transaction.
  * Anyone can call this after the voting period ends.
- * If the vote passes, remaining_accounts must include the SAMM pool_state.
  * 
  * @param caller - The signer (anyone)
  * @param sovereignId - The sovereign's numeric ID
  * @param proposalId - The proposal ID to finalize
- * @param poolState - The SAMM pool state (optional, required for passed proposals to snapshot fee growth)
  */
 export async function buildFinalizeVoteTx(
   program: SovereignLiquidityProgram,
   caller: PublicKey,
   sovereignId: bigint | number,
   proposalId: bigint | number,
-  poolState?: PublicKey
 ): Promise<Transaction> {
   const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
   const [proposalPDA] = getProposalPDA(sovereignPDA, proposalId, program.programId);
   const [permanentLockPDA] = getPermanentLockPDA(sovereignPDA, program.programId);
 
-  let builder = (program.methods as any)
+  const tx = await (program.methods as any)
     .finalizeVote()
     .accounts({
       caller,
       sovereign: sovereignPDA,
       proposal: proposalPDA,
       permanentLock: permanentLockPDA,
-    });
+    })
+    .transaction();
 
-  // If pool state is provided, add as remaining account for fee growth snapshot
-  if (poolState) {
-    builder = builder.remainingAccounts([
-      { pubkey: poolState, isWritable: false, isSigner: false },
-    ]);
-  }
-
-  const tx = await builder.transaction();
   return tx;
 }
 
@@ -1674,123 +1511,75 @@ export async function buildClaimUnwindTx(
 // Pending Fee Calculations (read-only)
 // ============================================================
 
-/**
- * SAMM PoolState fee-related offsets (after 8-byte discriminator):
- *   273: padding_3 (u16)
- *   275: padding_4 (u16)
- *   277-292: fee_growth_global_0_x64 (u128 LE)
- *   293-308: fee_growth_global_1_x64 (u128 LE)
- *
- * SAMM PersonalPositionState offsets (after 8-byte discriminator):
- *   9:     bump (u8)
- *   10-41: nft_mint (Pubkey)
- *   42-73: pool_id (Pubkey)
- *   74-77: tick_lower_index (i32)
- *   78-81: tick_upper_index (i32)
- *   82-97: liquidity (u128 LE)
- *   98-113:  fee_growth_inside_0_last_x64 (u128 LE)
- *   114-129: fee_growth_inside_1_last_x64 (u128 LE)
- *   130-137: token_fees_owed_0 (u64 LE)
- *   138-145: token_fees_owed_1 (u64 LE)
- */
-
-/** Read a u128 (little-endian) from a Buffer as BigInt */
-function readU128LE(buf: Buffer, offset: number): bigint {
-  const lo = buf.readBigUInt64LE(offset);
-  const hi = buf.readBigUInt64LE(offset + 8);
-  return (hi << 64n) | lo;
-}
-
-/** Read a u64 (little-endian) from a Buffer as BigInt */
-function readU64LE(buf: Buffer, offset: number): bigint {
-  return buf.readBigUInt64LE(offset);
-}
-
-export interface PendingHarvestFees {
-  /** Pending GOR fees in lamports (the WGOR side) */
-  pendingGorLamports: bigint;
-  /** Pending token fees in smallest units (the sovereign token side) */
-  pendingTokenUnits: bigint;
-  /** Pending GOR as a number (for display) */
-  pendingGor: number;
-  /** Pending tokens as a number (for display, adjusted by decimals) */
-  pendingTokens: number;
-  /** Which mint is token 0 vs 1 */
-  wgorIs0: boolean;
+export interface PendingEngineLpFees {
+  /** Claimable GOR in lamports */
+  claimableLamports: bigint;
+  /** Claimable GOR as a number */
+  claimableGor: number;
+  /** Total LP fees accumulated */
+  totalLpFeesAccumulated: bigint;
+  /** Total LP fees claimed */
+  totalLpFeesClaimed: bigint;
 }
 
 /**
- * Calculate pending (unharvested) fees sitting in the SAMM position.
- * Pure read — two getAccountInfo calls, client-side math.
- *
- * For full-range positions: fee_growth_inside = fee_growth_global
- * so pending_i = (global_i - last_i) * liquidity / 2^64 + owed_i
+ * Calculate pending LP fees from the engine pool for a depositor.
+ * Uses the same fee-per-share math as on-chain.
+ * Pure read — engine pool + lp claim record.
  */
-export async function fetchPendingHarvestFees(
-  connection: Connection,
-  poolState: PublicKey,
-  positionMint: PublicKey,
-  tokenMint: PublicKey,
-  tokenDecimals: number,
-): Promise<PendingHarvestFees | null> {
-  const [personalPositionPDA] = getSammPersonalPositionPDA(positionMint);
+export async function fetchPendingEngineLpFees(
+  program: SovereignLiquidityProgram,
+  sovereignId: bigint | number,
+  originalDepositor: PublicKey,
+): Promise<PendingEngineLpFees | null> {
+  const engineProgram = engineFromMain(program);
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [enginePoolPDA] = getEnginePoolPDA(sovereignPDA);
 
-  // Fetch both accounts in parallel
-  const [poolInfo, positionInfo] = await Promise.all([
-    connection.getAccountInfo(poolState),
-    connection.getAccountInfo(personalPositionPDA),
-  ]);
+  // Fetch engine pool from engine program
+  let pool;
+  try {
+    pool = await (engineProgram.account as any).enginePool.fetch(enginePoolPDA);
+  } catch {
+    return null;
+  }
 
-  if (!poolInfo || !positionInfo) return null;
+  // Fetch deposit record from main program to get deposit amount
+  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, originalDepositor, program.programId);
+  let depositRecord;
+  try {
+    depositRecord = await (program.account as any).depositRecord.fetch(depositRecordPDA);
+  } catch {
+    return null;
+  }
 
-  const poolData = poolInfo.data as Buffer;
-  const posData = positionInfo.data as Buffer;
+  if (!depositRecord || Number(depositRecord.amount) === 0) return null;
 
-  if (poolData.length < 310 || posData.length < 146) return null;
+  const depositAmount = BigInt(depositRecord.amount.toString());
+  const lpFeePerShare = BigInt(pool.lpFeePerShare.toString());
 
-  // Parse pool state fee growth globals
-  const feeGrowthGlobal0 = readU128LE(poolData, 277);
-  const feeGrowthGlobal1 = readU128LE(poolData, 293);
+  // Fetch LP claim record from engine program if it exists
+  const [lpClaimPDA] = getEngineLpClaimPDA(enginePoolPDA, originalDepositor);
+  let lastFeePerShare = 0n;
+  let totalClaimed = 0n;
+  try {
+    const claimRecord = await (engineProgram.account as any).engineLpClaim.fetch(lpClaimPDA);
+    lastFeePerShare = BigInt(claimRecord.lastFeePerShare.toString());
+    totalClaimed = BigInt(claimRecord.totalClaimed.toString());
+  } catch {
+    // Claim record doesn't exist yet — first claim
+  }
 
-  // Parse personal position
-  // Layout after 8-byte discriminator:
-  //   8: bump (1), 9-40: nft_mint (32), 41-72: pool_id (32),
-  //   73-76: tick_lower (4), 77-80: tick_upper (4),
-  //   81-96: liquidity (16), 97-112: fee_growth_inside_0_last (16),
-  //   113-128: fee_growth_inside_1_last (16),
-  //   129-136: token_fees_owed_0 (8), 137-144: token_fees_owed_1 (8)
-  const liquidity = readU128LE(posData, 81);
-  const feeGrowthInside0Last = readU128LE(posData, 97);
-  const feeGrowthInside1Last = readU128LE(posData, 113);
-  const tokenFeesOwed0 = readU64LE(posData, 129);
-  const tokenFeesOwed1 = readU64LE(posData, 137);
-
-  // For full-range: fee_growth_inside = fee_growth_global
-  // pending = (global - last) * liquidity / 2^64 + owed
-  const Q64 = 1n << 64n;
-
-  const delta0 = feeGrowthGlobal0 >= feeGrowthInside0Last
-    ? feeGrowthGlobal0 - feeGrowthInside0Last
-    : 0n;
-  const delta1 = feeGrowthGlobal1 >= feeGrowthInside1Last
-    ? feeGrowthGlobal1 - feeGrowthInside1Last
-    : 0n;
-
-  const pending0 = (delta0 * liquidity) / Q64 + tokenFeesOwed0;
-  const pending1 = (delta1 * liquidity) / Q64 + tokenFeesOwed1;
-
-  // Determine which is GOR vs token
-  const { wgorIs0 } = sortMints(WGOR_MINT, tokenMint);
-
-  const pendingGorLamports = wgorIs0 ? pending0 : pending1;
-  const pendingTokenUnits = wgorIs0 ? pending1 : pending0;
+  // fee_per_share is scaled by FEE_PRECISION (1e12) on-chain
+  const PRECISION = 1_000_000_000_000n; // 1e12 — must match FEE_PRECISION on-chain
+  const pendingPerShare = lpFeePerShare - lastFeePerShare;
+  const claimable = (depositAmount * pendingPerShare) / PRECISION;
 
   return {
-    pendingGorLamports,
-    pendingTokenUnits,
-    pendingGor: Number(pendingGorLamports) / 1_000_000_000,
-    pendingTokens: Number(pendingTokenUnits) / (10 ** tokenDecimals),
-    wgorIs0,
+    claimableLamports: claimable,
+    claimableGor: Number(claimable) / 1_000_000_000,
+    totalLpFeesAccumulated: BigInt(pool.lpFeesAccumulated.toString()),
+    totalLpFeesClaimed: BigInt(pool.lpFeesClaimed.toString()),
   };
 }
 

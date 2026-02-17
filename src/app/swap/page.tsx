@@ -4,16 +4,49 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
-import { useSovereigns, useSovereign } from '@/hooks/useSovereign';
-import { useSwapQuote, useSwap, usePoolInfo } from '@/hooks/useSwap';
+import { useSovereigns, useSovereign, useEnginePool } from '@/hooks/useSovereign';
+import { useEngineSwap, computeBuyQuote, computeSellQuote, EngineQuote } from '@/hooks/useEngineSwap';
 import { useTokenImage } from '@/hooks/useTokenImage';
 import { config, LAMPORTS_PER_GOR } from '@/lib/config';
 import Link from 'next/link';
 
 const TOKEN_2022_PROGRAM_ID = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
+const PRICE_PRECISION_N = 1_000_000_000; // 1e9 — matches on-chain
 
 // ============================================================
-// Token Image Component (fetches per-sovereign)
+// Utility Functions
+// ============================================================
+
+/** Format precision-scaled price to human-readable GOR per token */
+function formatPrice(precisionPrice: bigint | number): string {
+  const price = typeof precisionPrice === 'bigint'
+    ? Number(precisionPrice) / PRICE_PRECISION_N
+    : precisionPrice / PRICE_PRECISION_N;
+  if (price === 0) return '0';
+  if (price >= 0.01) return price.toFixed(6);
+  if (price >= 0.000001) return price.toFixed(8);
+  if (price >= 0.0000000001) return price.toFixed(10);
+  return price.toExponential(4);
+}
+
+/** Format raw lamports / token units to human-readable */
+function formatAmount(raw: bigint | string, decimals: number = 9): string {
+  const val = typeof raw === 'string' ? BigInt(raw) : raw;
+  const whole = val / BigInt(10 ** decimals);
+  const frac = val % BigInt(10 ** decimals);
+  const fracStr = frac.toString().padStart(decimals, '0').replace(/0+$/, '');
+  if (fracStr === '') return whole.toLocaleString();
+  return `${whole.toLocaleString()}.${fracStr.slice(0, 6)}`;
+}
+
+/** Format lamports to GOR display */
+function formatGor(lamports: bigint | string): string {
+  const val = typeof lamports === 'string' ? Number(lamports) : Number(lamports);
+  return (val / LAMPORTS_PER_GOR).toLocaleString(undefined, { maximumFractionDigits: 4 });
+}
+
+// ============================================================
+// Token Image Component
 // ============================================================
 
 function TokenListImage({ metadataUri, symbol }: { metadataUri?: string; symbol?: string }) {
@@ -29,7 +62,7 @@ function TokenListImage({ metadataUri, symbol }: { metadataUri?: string; symbol?
 }
 
 // ============================================================
-// SWAP PAGE
+// SWAP PAGE — Engine Pool
 // ============================================================
 
 export default function SwapPage() {
@@ -41,7 +74,10 @@ export default function SwapPage() {
   const [selectedSovereignId, setSelectedSovereignId] = useState<string | null>(null);
   const { data: sovereign } = useSovereign(selectedSovereignId || undefined);
 
-  // Wallet token balances: mint -> human-readable balance
+  // Engine pool data
+  const { data: enginePool, isLoading: poolLoading } = useEnginePool(selectedSovereignId || undefined);
+
+  // Wallet token balances
   const [tokenBalances, setTokenBalances] = useState<Record<string, number>>({});
 
   // Swap state
@@ -50,21 +86,13 @@ export default function SwapPage() {
   const [slippageBps, setSlippageBps] = useState(100); // 1%
   const [showSettings, setShowSettings] = useState(false);
 
-  // Determine pool address and token mint from sovereign
-  const poolAddress = useMemo(() => {
-    if (!sovereign?.poolState || sovereign.poolState === '11111111111111111111111111111111') return null;
-    return sovereign.poolState;
-  }, [sovereign?.poolState]);
-
-  const tokenMint = sovereign?.tokenMint || null;
-
-  // Pool info from trading service
-  const { poolInfo, loading: poolLoading } = usePoolInfo(poolAddress);
-
-  // Token image for selected sovereign
+  // Token image
   const { data: tokenImage } = useTokenImage(sovereign?.metadataUri || undefined);
 
-  // Filter sovereigns that have pools (Recovery/Active/Unwinding)
+  // Engine swap hook
+  const { executeSwap, loading: swapLoading, error: swapError, txSignature, reset: resetSwap } = useEngineSwap();
+
+  // Filter for tradable sovereigns (Recovery/Active/Unwinding states = pool exists)
   const tradableSovereigns = useMemo(() => {
     if (!sovereigns) return [];
     return sovereigns.filter(
@@ -72,93 +100,68 @@ export default function SwapPage() {
     );
   }, [sovereigns]);
 
-  // Auto-select first sovereign with a live pool
+  // Auto-select first tradable sovereign
   useEffect(() => {
-    if (sovereigns && sovereigns.length > 0 && !selectedSovereignId) {
-      const withPool = sovereigns.find(
-        (s: any) => s.poolState && s.poolState !== '11111111111111111111111111111111'
-          && ['Recovery', 'Active'].includes(s.status)
-      );
-      if (withPool) {
-        setSelectedSovereignId(withPool.sovereignId);
-      }
+    if (tradableSovereigns.length > 0 && !selectedSovereignId) {
+      setSelectedSovereignId(tradableSovereigns[0].sovereignId);
     }
-  }, [sovereigns, selectedSovereignId]);
+  }, [tradableSovereigns, selectedSovereignId]);
 
-  // Quote — convert user-readable amount to raw for the API
-  const rawAmount = useMemo(() => {
-    if (!amount || isNaN(parseFloat(amount))) return '';
-    if (direction === 'buy') {
-      try {
-        return BigInt(Math.floor(parseFloat(amount) * 1e9)).toString();
-      } catch {
-        return '';
-      }
-    } else {
-      try {
-        return BigInt(Math.floor(parseFloat(amount) * 1e9)).toString();
-      } catch {
-        return '';
-      }
-    }
-  }, [amount, direction]);
-
-  const { quote, loading: quoteLoading, error: quoteError } = useSwapQuote({
-    poolAddress,
-    tokenMint,
-    amount: rawAmount,
-    slippage: slippageBps / 100,
-    direction,
-    enabled: !!poolAddress && !!tokenMint && !!rawAmount,
-  });
-
-  // Swap execution
-  const { executeSwap, loading: swapLoading, error: swapError, txSignature, reset: resetSwap } = useSwap();
-
-  // Fetch Token-2022 balances for all tradable sovereign mints
+  // Fetch Token-2022 balances
   useEffect(() => {
     if (!connected || !publicKey || tradableSovereigns.length === 0) {
       setTokenBalances({});
       return;
     }
-
     let cancelled = false;
-
     (async () => {
       try {
         const accounts = await connection.getTokenAccountsByOwner(
           publicKey,
           { programId: TOKEN_2022_PROGRAM_ID },
-          { commitment: 'confirmed', encoding: 'base64' }
+          'confirmed'
         );
-
         const balances: Record<string, number> = {};
         for (const { account } of accounts.value) {
           let data: Buffer;
           if (Array.isArray(account.data)) {
-            // [base64string, encoding] format
             data = Buffer.from(account.data[0], 'base64');
           } else if (typeof account.data === 'string') {
             data = Buffer.from(account.data, 'base64');
           } else {
             data = account.data as Buffer;
           }
-          // SPL Token Account layout: mint (32 bytes offset 0), owner (32), amount (u64 at offset 64)
           const mint = new PublicKey(data.slice(0, 32)).toBase58();
           const rawAmount = data.readBigUInt64LE(64);
-          balances[mint] = Number(rawAmount) / 1e9; // 9 decimals
+          balances[mint] = Number(rawAmount) / 1e9;
         }
-
         if (!cancelled) setTokenBalances(balances);
       } catch (err) {
         console.error('Failed to fetch token balances:', err);
       }
     })();
-
     return () => { cancelled = true; };
   }, [connected, publicKey, connection, tradableSovereigns.length, txSignature]);
 
-  // Swap direction toggle
+  // Compute raw input amount
+  const rawAmount = useMemo(() => {
+    if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) return null;
+    try {
+      return BigInt(Math.floor(parseFloat(amount) * 1e9));
+    } catch {
+      return null;
+    }
+  }, [amount]);
+
+  // Compute quote locally from engine pool state
+  const quote: EngineQuote | null = useMemo(() => {
+    if (!enginePool || !rawAmount) return null;
+    return direction === 'buy'
+      ? computeBuyQuote(enginePool, rawAmount, slippageBps)
+      : computeSellQuote(enginePool, rawAmount, slippageBps);
+  }, [enginePool, rawAmount, direction, slippageBps]);
+
+  // Toggle direction
   const toggleDirection = useCallback(() => {
     setDirection((d) => (d === 'buy' ? 'sell' : 'buy'));
     setAmount('');
@@ -167,31 +170,32 @@ export default function SwapPage() {
 
   // Execute swap
   const handleSwap = useCallback(async () => {
-    if (!poolAddress || !tokenMint || !amount) return;
+    if (!selectedSovereignId || !rawAmount || !quote) return;
     resetSwap();
-    await executeSwap({
-      poolAddress,
-      tokenMint,
-      // Buy: trading service expects human-readable GOR amount
-      // Sell: trading service expects raw token units
-      amount: direction === 'buy' ? amount : rawAmount,
-      slippageBps,
+    const result = await executeSwap({
+      sovereignId: selectedSovereignId,
       direction,
+      amount: rawAmount,
+      minimumOut: quote.minimumOut,
     });
-  }, [poolAddress, tokenMint, amount, rawAmount, slippageBps, direction, executeSwap, resetSwap]);
+    if (result) {
+      setAmount('');
+    }
+  }, [selectedSovereignId, rawAmount, quote, direction, executeSwap, resetSwap]);
 
-  // Format output amount for display
+  // Format outputs
   const estimatedOutput = useMemo(() => {
     if (!quote) return null;
-    const raw = BigInt(quote.estimatedAmountOut);
-    return (Number(raw) / 1e9).toFixed(6);
+    return formatAmount(quote.estimatedOut);
   }, [quote]);
 
   const minimumOutput = useMemo(() => {
     if (!quote) return null;
-    const raw = BigInt(quote.minimumAmountOut);
-    return (Number(raw) / 1e9).toFixed(6);
+    return formatAmount(quote.minimumOut);
   }, [quote]);
+
+  // Has engine pool?
+  const hasPool = !!enginePool && !enginePool.isPaused;
 
   // ============================================================
   // RENDER
@@ -203,7 +207,7 @@ export default function SwapPage() {
         {/* Header */}
         <div className="text-center mb-6">
           <h1 className="h1 text-2xl text-white">Swap</h1>
-          <p className="text-sm text-[var(--muted)] mt-1">Trade sovereign tokens on SAMM pools</p>
+          <p className="text-sm text-[var(--muted)] mt-1">Trade sovereign tokens on Engine pools</p>
         </div>
 
         {/* Sovereign Selector */}
@@ -241,8 +245,8 @@ export default function SwapPage() {
             </select>
           )}
 
-          {/* Pool info summary */}
-          {sovereign && poolInfo && (
+          {/* Engine pool info summary */}
+          {sovereign && enginePool && (
             <div className="mt-3 pt-3 border-t border-[var(--border)]">
               <div className="flex items-center gap-2 mb-2">
                 {tokenImage && (
@@ -256,25 +260,44 @@ export default function SwapPage() {
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
                   <span className="text-[var(--muted)]">Price: </span>
-                  <span className="text-white">{poolInfo.gorPerToken.toFixed(6)} GOR</span>
+                  <span className="text-white">
+                    {enginePool.spotPrice
+                      ? `${formatPrice(BigInt(Math.round(enginePool.spotPrice)))} GOR`
+                      : enginePool.lastPrice !== '0'
+                        ? `${formatPrice(BigInt(enginePool.lastPrice))} GOR`
+                        : '—'}
+                  </span>
                 </div>
                 <div>
-                  <span className="text-[var(--muted)]">Liquidity: </span>
-                  <span className="text-white">{poolInfo.gorReserve.toFixed(2)} GOR</span>
+                  <span className="text-[var(--muted)]">Reserve: </span>
+                  <span className="text-white">{formatGor(enginePool.gorReserve)} GOR</span>
+                </div>
+                <div>
+                  <span className="text-[var(--muted)]">Tokens: </span>
+                  <span className="text-white">{enginePool.tokenReserveFormatted?.toLocaleString(undefined, { maximumFractionDigits: 0 }) ?? '—'}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--muted)]">Trades: </span>
+                  <span className="text-white">{enginePool.totalTrades.toLocaleString()}</span>
                 </div>
               </div>
+              {enginePool.isPaused && (
+                <div className="mt-2 text-xs text-[var(--error-red,#ef4444)] font-medium">
+                  Pool is paused
+                </div>
+              )}
             </div>
           )}
 
-          {poolAddress && poolLoading && (
+          {selectedSovereignId && poolLoading && (
             <div className="mt-2 text-xs text-[var(--muted)]">Loading pool data...</div>
           )}
         </div>
 
         {/* Swap Card */}
-        {selectedSovereignId && poolAddress && (
+        {selectedSovereignId && hasPool && (
           <div className="card card-clean p-4">
-            {/* Header with settings */}
+            {/* Buy/Sell toggle + settings */}
             <div className="flex items-center justify-between mb-4">
               <div className="flex gap-1">
                 <button
@@ -316,7 +339,7 @@ export default function SwapPage() {
                   Slippage Tolerance
                 </label>
                 <div className="flex gap-2">
-                  {[50, 100, 200, 500].map((bps) => (
+                  {[50, 100, 200, 500, 1000].map((bps) => (
                     <button
                       key={bps}
                       onClick={() => setSlippageBps(bps)}
@@ -388,13 +411,7 @@ export default function SwapPage() {
               </div>
               <div className="flex items-center gap-3">
                 <div className="w-full text-2xl font-medium" style={{ color: estimatedOutput ? 'white' : 'var(--muted)' }}>
-                  {quoteLoading ? (
-                    <span className="text-sm text-[var(--muted)]">Calculating...</span>
-                  ) : estimatedOutput ? (
-                    estimatedOutput
-                  ) : (
-                    '0.0'
-                  )}
+                  {estimatedOutput || '0.0'}
                 </div>
                 <div className="flex items-center gap-2 bg-[var(--bg-card)] px-3 py-1.5 rounded-lg shrink-0">
                   {direction === 'sell' ? (
@@ -415,46 +432,46 @@ export default function SwapPage() {
             {quote && estimatedOutput && (
               <div className="mt-3 space-y-1.5 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-[var(--muted)]">Price Impact</span>
-                  <span className={`${
-                    parseFloat(quote.priceImpact) > 5 ? 'text-[var(--error-red,#ef4444)]' :
-                    parseFloat(quote.priceImpact) > 1 ? 'text-[var(--hazard-yellow)]' :
-                    'text-white'
-                  }`}>
-                    {parseFloat(quote.priceImpact).toFixed(2)}%
+                  <span className="text-[var(--muted)]">Execution Price</span>
+                  <span className="text-white">
+                    {formatPrice(quote.executionPrice)} GOR / token
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[var(--muted)]">Min. Received</span>
-                  <span className="text-white">{minimumOutput} {direction === 'buy' ? (sovereign?.tokenSymbol || 'TOKEN') : 'GOR'}</span>
+                  <span className="text-white">
+                    {minimumOutput} {direction === 'buy' ? (sovereign?.tokenSymbol || 'TOKEN') : 'GOR'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--muted)]">Fee</span>
+                  <span className="text-white">
+                    {formatGor(quote.fee)} GOR ({(quote.effectiveFeeBps / 100).toFixed(1)}%)
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[var(--muted)]">Slippage</span>
                   <span className="text-white">{slippageBps / 100}%</span>
                 </div>
-
-                {poolInfo && (
-                  <div className="flex justify-between">
-                    <span className="text-[var(--muted)]">Rate</span>
-                    <span className="text-white">
-                      1 {sovereign?.tokenSymbol || 'TOKEN'} = {poolInfo.gorPerToken.toFixed(6)} GOR
-                    </span>
-                  </div>
-                )}
+                <div className="flex justify-between">
+                  <span className="text-[var(--muted)]">Spot Price</span>
+                  <span className="text-white">{formatPrice(quote.currentTierPrice)} GOR</span>
+                </div>
               </div>
             )}
 
-            {/* Quote error */}
-            {quoteError && (
+            {/* Sell solvency warning */}
+            {direction === 'sell' && rawAmount && !quote && amount && parseFloat(amount) > 0 && (
               <div className="mt-3 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
-                {quoteError}
+                Sell amount exceeds pool solvency limits or no tokens have been sold yet.
+                Try a smaller amount.
               </div>
             )}
 
             {/* Swap button */}
             <button
               onClick={handleSwap}
-              disabled={!connected || !amount || !quote || swapLoading || quoteLoading}
+              disabled={!connected || !amount || !quote || swapLoading}
               className="w-full mt-4 py-3 rounded-lg font-bold text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               style={{
                 background: !connected ? 'var(--muted)' :
@@ -465,8 +482,7 @@ export default function SwapPage() {
               {!connected ? 'Connect Wallet' :
                swapLoading ? 'Swapping...' :
                !amount ? 'Enter Amount' :
-               quoteLoading ? 'Getting Quote...' :
-               quoteError ? 'Quote Error' :
+               !quote ? 'Invalid Amount' :
                direction === 'buy' ? `Buy ${sovereign?.tokenSymbol || 'Token'}` :
                `Sell ${sovereign?.tokenSymbol || 'Token'}`}
             </button>
@@ -496,10 +512,10 @@ export default function SwapPage() {
         )}
 
         {/* No pool state */}
-        {selectedSovereignId && !poolAddress && sovereign && (
+        {selectedSovereignId && !poolLoading && !enginePool && sovereign && (
           <div className="card card-clean p-4 text-center">
             <p className="text-[var(--muted)] text-sm">
-              This sovereign doesn&apos;t have a live pool yet.
+              This sovereign doesn&apos;t have an engine pool yet.
             </p>
             <p className="text-[var(--muted)] text-xs mt-1">
               Status: <span className="text-white">{sovereign.status}</span>
@@ -507,8 +523,17 @@ export default function SwapPage() {
           </div>
         )}
 
+        {/* Pool paused */}
+        {selectedSovereignId && enginePool?.isPaused && (
+          <div className="card card-clean p-4 text-center">
+            <p className="text-[var(--muted)] text-sm">
+              This pool is currently paused by the creator.
+            </p>
+          </div>
+        )}
+
         {/* Not connected state */}
-        {!connected && selectedSovereignId && poolAddress && (
+        {!connected && selectedSovereignId && hasPool && (
           <div className="card card-clean p-4 text-center mt-3">
             <p className="text-[var(--muted)] text-sm">
               Connect your wallet to start trading
@@ -519,7 +544,7 @@ export default function SwapPage() {
         {/* Info footer */}
         <div className="mt-4 text-center">
           <p className="text-[10px] text-[var(--muted)]">
-            Sovereign pools run on Trashbin SAMM (Concentrated Liquidity AMM)
+            Sovereign pools run on the V3 Engine (CPAMM + BinArray Settlement)
           </p>
         </div>
       </div>

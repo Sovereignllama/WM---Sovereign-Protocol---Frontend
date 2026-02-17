@@ -1,5 +1,6 @@
 import { PublicKey } from '@solana/web3.js';
 import { PDA_SEEDS } from './seeds';
+import { config } from '../config';
 
 /**
  * Encode a u64 (bigint) as a little-endian 8-byte Uint8Array.
@@ -13,6 +14,13 @@ function encodeBigintLE(value: bigint): Uint8Array {
     v >>= 8n;
   }
   return buf;
+}
+
+/**
+ * Get the Engine Program ID
+ */
+export function getEngineProgramId(): PublicKey {
+  return new PublicKey(config.engineProgramId);
 }
 
 /**
@@ -240,6 +248,92 @@ export function getExtraAccountMetasPDA(
   const pid = programId || getProgramId();
   return PublicKey.findProgramAddressSync(
     [Buffer.from(PDA_SEEDS.EXTRA_ACCOUNT_METAS), tokenMint.toBuffer()],
+    pid
+  );
+}
+
+// ============================================================
+// Engine Pool PDAs
+// ============================================================
+
+/**
+ * Derive the Engine Pool PDA for a sovereign
+ * @param sovereign - The sovereign's pubkey
+ */
+export function getEnginePoolPDA(
+  sovereign: PublicKey,
+  programId?: PublicKey
+): [PublicKey, number] {
+  const pid = programId || getEngineProgramId();
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from(PDA_SEEDS.ENGINE_POOL), sovereign.toBuffer()],
+    pid
+  );
+}
+
+/**
+ * Derive the Engine GOR Vault PDA (native SOL) for a sovereign
+ * @param sovereign - The sovereign's pubkey
+ */
+export function getEngineGorVaultPDA(
+  sovereign: PublicKey,
+  programId?: PublicKey
+): [PublicKey, number] {
+  const pid = programId || getEngineProgramId();
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from(PDA_SEEDS.ENGINE_GOR_VAULT), sovereign.toBuffer()],
+    pid
+  );
+}
+
+/**
+ * Derive the Engine Token Vault PDA for a sovereign
+ * @param sovereign - The sovereign's pubkey
+ */
+export function getEngineTokenVaultPDA(
+  sovereign: PublicKey,
+  programId?: PublicKey
+): [PublicKey, number] {
+  const pid = programId || getEngineProgramId();
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from(PDA_SEEDS.ENGINE_TOKEN_VAULT), sovereign.toBuffer()],
+    pid
+  );
+}
+
+/**
+ * Derive the Engine LP Claim PDA for a depositor
+ * @param enginePool - The engine pool's pubkey
+ * @param originalDepositor - The original depositor's wallet pubkey
+ */
+export function getEngineLpClaimPDA(
+  enginePool: PublicKey,
+  originalDepositor: PublicKey,
+  programId?: PublicKey
+): [PublicKey, number] {
+  const pid = programId || getEngineProgramId();
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from(PDA_SEEDS.ENGINE_LP_CLAIM), enginePool.toBuffer(), originalDepositor.toBuffer()],
+    pid
+  );
+}
+
+/**
+ * Derive the Engine BinArray PDA for a sovereign + page index.
+ * V3 engine stores bins in pages of 512 bins each.
+ * @param sovereign - The sovereign's pubkey
+ * @param pageIndex - The page index (0-based, u32)
+ */
+export function getEngineBinArrayPDA(
+  sovereign: PublicKey,
+  pageIndex: number,
+  programId?: PublicKey
+): [PublicKey, number] {
+  const pid = programId || getEngineProgramId();
+  const pageBuffer = new Uint8Array(4);
+  new DataView(pageBuffer.buffer).setUint32(0, pageIndex, true); // little-endian u32
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from(PDA_SEEDS.ENGINE_BIN_ARRAY), sovereign.toBuffer(), pageBuffer],
     pid
   );
 }

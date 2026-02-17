@@ -16,7 +16,7 @@ interface SovereignDataProviderProps {
 /**
  * Converts chain data to display format
  */
-function toDisplayData(chainSovereign: ReturnType<typeof useSovereigns>['data'][number]): SovereignDisplayData {
+function toDisplayData(chainSovereign: NonNullable<ReturnType<typeof useSovereigns>['data']>[number]): SovereignDisplayData {
   return {
     sovereignId: BigInt(chainSovereign.sovereignId),
     publicKey: new PublicKey(chainSovereign.publicKey),

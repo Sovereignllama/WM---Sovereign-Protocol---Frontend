@@ -15,6 +15,7 @@ const pageTitles: Record<string, string> = {
   '/': '👑 $OVEREIGNS',
   '/mint': '🚀 LAUNCH',
   '/governance': '🏛️ GOVERNANCE',
+  '/governance/creator': '🏛️ GOVERNANCE',
   '/swap': '💱 SWAP',
 };
 
