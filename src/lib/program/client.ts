@@ -621,6 +621,7 @@ export async function buildSwapBuyTx(
   const poolAccount = await (engineProgram.account as any).enginePool.fetch(enginePoolPDA);
   const tokenMint: PublicKey = poolAccount.tokenMint;
   const activeBin: number = poolAccount.activeBin;
+  const highestAllocatedPage: number = poolAccount.highestAllocatedPage;
   const activePage = Math.floor(activeBin / 128);
   const [binArrayPDA] = getEngineBinArrayPDA(sovereignPDA, activePage);
 
@@ -648,7 +649,39 @@ export async function buildSwapBuyTx(
     ),
   );
 
-  const mainIx = await (engineProgram.methods as any)
+  // Auto-allocate BinArray pages if needed (active page or overflow)
+  // Pages must be allocated sequentially: highest_allocated_page + 1
+  const pagesToAllocate: number[] = [];
+  for (let p = highestAllocatedPage + 1; p <= activePage + 1; p++) {
+    if (p * 128 < poolAccount.numBins) {
+      pagesToAllocate.push(p);
+    }
+  }
+  for (const pageIdx of pagesToAllocate) {
+    const [newBinArrayPDA] = getEngineBinArrayPDA(sovereignPDA, pageIdx);
+    const allocateIx = await (engineProgram.methods as any)
+      .allocateBinPage(pageIdx)
+      .accounts({
+        payer: trader,
+        sovereign: sovereignPDA,
+        enginePool: enginePoolPDA,
+        binArray: newBinArrayPDA,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+    tx.add(allocateIx);
+  }
+
+  // Overflow page for cross-boundary swaps (buys cross UP)
+  const overflowPageIndex = activePage + 1;
+  let remainingAccounts: { pubkey: PublicKey; isWritable: boolean; isSigner: boolean }[] = [];
+  const overflowAllocated = overflowPageIndex <= highestAllocatedPage + pagesToAllocate.length;
+  if (overflowAllocated && overflowPageIndex * 128 < poolAccount.numBins) {
+    const [overflowPDA] = getEngineBinArrayPDA(sovereignPDA, overflowPageIndex);
+    remainingAccounts = [{ pubkey: overflowPDA, isWritable: true, isSigner: false }];
+  }
+
+  const swapBuilder = (engineProgram.methods as any)
     .swapBuy(new BN(gorInput.toString()), new BN(minTokensOut.toString()))
     .accounts({
       trader,
@@ -661,9 +694,13 @@ export async function buildSwapBuyTx(
       binArray: binArrayPDA,
       tokenProgram: tokenProgramId,
       systemProgram: SystemProgram.programId,
-    })
-    .transaction();
+    });
 
+  if (remainingAccounts.length > 0) {
+    swapBuilder.remainingAccounts(remainingAccounts);
+  }
+
+  const mainIx = await swapBuilder.instruction();
   tx.add(mainIx);
   return tx;
 }
@@ -697,6 +734,7 @@ export async function buildSwapSellTx(
   const poolAccount = await (engineProgram.account as any).enginePool.fetch(enginePoolPDA);
   const tokenMint: PublicKey = poolAccount.tokenMint;
   const activeBin: number = poolAccount.activeBin;
+  const highestAllocatedPage: number = poolAccount.highestAllocatedPage;
   const activePage = Math.floor(activeBin / 128);
   const [binArrayPDA] = getEngineBinArrayPDA(sovereignPDA, activePage);
 
@@ -714,7 +752,41 @@ export async function buildSwapSellTx(
 
   const tx = new Transaction();
 
-  const swapIx = await (engineProgram.methods as any)
+  // Auto-allocate BinArray pages if needed
+  // Pages must be allocated sequentially: highest_allocated_page + 1
+  const pagesToAllocate: number[] = [];
+  for (let p = highestAllocatedPage + 1; p <= activePage; p++) {
+    if (p * 128 < poolAccount.numBins) {
+      pagesToAllocate.push(p);
+    }
+  }
+  for (const pageIdx of pagesToAllocate) {
+    const [newBinArrayPDA] = getEngineBinArrayPDA(sovereignPDA, pageIdx);
+    const allocateIx = await (engineProgram.methods as any)
+      .allocateBinPage(pageIdx)
+      .accounts({
+        payer: trader,
+        sovereign: sovereignPDA,
+        enginePool: enginePoolPDA,
+        binArray: newBinArrayPDA,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+    tx.add(allocateIx);
+  }
+
+  // Overflow page for cross-boundary swaps (sells cross DOWN)
+  const overflowPageIndex = activePage - 1;
+  let remainingAccounts: { pubkey: PublicKey; isWritable: boolean; isSigner: boolean }[] = [];
+  if (overflowPageIndex >= 0) {
+    const [overflowPDA] = getEngineBinArrayPDA(sovereignPDA, overflowPageIndex);
+    // Page 0 always exists; other pages exist if <= highestAllocatedPage
+    if (overflowPageIndex <= highestAllocatedPage) {
+      remainingAccounts = [{ pubkey: overflowPDA, isWritable: true, isSigner: false }];
+    }
+  }
+
+  const swapBuilder = (engineProgram.methods as any)
     .swapSell(new BN(tokenInput.toString()), new BN(minGorOut.toString()))
     .accounts({
       trader,
@@ -727,9 +799,13 @@ export async function buildSwapSellTx(
       binArray: binArrayPDA,
       tokenProgram: tokenProgramId,
       systemProgram: SystemProgram.programId,
-    })
-    .instruction();
+    });
 
+  if (remainingAccounts.length > 0) {
+    swapBuilder.remainingAccounts(remainingAccounts);
+  }
+
+  const swapIx = await swapBuilder.instruction();
   tx.add(swapIx);
   return tx;
 }

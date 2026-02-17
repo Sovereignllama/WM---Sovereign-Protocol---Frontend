@@ -24,6 +24,7 @@ import {
   buildEmergencyWithdrawTx,
   buildEmergencyWithdrawCreatorTx,
   buildMintGenesisNftTx,
+  buildUpdateSellFeeTx,
   CreateSovereignFrontendParams,
   fetchDepositRecord,
 } from '@/lib/program/client';
@@ -778,10 +779,10 @@ export function useClaimPoolCreatorFees() {
 }
 
 /**
- * Hook to update the engine pool bin size (creator-controlled price granularity).
- * CPIs to sovereign_engine::update_bin_size via main program.
+ * Hook to update the sell/transfer fee on a sovereign's token mint.
+ * Creator only. Max 3% (300 bps).
  */
-export function useUpdateBinSize() {
+export function useUpdateSellFee() {
   const program = useProgram();
   const { publicKey, sendTransaction } = useWallet();
   const { connection } = useConnection();
@@ -790,20 +791,20 @@ export function useUpdateBinSize() {
   return useMutation({
     mutationFn: async ({
       sovereignId,
-      newBinSize,
+      newFeeBps,
     }: {
       sovereignId: string | number;
-      newBinSize: string; // raw lamports as string
+      newFeeBps: number;
     }): Promise<TransactionResult> => {
       if (!program || !publicKey) {
         throw new Error('Wallet not connected');
       }
 
-      const tx = await buildUpdateBinSizeTx(
+      const tx = await buildUpdateSellFeeTx(
         program,
         publicKey,
         BigInt(sovereignId),
-        new BN(newBinSize),
+        newFeeBps,
       );
 
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
@@ -824,7 +825,7 @@ export function useUpdateBinSize() {
       return { signature, success: true };
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['enginePool', variables.sovereignId.toString()] });
+      queryClient.invalidateQueries({ queryKey: ['tokenFeeStats', variables.sovereignId.toString()] });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
     },
   });

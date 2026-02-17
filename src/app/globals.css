@@ -19,6 +19,7 @@
     /* Brand - Sovereign Protocol Theme (adapted from WM) */
     --sovereign-green: #0B5D3B;
     --hazard-yellow: #F2B705;
+    --hazard-orange: #F27405;
 
     /* UI Surfaces */
     --landfill-black: #0B0E0C;
@@ -27,6 +28,7 @@
 
     /* Accents */
     --slime: #3CFF8F;
+    --money-green: #2EEB7F;
 
     /* System */
     --profit: #2EEB7F;

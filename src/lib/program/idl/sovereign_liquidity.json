@@ -8,6 +8,119 @@
   },
   "instructions": [
     {
+      "name": "admin_sweep_vault",
+      "docs": [
+        "Admin sweep — transfer remaining sol_vault balance to treasury.",
+        "Use after all investor/creator obligations are cleared.",
+        "Protocol authority only. Sovereign must be EmergencyUnlocked, Unwound, or Retired."
+      ],
+      "discriminator": [
+        55,
+        167,
+        169,
+        85,
+        135,
+        189,
+        215,
+        84
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "sovereign",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign.sovereign_id",
+                "account": "SovereignState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sol_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "claim_creator_vault",
       "docs": [
         "Creator withdraws tokens from the vault (waterfall-capped during Recovery,",
@@ -1878,8 +1991,9 @@
         {
           "name": "token_mint",
           "docs": [
-            "The sovereign's token mint"
-          ]
+            "The sovereign's token mint (mut: set_transfer_fee writes to mint)"
+          ],
+          "writable": true
         },
         {
           "name": "sol_vault",

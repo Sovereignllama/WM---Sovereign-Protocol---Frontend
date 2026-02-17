@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useSovereigns, useSovereign, useEnginePool, useTokenFeeStats } from '@/hooks/useSovereign';
-import { useClaimPoolCreatorFees, useHarvestTransferFees, useEmergencyWithdrawCreator, useUpdateBinSize } from '@/hooks/useTransactions';
+import { useClaimPoolCreatorFees, useHarvestTransferFees, useEmergencyWithdrawCreator, useUpdateSellFee } from '@/hooks/useTransactions';
 import { useTokenImage } from '@/hooks/useTokenImage';
 import { StatusBadge } from '@/components/StatusBadge';
 import { config, LAMPORTS_PER_GOR } from '@/lib/config';
@@ -86,17 +86,21 @@ export default function CreatorGovernancePage() {
   const claimCreatorFees = useClaimPoolCreatorFees();
   const harvestTransferFees = useHarvestTransferFees();
   const emergencyWithdrawCreator = useEmergencyWithdrawCreator();
-  const updateBinSize = useUpdateBinSize();
+  const updateSellFee = useUpdateSellFee();
 
   // Collect-all fee state
   const [collectAllStep, setCollectAllStep] = useState('');
   const [collectAllError, setCollectAllError] = useState<string | null>(null);
   const [collectAllDone, setCollectAllDone] = useState(false);
 
-  // Bin size control state
-  const [binSizeInput, setBinSizeInput] = useState('');
-  const [binSizeError, setBinSizeError] = useState<string | null>(null);
-  const [binSizeSuccess, setBinSizeSuccess] = useState(false);
+  // Fee control state
+  const [feeModalOpen, setFeeModalOpen] = useState(false);
+  const [feeInput, setFeeInput] = useState('');
+  const [feeError, setFeeError] = useState<string | null>(null);
+  const [feeSuccess, setFeeSuccess] = useState(false);
+
+  // Solvency info popup
+  const [solvencyInfoOpen, setSolvencyInfoOpen] = useState(false);
 
   const isCreator = sovereign?.creator === publicKey?.toBase58();
 
@@ -242,6 +246,100 @@ export default function CreatorGovernancePage() {
                           Pool live since {format(sovereign.finalizedAt, 'MMM d, yyyy')}
                         </p>
                       )}
+
+                      {/* Solvency Status */}
+                      {enginePoolData && (() => {
+                        const initialGor = enginePoolData.initialGorReserveGor;
+                        const gorReserve = enginePoolData.gorReserveGor;
+                        const tokenLiquidationValue = Math.max(0, gorReserve - initialGor);
+                        const rawVariance = gorReserve - tokenLiquidationValue - initialGor;
+                        const variance = Math.abs(rawVariance) < 0.0001 ? 0 : rawVariance;
+                        const isSolvent = variance >= -0.01;
+                        const totalBinFees = enginePoolData.totalBinFeesDistributedGor;
+                        const totalFees = enginePoolData.totalFeesCollectedGor;
+                        const lpFees = Number(enginePoolData.lpFeesAccumulated) / LAMPORTS_PER_GOR;
+                        const creatorFees = Number(enginePoolData.creatorFeesAccumulated) / LAMPORTS_PER_GOR;
+
+                        return (
+                          <>
+                            <div className="flex items-center gap-2 mt-2">
+                              <span className={`w-2 h-2 rounded-full ${isSolvent ? 'bg-[var(--slime)]' : 'bg-red-500'}`} />
+                              <span className={`text-sm font-medium ${isSolvent ? 'text-[var(--slime)]' : 'text-red-500'}`}>
+                                {isSolvent ? 'Solvent' : 'Under-Collateralized'}
+                              </span>
+                              <button
+                                onClick={() => setSolvencyInfoOpen(true)}
+                                className="ml-1 w-4 h-4 rounded-full bg-[var(--hazard-orange)] text-white text-[10px] font-bold flex items-center justify-center hover:opacity-80 transition-opacity"
+                                title="Solvency details"
+                              >
+                                i
+                              </button>
+                            </div>
+
+                            {/* Solvency info modal */}
+                            {solvencyInfoOpen && (
+                              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={() => setSolvencyInfoOpen(false)}>
+                                <div className="bg-[#0d0d0d] border border-[var(--border)] rounded-xl p-5 w-96 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                                  <div className="flex items-center justify-between mb-3">
+                                    <h4 className="text-white font-bold text-sm">Solvency &amp; Principal</h4>
+                                    <button onClick={() => setSolvencyInfoOpen(false)} className="text-[var(--muted)] hover:text-white text-lg leading-none">&times;</button>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <div className="flex justify-between text-sm">
+                                      <span className="text-[var(--muted)]">Status</span>
+                                      <span className={`font-bold flex items-center gap-1.5 ${isSolvent ? 'text-[var(--slime)]' : 'text-red-500'}`}>
+                                        <span className={`w-2 h-2 rounded-full ${isSolvent ? 'bg-[var(--slime)]' : 'bg-red-500'}`} />
+                                        {isSolvent ? 'Solvent' : 'Under-Collateralized'}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                      <span className="text-[var(--muted)]">Initial Principal</span>
+                                      <span className="text-white font-medium">{initialGor.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                      <span className="text-[var(--muted)]">Current GOR Reserve</span>
+                                      <span className="text-white font-medium">{gorReserve.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                      <span className="text-[var(--muted)]">Token Liquidation</span>
+                                      <span className="text-white font-medium">{tokenLiquidationValue.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                      <span className="text-[var(--muted)]">Variance</span>
+                                      <span className={`font-bold ${variance >= 0 ? 'text-[var(--slime)]' : 'text-red-500'}`}>
+                                        {variance >= 0 ? '+' : ''}{variance.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR
+                                      </span>
+                                    </div>
+                                    <div className="border-t border-[var(--border)] my-1" />
+                                    <div className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-1">Fee Breakdown</div>
+                                    <div className="flex justify-between text-sm">
+                                      <span className="text-[var(--muted)]">Total Swap Fees</span>
+                                      <span className="text-white font-medium">{totalFees.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                      <span className="text-[var(--muted)]">→ LP Fees</span>
+                                      <span className="text-white font-medium">{lpFees.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                      <span className="text-[var(--muted)]">→ Creator Fees</span>
+                                      <span className="text-white font-medium">{creatorFees.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                      <span className="text-[var(--muted)]">→ Bin Rewards</span>
+                                      <span className="text-white font-medium">{totalBinFees.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR</span>
+                                    </div>
+                                  </div>
+                                  <p className="text-[var(--muted)] text-[10px] mt-3 leading-relaxed">
+                                    In V3 (locked-rate sells), the pool always holds enough GOR to cover full sellback by construction.
+                                    Token Liquidation = GOR Reserve − Initial Principal.
+                                    Variance = what remains after paying all token obligations and returning investor principal.
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
 
                     <div className="border-t border-[var(--border)] my-3" />
@@ -323,14 +421,17 @@ export default function CreatorGovernancePage() {
                         <div className="flex justify-between text-sm">
                           <span className="text-[var(--muted)]">GOR Vault</span>
                           <span className="text-[var(--money-green)] font-medium">
-                            {sovereign.totalFeesCollectedGor.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR
+                            {enginePoolData
+                              ? enginePoolData.gorReserveGor.toLocaleString(undefined, { maximumFractionDigits: 4 })
+                              : '0'
+                            } GOR
                           </span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-[var(--muted)]">{sovereign.tokenSymbol || 'Token'} Vault</span>
                           <span className="text-white font-medium">
-                            {tokenFeeStats
-                              ? tokenFeeStats.vaultBalance.toLocaleString(undefined, { maximumFractionDigits: 4 })
+                            {enginePoolData
+                              ? enginePoolData.tokenReserveFormatted.toLocaleString(undefined, { maximumFractionDigits: 4 })
                               : '0'
                             } {sovereign.tokenSymbol || 'tokens'}
                           </span>
@@ -350,13 +451,76 @@ export default function CreatorGovernancePage() {
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-[var(--muted)]">Transfer Fee</span>
-                          <span className="text-white font-medium">
+                          <span className="text-white font-medium flex items-center gap-2">
                             {tokenFeeStats
                               ? `${(tokenFeeStats.transferFeeBps / 100).toFixed(2)}%`
                               : `${(sovereign.sellFeeBps / 100).toFixed(1)}%`
                             }
+                            {isCreator && !sovereign.feeControlRenounced && (
+                              <button
+                                onClick={() => { setFeeModalOpen(true); setFeeInput(''); setFeeError(null); setFeeSuccess(false); }}
+                                className="px-2 py-0.5 rounded text-[10px] font-medium bg-[var(--hazard-orange)] text-white hover:opacity-90"
+                              >
+                                Update
+                              </button>
+                            )}
                           </span>
                         </div>
+
+                        {/* Fee update modal */}
+                        {feeModalOpen && (
+                          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setFeeModalOpen(false)}>
+                            <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-xl p-5 w-80 shadow-xl" onClick={(e) => e.stopPropagation()}>
+                              <h4 className="text-white font-bold text-sm mb-3">Update Transfer Fee</h4>
+                              <p className="text-[var(--muted)] text-xs mb-3">Set a new transfer fee between 0% and 3%. Activates next epoch.</p>
+                              <input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                max="3"
+                                placeholder="New fee %"
+                                value={feeInput}
+                                onChange={(e) => { setFeeInput(e.target.value); setFeeError(null); setFeeSuccess(false); }}
+                                className="w-full px-3 py-2 rounded bg-[var(--surface)] border border-[var(--border)] text-white text-sm mb-3 focus:border-[var(--accent)] focus:outline-none"
+                                autoFocus
+                              />
+                              {feeError && <p className="text-red-400 text-xs mb-2">{feeError}</p>}
+                              {feeSuccess && <p className="text-[var(--slime)] text-xs mb-2">Fee updated — activates next epoch.</p>}
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => setFeeModalOpen(false)}
+                                  className="flex-1 px-3 py-2 rounded text-xs font-medium bg-[var(--surface)] text-[var(--muted)] hover:text-white border border-[var(--border)]"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  className="flex-1 px-3 py-2 rounded text-xs font-medium bg-[var(--accent)] text-black hover:opacity-90 disabled:opacity-40"
+                                  disabled={updateSellFee.isPending || !feeInput}
+                                  onClick={async () => {
+                                    setFeeError(null);
+                                    setFeeSuccess(false);
+                                    const pct = parseFloat(feeInput);
+                                    if (isNaN(pct) || pct < 0 || pct > 3) {
+                                      setFeeError('Fee must be between 0% and 3%');
+                                      return;
+                                    }
+                                    const bps = Math.round(pct * 100);
+                                    try {
+                                      await updateSellFee.mutateAsync({ sovereignId: sovereign.sovereignId, newFeeBps: bps });
+                                      setFeeSuccess(true);
+                                      setFeeInput('');
+                                      setTimeout(() => setFeeModalOpen(false), 1500);
+                                    } catch (err: any) {
+                                      setFeeError(err?.message || 'Failed to update fee');
+                                    }
+                                  }}
+                                >
+                                  {updateSellFee.isPending ? 'Updating...' : 'Confirm'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                         <div className="flex justify-between text-sm">
                           <span className="text-[var(--muted)]">Fee Mode</span>
                           <span className="text-white font-medium">{sovereign.feeMode}</span>
@@ -375,47 +539,6 @@ export default function CreatorGovernancePage() {
                         </div>
                       </div>
                     </div>
-
-                    <div className="border-t border-[var(--border)] my-3" />
-
-                    {/* Bin Size / Price Granularity */}
-                    {enginePoolData && (
-                      <div className="mb-4">
-                        <div className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-2">Price Granularity</div>
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-[var(--muted)]">Bin Size</span>
-                            <span className="text-white font-medium">
-                              {enginePoolData.binSizeFormatted?.toLocaleString(undefined, { maximumFractionDigits: 0 }) ?? '—'} tokens
-                            </span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-[var(--muted)]">Token Reserve</span>
-                            <span className="text-white font-medium">
-                              {enginePoolData.tokenReserveFormatted?.toLocaleString(undefined, { maximumFractionDigits: 0 }) ?? '—'} tokens
-                            </span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-[var(--muted)]">Active Bins</span>
-                            <span className="text-white font-medium">
-                              {enginePoolData.binSizeFormatted && enginePoolData.tokenReserveFormatted && enginePoolData.binSizeFormatted > 0
-                                ? Math.ceil(enginePoolData.tokenReserveFormatted / enginePoolData.binSizeFormatted).toLocaleString()
-                                : '—'
-                              }
-                            </span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-[var(--muted)]">Spot Price</span>
-                            <span className="text-[var(--money-green)] font-medium">
-                              {enginePoolData.spotPrice
-                                ? (enginePoolData.spotPrice / LAMPORTS_PER_GOR).toLocaleString(undefined, { maximumFractionDigits: 8 })
-                                : '—'
-                              } GOR/token
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
 
                     <div className="border-t border-[var(--border)] my-3" />
 
@@ -476,15 +599,11 @@ export default function CreatorGovernancePage() {
                 {/* Right column — Creator Fees & Actions */}
                 <div className="md:col-span-2">
 
-                  {/* Creator Fees & GOR Reserves */}
+                  {/* Creator Fees */}
                   {(sovereign.status === 'Recovery' || sovereign.status === 'Active') && sovereign.tokenMint && (
                     <div className="card card-clean p-4 mb-4">
-                      <h3 className="h3 text-white mb-2">Creator Fees</h3>
-                      <p className="text-[var(--muted)] text-sm mb-4">
-                        Claim pending fees, view reserves, and track withdrawable creator revenue.
-                      </p>
+                      <h3 className="h3 text-white mb-4">Creator Fees</h3>
 
-                      {/* Pending Fees — split GOR + Token */}
                       {(() => {
                         const pendingGorFees = enginePoolData
                           ? (Number(enginePoolData.creatorFeesAccumulated) - Number(enginePoolData.creatorFeesClaimed)) / LAMPORTS_PER_GOR
@@ -492,128 +611,24 @@ export default function CreatorGovernancePage() {
                         const pendingTokenFees =
                           (tokenFeeStats?.totalHarvestable ?? 0) +
                           (tokenFeeStats?.vaultBalance ?? 0);
+                        const hasTokenFees = sovereign.sovereignType === 'TokenLaunch' && pendingTokenFees > 0;
+
                         return (
-                          <div className="mb-4 space-y-2">
+                          <div className="space-y-3">
                             <div className="flex justify-between items-baseline">
-                              <span className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
-                                Pending Swap Fees <span className="text-[var(--money-green)]">(GOR)</span>
-                              </span>
+                              <span className="text-sm text-[var(--muted)]">Pending GOR</span>
                               <span className={`text-lg font-bold ${pendingGorFees > 0 ? 'text-[var(--slime)]' : 'text-[var(--muted)]'}`}>
                                 {pendingGorFees.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR
                               </span>
                             </div>
-                            {sovereign.sovereignType === 'TokenLaunch' && (
+                            {hasTokenFees && (
                               <div className="flex justify-between items-baseline">
-                                <span className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
-                                  Pending Transfer Fees <span className="text-[var(--money-green)]">({sovereign.tokenSymbol || 'Token'})</span>
-                                </span>
-                                <span className={`text-lg font-bold ${pendingTokenFees > 0 ? 'text-[var(--slime)]' : 'text-[var(--muted)]'}`}>
+                                <span className="text-sm text-[var(--muted)]">Pending {sovereign.tokenSymbol || 'Token'}</span>
+                                <span className="text-lg font-bold text-[var(--slime)]">
                                   {pendingTokenFees.toLocaleString(undefined, { maximumFractionDigits: 4 })} {sovereign.tokenSymbol || 'tokens'}
                                 </span>
                               </div>
                             )}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Lifetime Collected */}
-                      <div className="mb-4 p-3 rounded-lg bg-[var(--card-bg)]">
-                        <div className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-2">Total Collected (Lifetime)</div>
-                        <div className="space-y-1.5">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-[var(--muted)]">GOR Swap Fees</span>
-                            <span className="text-[var(--money-green)] font-medium">
-                              {(enginePoolData ? enginePoolData.totalFeesCollectedGor : sovereign.totalFeesCollectedGor).toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR
-                            </span>
-                          </div>
-                          {(() => {
-                            const lpDistributed = enginePoolData
-                              ? Number(enginePoolData.lpFeesAccumulated) / LAMPORTS_PER_GOR
-                              : sovereign.totalSolFeesDistributedGor;
-                            return lpDistributed > 0 ? (
-                              <div className="flex justify-between text-sm">
-                                <span className="text-[var(--muted)]">LP Fees Distributed</span>
-                                <span className="text-white font-medium">{lpDistributed.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR</span>
-                              </div>
-                            ) : null;
-                          })()}
-                        </div>
-                      </div>
-
-                      {/* GOR Reserves Waterfall */}
-                      {enginePoolData && (() => {
-                        const gorReserve = enginePoolData.gorReserveGor;
-                        const tokenReserve = enginePoolData.tokenReserveFormatted;
-                        const totalSupply = enginePoolData.totalTokenSupplyFormatted;
-                        const transferFeeBps = tokenFeeStats?.transferFeeBps ?? sovereign.sellFeeBps;
-                        const swapFeeBps = sovereign.swapFeeBps;
-
-                        const totalFeesGor = enginePoolData ? enginePoolData.totalFeesCollectedGor : sovereign.totalFeesCollectedGor;
-                        const lpDistributedGor = enginePoolData
-                          ? Number(enginePoolData.lpFeesAccumulated) / LAMPORTS_PER_GOR
-                          : sovereign.totalSolFeesDistributedGor;
-                        const investorFeesOwed = Math.max(0, totalFeesGor - lpDistributedGor);
-                        const guaranteedPrincipal = sovereign.totalDepositedGor;
-
-                        const creatorTokens =
-                          (enginePoolData ? (Number(enginePoolData.creatorFeesAccumulated) - Number(enginePoolData.creatorFeesClaimed)) / 1e9 : 0) +
-                          (tokenFeeStats?.totalHarvestable ?? 0) +
-                          (tokenFeeStats?.vaultBalance ?? 0);
-
-                        const outsidePool = Math.max(0, totalSupply - tokenReserve);
-                        const holderTokens = Math.max(0, outsidePool - creatorTokens);
-
-                        const holdersAfterTransfer = holderTokens * (1 - transferFeeBps / 10000);
-                        const holdersAfterSwap = holdersAfterTransfer * (1 - swapFeeBps / 10000);
-                        const holderLiquidationValue = (tokenReserve > 0 && gorReserve > 0 && holdersAfterSwap > 0)
-                          ? gorReserve * holdersAfterSwap / (tokenReserve + holdersAfterSwap)
-                          : 0;
-
-                        const withdrawableCreatorFees = Math.max(0,
-                          gorReserve - investorFeesOwed - guaranteedPrincipal - holderLiquidationValue
-                        );
-
-                        return (
-                          <div className="mb-4 p-3 rounded-lg bg-[var(--card-bg)]">
-                            <div className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-2">GOR Reserves Waterfall</div>
-                            <div className="space-y-2">
-                              <div className="flex justify-between text-sm">
-                                <span className="text-[var(--muted)]">Current GOR Reserves</span>
-                                <span className="text-[var(--money-green)] font-bold">
-                                  {gorReserve.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR
-                                </span>
-                              </div>
-                              <div className="flex justify-between text-sm">
-                                <span className="text-[var(--muted)]">Investor Fees Owed</span>
-                                <span className="text-red-400 font-medium">
-                                  {investorFeesOwed.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR
-                                </span>
-                              </div>
-                              <div className="flex justify-between text-sm">
-                                <span className="text-[var(--muted)]">Guaranteed Principal</span>
-                                <span className="text-red-400 font-medium">
-                                  {guaranteedPrincipal.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR
-                                </span>
-                              </div>
-                              <div className="flex justify-between text-sm">
-                                <span className="text-[var(--muted)]">Holder Liquidation Value</span>
-                                <span className="text-red-400 font-medium">
-                                  {holderLiquidationValue.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR
-                                </span>
-                              </div>
-                              <div className="border-t border-[var(--border)] my-1" />
-                              <div className="flex justify-between text-sm">
-                                <span className="text-white font-bold">Withdrawable Creator Fees</span>
-                                <span className={`font-bold ${withdrawableCreatorFees > 0 ? 'text-[var(--money-green)]' : 'text-red-400'}`}>
-                                  {withdrawableCreatorFees.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR
-                                </span>
-                              </div>
-                              {withdrawableCreatorFees <= 0 && (
-                                <p className="text-red-400 text-xs mt-1">
-                                  ⚠ Obligations exceed reserves — no withdrawable creator fees at this time.
-                                </p>
-                              )}
-                            </div>
                           </div>
                         );
                       })()}
@@ -626,13 +641,11 @@ export default function CreatorGovernancePage() {
                           setCollectAllError(null);
                           setCollectAllDone(false);
                           try {
-                            // Claim creator's share of engine pool swap fees
                             setCollectAllStep('Claiming creator fees...');
                             await claimCreatorFees.mutateAsync({
                               sovereignId: selectedSovereignId,
                             });
 
-                            // Also harvest Token-2022 transfer fees if applicable
                             if (tokenFeeStats && tokenFeeStats.totalHarvestable > 0 && tokenFeeStats.harvestableAccounts.length > 0) {
                               setCollectAllStep('Claiming token transfer fees...');
                               await harvestTransferFees.mutateAsync({
@@ -650,7 +663,7 @@ export default function CreatorGovernancePage() {
                           }
                         }}
                         disabled={claimCreatorFees.isPending || harvestTransferFees.isPending || !!collectAllStep}
-                        className="btn-money px-6 py-2 w-full"
+                        className="btn-money px-6 py-2 w-full mt-4"
                       >
                         {collectAllStep || 'Claim'}
                       </button>
@@ -661,193 +674,6 @@ export default function CreatorGovernancePage() {
                       {collectAllDone && (
                         <p className="text-[var(--slime)] text-sm mt-2">All fees claimed successfully!</p>
                       )}
-                    </div>
-                  )}
-
-                  {/* Bin Size Control */}
-                  {(sovereign.status === 'Recovery' || sovereign.status === 'Active') && enginePoolData && (
-                    <div className="card card-clean p-4 mb-4">
-                      <h3 className="h3 text-white mb-2">Price Granularity</h3>
-                      <p className="text-[var(--muted)] text-sm mb-4">
-                        Adjust the bin size to control price step granularity. Larger bins create bigger price jumps per trade, smaller bins create smoother pricing.
-                      </p>
-
-                      {/* Current values */}
-                      <div className="mb-4 p-3 rounded-lg bg-[var(--card-bg)]">
-                        <div className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-2">Current Configuration</div>
-                        <div className="space-y-1.5">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-[var(--muted)]">Bin Size</span>
-                            <span className="text-white font-medium">
-                              {enginePoolData.binSizeFormatted?.toLocaleString(undefined, { maximumFractionDigits: 0 }) ?? '—'} tokens
-                            </span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-[var(--muted)]">Active Bins</span>
-                            <span className="text-white font-medium">
-                              {enginePoolData.binSizeFormatted && enginePoolData.tokenReserveFormatted && enginePoolData.binSizeFormatted > 0
-                                ? Math.ceil(enginePoolData.tokenReserveFormatted / enginePoolData.binSizeFormatted).toLocaleString()
-                                : '—'
-                              }
-                            </span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-[var(--muted)]">Spot Price</span>
-                            <span className="text-[var(--money-green)] font-medium">
-                              {enginePoolData.spotPrice
-                                ? (enginePoolData.spotPrice / LAMPORTS_PER_GOR).toLocaleString(undefined, { maximumFractionDigits: 8 })
-                                : '—'
-                              } GOR/token
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Bin size input */}
-                      <div className="mb-3">
-                        <label className="text-sm text-[var(--muted)] block mb-1">New Bin Size (tokens)</label>
-                        <input
-                          type="number"
-                          value={binSizeInput}
-                          onChange={(e) => {
-                            setBinSizeInput(e.target.value);
-                            setBinSizeError(null);
-                            setBinSizeSuccess(false);
-                          }}
-                          placeholder={enginePoolData.binSizeFormatted?.toLocaleString(undefined, { maximumFractionDigits: 0 }) ?? '50000'}
-                          className="w-full bg-[#1a1a2e] border border-[var(--border)] rounded px-3 py-2.5 text-white text-sm focus:border-[var(--money-green)] focus:outline-none transition-colors"
-                          min={1}
-                        />
-                        {binSizeInput && Number(binSizeInput) > 0 && enginePoolData.tokenReserveFormatted > 0 && (
-                          <p className="text-xs text-[var(--muted)] mt-1">
-                            ≈ {Math.ceil(enginePoolData.tokenReserveFormatted / Number(binSizeInput)).toLocaleString()} bins
-                          </p>
-                        )}
-                      </div>
-
-                      <button
-                        onClick={async () => {
-                          if (!selectedSovereignId || !binSizeInput) return;
-                          const numTokens = Number(binSizeInput);
-                          if (isNaN(numTokens) || numTokens <= 0) {
-                            setBinSizeError('Enter a valid positive number');
-                            return;
-                          }
-                          // Convert tokens to lamports (1 token = 1e9 lamports)
-                          const binSizeLamports = BigInt(Math.round(numTokens * LAMPORTS_PER_GOR));
-                          setBinSizeError(null);
-                          setBinSizeSuccess(false);
-                          try {
-                            await updateBinSize.mutateAsync({
-                              sovereignId: selectedSovereignId,
-                              newBinSize: binSizeLamports.toString(),
-                            });
-                            setBinSizeSuccess(true);
-                            setBinSizeInput('');
-                          } catch (err: any) {
-                            console.error('Update bin size failed:', err);
-                            setBinSizeError(err.message || 'Transaction failed');
-                          }
-                        }}
-                        disabled={updateBinSize.isPending || !binSizeInput}
-                        className="btn-money px-6 py-2 w-full"
-                      >
-                        {updateBinSize.isPending ? 'Updating...' : 'Update Bin Size'}
-                      </button>
-
-                      {binSizeError && (
-                        <p className="text-red-400 text-sm mt-2">{binSizeError}</p>
-                      )}
-                      {binSizeSuccess && (
-                        <p className="text-[var(--slime)] text-sm mt-2">Bin size updated successfully!</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Tokens in Circulation */}
-                  {(sovereign.status === 'Recovery' || sovereign.status === 'Active') && enginePoolData && enginePoolData.totalTokenSupplyFormatted > 0 && (
-                    <div className="card card-clean p-4 mb-4">
-                      <h3 className="h3 text-white mb-2">Tokens in Circulation</h3>
-                      <p className="text-[var(--muted)] text-sm mb-4">
-                        Tokens held outside the liquidity pool and their true liquidation value.
-                      </p>
-                      {(() => {
-                        const totalSupply = enginePoolData.totalTokenSupplyFormatted;
-                        const inPool = enginePoolData.tokenReserveFormatted;
-                        const gorReserve = enginePoolData.gorReserveGor;
-                        const outsidePool = Math.max(0, totalSupply - inPool);
-                        const pctOutside = totalSupply > 0 ? (outsidePool / totalSupply) * 100 : 0;
-
-                        // Spot value (naive: outsidePool × current price, no impact)
-                        const gorPerToken = enginePoolData.spotPrice ? enginePoolData.spotPrice / LAMPORTS_PER_GOR : 0;
-                        const spotValue = gorPerToken > 0 ? outsidePool * gorPerToken : 0;
-
-                        // True liquidation value using constant-product (x·y=k) with fees
-                        // Full-range CLMM ≡ constant-product AMM
-                        const transferFeeBps = tokenFeeStats?.transferFeeBps ?? sovereign.sellFeeBps;
-                        const swapFeeBps = sovereign.swapFeeBps;
-
-                        // 1) Transfer fee reduces tokens entering the pool
-                        const afterTransferFee = outsidePool * (1 - transferFeeBps / 10000);
-                        // 2) Swap fee reduces the effective input
-                        const afterSwapFee = afterTransferFee * (1 - swapFeeBps / 10000);
-                        // 3) Constant-product: gorOut = gorReserve × Δx / (tokenReserve + Δx)
-                        const trueGorOut = (inPool > 0 && gorReserve > 0 && afterSwapFee > 0)
-                          ? gorReserve * afterSwapFee / (inPool + afterSwapFee)
-                          : 0;
-
-                        // Price impact
-                        const priceImpact = spotValue > 0 ? ((spotValue - trueGorOut) / spotValue) * 100 : 0;
-
-                        return (
-                          <div className="space-y-3">
-                            <div className="flex justify-between text-sm">
-                              <span className="text-[var(--muted)]">Total Supply</span>
-                              <span className="text-white font-medium">
-                                {totalSupply.toLocaleString(undefined, { maximumFractionDigits: 2 })} {sovereign.tokenSymbol || 'tokens'}
-                              </span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                              <span className="text-[var(--muted)]">In Pool</span>
-                              <span className="text-white font-medium">
-                                {inPool.toLocaleString(undefined, { maximumFractionDigits: 2 })} {sovereign.tokenSymbol || 'tokens'}
-                              </span>
-                            </div>
-                            <div className="border-t border-[var(--border)] my-1" />
-                            <div className="flex justify-between text-sm">
-                              <span className="text-[var(--muted)]">Outside Pool</span>
-                              <span className="text-[var(--hazard-yellow)] font-bold">
-                                {outsidePool.toLocaleString(undefined, { maximumFractionDigits: 2 })} {sovereign.tokenSymbol || 'tokens'}
-                                <span className="text-[var(--muted)] font-normal ml-1">
-                                  ({pctOutside.toFixed(1)}%)
-                                </span>
-                              </span>
-                            </div>
-
-                            <div className="border-t border-[var(--border)] my-1" />
-
-                            {/* Spot vs True value */}
-                            <div className="flex justify-between text-sm">
-                              <span className="text-[var(--muted)]">Spot Value</span>
-                              <span className="text-white font-medium">
-                                {spotValue > 0
-                                  ? `${spotValue.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR`
-                                  : '—'
-                                }
-                              </span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                              <span className="text-[var(--muted)]">True Liquidation Value</span>
-                              <span className="text-[var(--money-green)] font-bold">
-                                {trueGorOut > 0
-                                  ? `${trueGorOut.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR`
-                                  : '—'
-                                }
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })()}
                     </div>
                   )}
 

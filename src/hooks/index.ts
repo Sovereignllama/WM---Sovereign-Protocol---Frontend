@@ -30,7 +30,6 @@ export {
   useClaimDepositorFees,
   useClaimPoolLpFees,
   useClaimPoolCreatorFees,
-  useUpdateBinSize,
   useHarvestTransferFees,
   useFinalizeEnginePool,
   useSwapBuy,
