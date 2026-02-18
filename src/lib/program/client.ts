@@ -1723,6 +1723,12 @@ export async function fetchPendingClaimableFees(
 export interface TokenFeeStats {
   /** Transfer fee in basis points (e.g. 100 = 1%) */
   transferFeeBps: number;
+  /** Pending (newer) transfer fee in bps, if different from active */
+  pendingFeeBps: number | null;
+  /** Epoch when pending fee activates */
+  pendingFeeEpoch: number | null;
+  /** Current epoch */
+  currentEpoch: number;
   /** Recovery token vault balance (already harvested, waiting to be swapped) */
   vaultBalance: number;
   /** Raw vault balance */
@@ -1766,6 +1772,13 @@ export async function fetchTokenFeeStats(
       : feeConfig.olderTransferFee;
     const transferFeeBps = Number(activeFee.transferFeeBasisPoints);
 
+    // Pending fee: if newer fee hasn't activated yet and differs from current
+    const newerEpoch = Number(feeConfig.newerTransferFee.epoch);
+    const newerBps = Number(feeConfig.newerTransferFee.transferFeeBasisPoints);
+    const hasPendingFee = epoch.epoch < newerEpoch && newerBps !== transferFeeBps;
+    const pendingFeeBps = hasPendingFee ? newerBps : null;
+    const pendingFeeEpoch = hasPendingFee ? newerEpoch : null;
+
     // Get recovery_token_vault balance
     const [tokenVaultPDA] = getTokenVaultPDA(sovereignPDA, programId);
     let vaultBalanceRaw = 0n;
@@ -1800,6 +1813,9 @@ export async function fetchTokenFeeStats(
     const divisor = 10 ** decimals;
     return {
       transferFeeBps,
+      pendingFeeBps,
+      pendingFeeEpoch,
+      currentEpoch: epoch.epoch,
       vaultBalance: Number(vaultBalanceRaw) / divisor,
       vaultBalanceRaw,
       totalHarvestable: Number(totalHarvestableRaw) / divisor,

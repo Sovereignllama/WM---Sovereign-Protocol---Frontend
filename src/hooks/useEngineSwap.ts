@@ -119,13 +119,28 @@ export function computeBuyQuote(
  *
  *   payout ≈ tokens_in × (gor_reserve - initial_gor_reserve) / total_tokens_sold
  *
- * This is conservative (excludes bin fee_credit bonuses).
- * Solvency is naturally satisfied since payout ≤ gor_reserve - initial_gor_reserve.
+ * WHY minimumOut = 0 for V3 sells:
+ *
+ * The aggregate average OVERESTIMATES because gorReserve includes
+ * accumulated bin fees that inflate (gorReserve - initialGorReserve)
+ * above the actual sum of gor_locked in bins.  The gap grows with
+ * trading volume and varies unpredictably, making any fixed discount
+ * unreliable.
+ *
+ * V3 sells are NOT subject to AMM curve slippage — each bin pays at
+ * its fixed locked rate. The only "slippage" scenario is someone
+ * frontrunning your sell, but adjacent bin rates differ by < 0.03%.
+ * The on-chain solvency floor (gor_reserve >= initial_gor_reserve)
+ * already prevents catastrophic drain.
+ *
+ * We still display estimatedOut for the user's reference, but do not
+ * enforce it as a hard on-chain minimum.
  */
+
 export function computeSellQuote(
   pool: PoolState,
   tokenInput: bigint,
-  slippageBps: number,
+  _slippageBps: number,
 ): EngineQuote | null {
   if (tokenInput <= 0n || pool.isPaused) return null;
 
@@ -158,10 +173,15 @@ export function computeSellQuote(
   const fee = totalGorPayout * BigInt(pool.swapFeeBps) / 10000n;
   const netPayout = totalGorPayout - fee;
 
+  // V3 sells: minimumOut = 0 — aggregate estimate is unreliable
+  // (gorReserve includes accumulated fees that inflate the estimate).
+  // Locked-rate bins have no AMM slippage; solvency floor is the guard.
+  const minimumOut = 0n;
+
   const executionPrice = tokensSold > 0n
     ? totalGorPayout * PRICE_PRECISION / tokensSold
     : 0n;
-  const minimumOut = netPayout * BigInt(10000 - slippageBps) / 10000n;
+
   const currentTierPrice = tokenReserve > 0n
     ? gorReserve * PRICE_PRECISION / tokenReserve
     : 0n;

@@ -466,6 +466,14 @@ export default function CreatorGovernancePage() {
                             )}
                           </span>
                         </div>
+                        {tokenFeeStats?.pendingFeeBps != null && tokenFeeStats.pendingFeeEpoch != null && (
+                          <div className="flex justify-between text-xs mt-1">
+                            <span className="text-[var(--hazard-orange)]">Pending Update</span>
+                            <span className="text-[var(--hazard-orange)] font-medium">
+                              {(tokenFeeStats.pendingFeeBps / 100).toFixed(2)}% — activates epoch {tokenFeeStats.pendingFeeEpoch}
+                            </span>
+                          </div>
+                        )}
 
                         {/* Fee update modal */}
                         {feeModalOpen && (

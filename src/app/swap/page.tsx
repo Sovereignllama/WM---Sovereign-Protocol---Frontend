@@ -259,13 +259,21 @@ export default function SwapPage() {
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
-                  <span className="text-[var(--muted)]">Price: </span>
+                  <span className="text-[var(--muted)]">Ask: </span>
                   <span className="text-white">
                     {enginePool.spotPrice
                       ? `${formatPrice(BigInt(Math.round(enginePool.spotPrice)))} GOR`
                       : enginePool.lastPrice !== '0'
                         ? `${formatPrice(BigInt(enginePool.lastPrice))} GOR`
                         : '—'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[var(--muted)]">Bid: </span>
+                  <span className="text-white">
+                    {Number(enginePool.totalTokensSold) > 0
+                      ? `${((Number(enginePool.gorReserve) - Number(enginePool.initialGorReserve)) / Number(enginePool.totalTokensSold) * 1e9).toFixed(10)} GOR`
+                      : 'No sell liquidity'}
                   </span>
                 </div>
                 <div>
@@ -323,6 +331,7 @@ export default function SwapPage() {
                   Sell
                 </button>
               </div>
+              {direction === 'buy' && (
               <button
                 onClick={() => setShowSettings(!showSettings)}
                 className="text-[var(--muted)] hover:text-white text-sm"
@@ -330,10 +339,11 @@ export default function SwapPage() {
               >
                 ⚙️
               </button>
+              )}
             </div>
 
-            {/* Slippage settings */}
-            {showSettings && (
+            {/* Slippage settings (buy only) */}
+            {showSettings && direction === 'buy' && (
               <div className="mb-4 p-3 bg-[var(--bg-main)] rounded-lg">
                 <label className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-2 block">
                   Slippage Tolerance
@@ -438,9 +448,13 @@ export default function SwapPage() {
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[var(--muted)]">Min. Received</span>
+                  <span className="text-[var(--muted)]">
+                    {direction === 'buy' ? 'Min. Received' : 'Est. Received'}
+                  </span>
                   <span className="text-white">
-                    {minimumOutput} {direction === 'buy' ? (sovereign?.tokenSymbol || 'TOKEN') : 'GOR'}
+                    {direction === 'buy'
+                      ? `${minimumOutput} ${sovereign?.tokenSymbol || 'TOKEN'}`
+                      : `≈ ${estimatedOutput} GOR`}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -449,10 +463,12 @@ export default function SwapPage() {
                     {formatGor(quote.fee)} GOR ({(quote.effectiveFeeBps / 100).toFixed(1)}%)
                   </span>
                 </div>
+                {direction === 'buy' && (
                 <div className="flex justify-between">
                   <span className="text-[var(--muted)]">Slippage</span>
                   <span className="text-white">{slippageBps / 100}%</span>
                 </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-[var(--muted)]">Spot Price</span>
                   <span className="text-white">{formatPrice(quote.currentTierPrice)} GOR</span>
@@ -540,13 +556,6 @@ export default function SwapPage() {
             </p>
           </div>
         )}
-
-        {/* Info footer */}
-        <div className="mt-4 text-center">
-          <p className="text-[10px] text-[var(--muted)]">
-            Sovereign pools run on the V3 Engine (CPAMM + BinArray Settlement)
-          </p>
-        </div>
       </div>
     </div>
   );
