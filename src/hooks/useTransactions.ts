@@ -10,10 +10,9 @@ import { QUERY_KEYS } from './useSovereign';
 import { 
   buildDepositTx, 
   buildWithdrawTx, 
-  buildClaimDepositorFeesTx,
   buildClaimPoolLpFeesTx,
   buildClaimPoolCreatorFeesTx,
-  buildHarvestTransferFeesTx,
+  buildClaimTransferFeesTx,
   buildFinalizeEnginePoolTx,
   buildSwapBuyTx,
   buildSwapSellTx,
@@ -25,6 +24,7 @@ import {
   buildEmergencyWithdrawCreatorTx,
   buildMintGenesisNftTx,
   buildUpdateSellFeeTx,
+  buildRenounceSellFeeTx,
   CreateSovereignFrontendParams,
   fetchDepositRecord,
 } from '@/lib/program/client';
@@ -297,75 +297,6 @@ export function useWithdraw() {
         });
         queryClient.invalidateQueries({ 
           queryKey: QUERY_KEYS.walletDeposits(publicKey.toBase58()) 
-        });
-      }
-    },
-  });
-}
-
-/**
- * Hook to claim depositor fees
- */
-export function useClaimDepositorFees() {
-  const program = useProgram();
-  const { publicKey, signTransaction, sendTransaction } = useWallet();
-  const { connection } = useConnection();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ 
-      sovereignId,
-      originalDepositor,
-      nftMint,
-    }: { 
-      sovereignId: string | number;
-      originalDepositor: string;
-      nftMint: string;
-    }): Promise<TransactionResult> => {
-      if (!program || !publicKey || !signTransaction) {
-        throw new Error('Wallet not connected');
-      }
-
-      const originalDepositorKey = new PublicKey(originalDepositor);
-      const nftMintKey = new PublicKey(nftMint);
-
-      // Build the transaction
-      const tx = await buildClaimDepositorFeesTx(
-        program,
-        publicKey,
-        originalDepositorKey,
-        BigInt(sovereignId),
-        nftMintKey
-      );
-
-      // Get recent blockhash
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
-      tx.recentBlockhash = blockhash;
-      tx.feePayer = publicKey;
-
-      // Send transaction
-      const signature = await sendTransaction(tx, connection, {
-        skipPreflight: true,
-        preflightCommitment: 'confirmed',
-      });
-
-      // Wait for confirmation
-      await connection.confirmTransaction({
-        signature,
-        blockhash,
-        lastValidBlockHeight,
-      }, 'confirmed');
-
-      return { signature, success: true };
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
-      if (publicKey) {
-        queryClient.invalidateQueries({ 
-          queryKey: QUERY_KEYS.depositRecord(
-            variables.sovereignId.toString(), 
-            publicKey.toBase58()
-          ) 
         });
       }
     },
@@ -832,6 +763,57 @@ export function useUpdateSellFee() {
 }
 
 /**
+ * Hook to permanently renounce sell fee control.
+ * Sets fee to 0% and removes authority — IRREVERSIBLE.
+ * Creator only. Requires Active state (recovery complete).
+ */
+export function useRenounceSellFee() {
+  const program = useProgram();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sovereignId,
+    }: {
+      sovereignId: string | number;
+    }): Promise<TransactionResult> => {
+      if (!program || !publicKey) {
+        throw new Error('Wallet not connected');
+      }
+
+      const tx = await buildRenounceSellFeeTx(
+        program,
+        publicKey,
+        BigInt(sovereignId),
+      );
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['tokenFeeStats', variables.sovereignId.toString()] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+    },
+  });
+}
+
+/**
  * Hook to execute engine pool unwind.
  * Drains all liquidity from the engine pool after governance approval.
  * Permissionless — anyone can call after observation period ends.
@@ -883,18 +865,14 @@ export function useExecuteEngineUnwind() {
 }
 
 /**
- * Hook to harvest Token-2022 transfer fees from token accounts.
- * Routes fees based on FeeMode:
- *   - CreatorRevenue: → creator's token account
- *   - RecoveryBoost/FairLaunch during Recovery: → recovery token vault
- *   - RecoveryBoost after Recovery: → creator's token account
- * Anyone can call this — permissionless.
+ * Hook for creator to claim accumulated transfer fee tokens from the vault.
+ * Optionally harvests from source token accounts in the same transaction.
  */
-export function useHarvestTransferFees() {
+export function useClaimTransferFees() {
   const program = useProgram();
-  const { publicKey, signTransaction, sendTransaction } = useWallet();
-  const queryClient = useQueryClient();
+  const { publicKey, sendTransaction } = useWallet();
   const { connection } = useConnection();
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({
@@ -902,15 +880,15 @@ export function useHarvestTransferFees() {
       sourceTokenAccounts,
     }: {
       sovereignId: string | number;
-      sourceTokenAccounts: string[];
+      sourceTokenAccounts?: string[];
     }): Promise<TransactionResult> => {
-      if (!program || !publicKey || !signTransaction) {
+      if (!program || !publicKey) {
         throw new Error('Wallet not connected');
       }
 
-      const sourceKeys = sourceTokenAccounts.map((a) => new PublicKey(a));
+      const sourceKeys = (sourceTokenAccounts || []).map((a) => new PublicKey(a));
 
-      const tx = await buildHarvestTransferFeesTx(
+      const tx = await buildClaimTransferFeesTx(
         program,
         publicKey,
         BigInt(sovereignId),
@@ -936,6 +914,7 @@ export function useHarvestTransferFees() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+      queryClient.invalidateQueries({ queryKey: ['tokenFeeStats', variables.sovereignId.toString()] });
     },
   });
 }

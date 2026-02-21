@@ -12,7 +12,8 @@ const ConnectWalletButton = dynamic(
 
 // Map routes to page titles for mobile header
 const pageTitles: Record<string, string> = {
-  '/': '👑 $OVEREIGNS',
+  '/': '🏠 HOME',
+  '/sovereigns': '👑 $OVEREIGNS',
   '/mint': '🚀 LAUNCH',
   '/governance': '🏛️ GOVERNANCE',
   '/governance/creator': '🏛️ GOVERNANCE',
@@ -24,10 +25,10 @@ export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const links = [
-    { href: '/mint', label: 'Mint' },
-    { href: '/', label: '$overeigns' },
-    { href: '/governance', label: 'Governance' },
+    { href: '/sovereigns', label: '$overeigns' },
     { href: '/swap', label: 'Swap' },
+    { href: '/mint', label: 'Go $overeign' },
+    { href: '/governance', label: 'Governance' },
   ];
 
   // Get current page title for mobile
@@ -46,9 +47,7 @@ export function Navbar() {
           {/* Navigation Links - Horizontal Row */}
           <div className="flex items-center space-x-3 px-4">
             {links.map((link) => {
-              const isActive = link.href === '/' 
-                ? pathname === '/'
-                : pathname.startsWith(link.href);
+              const isActive = pathname === link.href || pathname.startsWith(link.href + '/');
               return (
                 <Link
                   key={link.href}
@@ -101,9 +100,7 @@ export function Navbar() {
             <div className="mt-2 rounded-2xl overflow-hidden" style={{ background: 'var(--sovereign-green)', border: '2px solid var(--hazard-yellow)' }}>
               <div className="flex flex-col p-2 space-y-1">
                 {links.map((link) => {
-                  const isActive = link.href === '/' 
-                    ? pathname === '/'
-                    : pathname.startsWith(link.href);
+                  const isActive = pathname === link.href || pathname.startsWith(link.href + '/');
                   return (
                     <Link
                       key={link.href}

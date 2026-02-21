@@ -7,6 +7,7 @@ import { PublicKey } from '@solana/web3.js';
 import { useSovereigns, useSovereign, useEnginePool } from '@/hooks/useSovereign';
 import { useEngineSwap, computeBuyQuote, computeSellQuote, EngineQuote } from '@/hooks/useEngineSwap';
 import { useTokenImage } from '@/hooks/useTokenImage';
+import { TokenPickerModal, TradableToken } from '@/components/TokenPickerModal';
 import { config, LAMPORTS_PER_GOR } from '@/lib/config';
 import Link from 'next/link';
 
@@ -85,6 +86,7 @@ export default function SwapPage() {
   const [amount, setAmount] = useState('');
   const [slippageBps, setSlippageBps] = useState(100); // 1%
   const [showSettings, setShowSettings] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // Token image
   const { data: tokenImage } = useTokenImage(sovereign?.metadataUri || undefined);
@@ -92,13 +94,27 @@ export default function SwapPage() {
   // Engine swap hook
   const { executeSwap, loading: swapLoading, error: swapError, txSignature, reset: resetSwap } = useEngineSwap();
 
-  // Filter for tradable sovereigns (Recovery/Active/Unwinding states = pool exists)
+  // Filter for tradable sovereigns — only show pools with liquidity
   const tradableSovereigns = useMemo(() => {
     if (!sovereigns) return [];
     return sovereigns.filter(
-      (s: any) => ['Recovery', 'Active', 'Unwinding'].includes(s.status)
+      (s: any) => ['Recovery', 'Active'].includes(s.status) && s.totalDepositedGor > 0
     );
   }, [sovereigns]);
+
+  // Build token list for picker
+  const pickerTokens: TradableToken[] = useMemo(() => {
+    return tradableSovereigns.map((s: any) => ({
+      sovereignId: s.sovereignId,
+      name: s.name,
+      tokenSymbol: s.tokenSymbol || '',
+      tokenName: s.tokenName || s.name,
+      tokenMint: s.tokenMint,
+      metadataUri: s.metadataUri,
+      status: s.status,
+      balance: tokenBalances[s.tokenMint],
+    }));
+  }, [tradableSovereigns, tokenBalances]);
 
   // Auto-select first tradable sovereign
   useEffect(() => {
@@ -197,6 +213,44 @@ export default function SwapPage() {
   // Has engine pool?
   const hasPool = !!enginePool && !enginePool.isPaused;
 
+  // Token selector button (inline in the swap card)
+  const tokenSymbol = sovereign?.tokenSymbol || 'TOKEN';
+
+  const GOR_IMAGE = '/gor.jpg';
+
+  const TokenBadge = ({ side }: { side: 'gor' | 'token' }) => {
+    if (side === 'gor') {
+      return (
+        <div className="flex items-center gap-2 bg-[var(--card-bg)] px-3 py-1.5 rounded-xl shrink-0">
+          <img src={GOR_IMAGE} alt="GOR" className="w-5 h-5 rounded-full object-cover" />
+          <span className="text-white text-sm font-bold">GOR</span>
+        </div>
+      );
+    }
+    return (
+      <button
+        onClick={() => setPickerOpen(true)}
+        className="flex items-center gap-2 bg-[var(--card-bg)] hover:bg-[var(--card-bg-hover,var(--card-bg))] hover:border-[var(--money-green)] border border-transparent px-3 py-1.5 rounded-xl shrink-0 transition-all cursor-pointer group"
+      >
+        {sovereign ? (
+          <>
+            {tokenImage ? (
+              <img src={tokenImage} alt="" className="w-5 h-5 rounded-full object-cover" />
+            ) : (
+              <div className="w-5 h-5 rounded-full bg-[var(--border)] flex items-center justify-center text-[9px] font-bold text-[var(--muted)]">
+                {tokenSymbol.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <span className="text-white text-sm font-bold">{tokenSymbol}</span>
+          </>
+        ) : (
+          <span className="text-[var(--money-green)] text-sm font-bold">Select token</span>
+        )}
+        <span className="text-[var(--muted)] group-hover:text-white text-[10px] transition-colors">▼</span>
+      </button>
+    );
+  };
+
   // ============================================================
   // RENDER
   // ============================================================
@@ -207,59 +261,136 @@ export default function SwapPage() {
         {/* Header */}
         <div className="text-center mb-6">
           <h1 className="h1 text-2xl text-white">Swap</h1>
-          <p className="text-sm text-[var(--muted)] mt-1">Trade sovereign tokens on Engine pools</p>
+          <p className="text-sm text-[var(--muted)] mt-1">Trade $overeign tokens on SLAMM</p>
         </div>
 
-        {/* Sovereign Selector */}
-        <div className="card card-clean p-4 mb-3">
-          <label className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-2 block">
-            Select Sovereign
-          </label>
-          {sovereignsLoading ? (
-            <div className="text-sm text-[var(--muted)]">Loading sovereigns...</div>
-          ) : tradableSovereigns.length === 0 ? (
-            <div className="text-sm text-[var(--muted)]">No sovereigns with active pools found</div>
-          ) : (
-            <select
-              value={selectedSovereignId || ''}
-              onChange={(e) => {
-                setSelectedSovereignId(e.target.value || null);
-                setAmount('');
-                resetSwap();
-              }}
-              className="w-full bg-[#1a1a2e] border border-[var(--border)] rounded-lg px-3 py-2 text-white text-sm cursor-pointer focus:outline-none focus:border-[var(--money-green)] transition-colors"
-              style={{ colorScheme: 'dark' }}
-            >
-              <option value="" className="bg-[#1a1a2e] text-white">Choose a sovereign...</option>
-              {tradableSovereigns.map((s: any) => {
-                const bal = tokenBalances[s.tokenMint];
-                const balStr = connected && bal !== undefined && bal > 0
-                  ? ` — ${bal < 0.001 ? '<0.001' : bal.toLocaleString(undefined, { maximumFractionDigits: 3 })} held`
-                  : '';
-                return (
-                  <option key={s.sovereignId} value={s.sovereignId} className="bg-[#1a1a2e] text-white">
-                    {s.name} ({s.tokenSymbol || `#${s.sovereignId}`}) — {s.status}{balStr}
-                  </option>
-                );
-              })}
-            </select>
+        {/* Swap Card — always visible */}
+        <div className="card card-clean p-4">
+          {/* Buy/Sell toggle + settings */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex gap-1">
+              <button
+                onClick={() => { setDirection('buy'); setAmount(''); resetSwap(); }}
+                className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                  direction === 'buy'
+                    ? 'text-white'
+                    : 'text-[var(--muted)] hover:text-white'
+                }`}
+                style={direction === 'buy' ? { background: 'var(--money-green)' } : {}}
+              >
+                Buy
+              </button>
+              <button
+                onClick={() => { setDirection('sell'); setAmount(''); resetSwap(); }}
+                className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                  direction === 'sell'
+                    ? 'text-white'
+                    : 'text-[var(--muted)] hover:text-white'
+                }`}
+                style={direction === 'sell' ? { background: 'var(--error-red, #ef4444)' } : {}}
+              >
+                Sell
+              </button>
+            </div>
+            {direction === 'buy' && (
+              <button
+                onClick={() => setShowSettings(!showSettings)}
+                className="text-[var(--muted)] hover:text-white text-sm"
+                title="Settings"
+              >
+                ⚙️
+              </button>
+            )}
+          </div>
+
+          {/* Slippage settings (buy only) */}
+          {showSettings && direction === 'buy' && (
+            <div className="mb-4 p-3 bg-[var(--bg-main)] rounded-lg">
+              <label className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-2 block">
+                Slippage Tolerance
+              </label>
+              <div className="flex gap-2">
+                {[50, 100, 200, 500, 1000].map((bps) => (
+                  <button
+                    key={bps}
+                    onClick={() => setSlippageBps(bps)}
+                    className={`px-3 py-1 rounded text-xs font-medium ${
+                      slippageBps === bps
+                        ? 'bg-[var(--money-green)] text-white'
+                        : 'bg-[var(--bg-card)] text-[var(--muted)] hover:text-white border border-[var(--border)]'
+                    }`}
+                  >
+                    {bps / 100}%
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
 
-          {/* Engine pool info summary */}
+          {/* Input: You Pay */}
+          <div className="bg-[var(--bg-main)] rounded-xl p-4 mb-2">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-[var(--muted)]">You Pay</span>
+              {direction === 'sell' && sovereign?.tokenMint && tokenBalances[sovereign.tokenMint] > 0 && (
+                <button
+                  onClick={() => { setAmount(tokenBalances[sovereign.tokenMint].toString()); resetSwap(); }}
+                  className="text-[10px] font-bold px-2 py-0.5 rounded bg-[var(--money-green)]/15 text-[var(--money-green)] hover:bg-[var(--money-green)]/25 transition-colors"
+                >
+                  MAX
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => { setAmount(e.target.value); resetSwap(); }}
+                placeholder="0.0"
+                className="w-full bg-transparent text-2xl text-white font-medium focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                min="0"
+                step="any"
+              />
+              {direction === 'buy' ? (
+                <TokenBadge side="gor" />
+              ) : (
+                <TokenBadge side="token" />
+              )}
+            </div>
+          </div>
+
+          {/* Arrow divider */}
+          <div className="flex justify-center -my-1.5 relative z-10">
+            <button
+              onClick={toggleDirection}
+              className="w-8 h-8 rounded-full bg-[var(--bg-card)] border-2 border-[var(--border)] flex items-center justify-center hover:border-[var(--money-green)] transition-colors"
+            >
+              <span className="text-[var(--muted)]">↕</span>
+            </button>
+          </div>
+
+          {/* Output: You Receive */}
+          <div className="bg-[var(--bg-main)] rounded-xl p-4 mt-2">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-[var(--muted)]">You Receive (est.)</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-full text-2xl font-medium" style={{ color: estimatedOutput ? 'white' : 'var(--muted)' }}>
+                {estimatedOutput || '0.0'}
+              </div>
+              {direction === 'sell' ? (
+                <TokenBadge side="gor" />
+              ) : (
+                <TokenBadge side="token" />
+              )}
+            </div>
+          </div>
+
+          {/* Pool info summary — compact, under the swap boxes */}
           {sovereign && enginePool && (
             <div className="mt-3 pt-3 border-t border-[var(--border)]">
-              <div className="flex items-center gap-2 mb-2">
-                {tokenImage && (
-                  <img src={tokenImage} alt="" className="w-5 h-5 rounded-full" />
-                )}
-                <span className="text-white font-medium text-sm">
-                  {sovereign.tokenSymbol || sovereign.tokenName || `Token #${sovereign.sovereignId}`}
-                </span>
-                <span className="text-[var(--muted)] text-xs">/ GOR</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-3 gap-2 text-xs">
                 <div>
-                  <span className="text-[var(--muted)]">Ask: </span>
+                  <span className="text-[var(--muted)]">Price </span>
                   <span className="text-white">
                     {enginePool.spotPrice
                       ? `${formatPrice(BigInt(Math.round(enginePool.spotPrice)))} GOR`
@@ -269,286 +400,129 @@ export default function SwapPage() {
                   </span>
                 </div>
                 <div>
-                  <span className="text-[var(--muted)]">Bid: </span>
-                  <span className="text-white">
-                    {Number(enginePool.totalTokensSold) > 0
-                      ? `${((Number(enginePool.gorReserve) - Number(enginePool.initialGorReserve)) / Number(enginePool.totalTokensSold) * 1e9).toFixed(10)} GOR`
-                      : 'No sell liquidity'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[var(--muted)]">Reserve: </span>
+                  <span className="text-[var(--muted)]">Reserve </span>
                   <span className="text-white">{formatGor(enginePool.gorReserve)} GOR</span>
                 </div>
                 <div>
-                  <span className="text-[var(--muted)]">Tokens: </span>
-                  <span className="text-white">{enginePool.tokenReserveFormatted?.toLocaleString(undefined, { maximumFractionDigits: 0 }) ?? '—'}</span>
-                </div>
-                <div>
-                  <span className="text-[var(--muted)]">Trades: </span>
+                  <span className="text-[var(--muted)]">Trades </span>
                   <span className="text-white">{enginePool.totalTrades.toLocaleString()}</span>
                 </div>
               </div>
-              {enginePool.isPaused && (
-                <div className="mt-2 text-xs text-[var(--error-red,#ef4444)] font-medium">
-                  Pool is paused
-                </div>
-              )}
             </div>
           )}
 
+          {/* Loading state */}
           {selectedSovereignId && poolLoading && (
-            <div className="mt-2 text-xs text-[var(--muted)]">Loading pool data...</div>
+            <div className="mt-3 text-xs text-[var(--muted)] text-center">Loading pool data...</div>
           )}
-        </div>
 
-        {/* Swap Card */}
-        {selectedSovereignId && hasPool && (
-          <div className="card card-clean p-4">
-            {/* Buy/Sell toggle + settings */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex gap-1">
-                <button
-                  onClick={() => { setDirection('buy'); setAmount(''); resetSwap(); }}
-                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
-                    direction === 'buy'
-                      ? 'text-white'
-                      : 'text-[var(--muted)] hover:text-white'
-                  }`}
-                  style={direction === 'buy' ? { background: 'var(--money-green)' } : {}}
-                >
-                  Buy
-                </button>
-                <button
-                  onClick={() => { setDirection('sell'); setAmount(''); resetSwap(); }}
-                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
-                    direction === 'sell'
-                      ? 'text-white'
-                      : 'text-[var(--muted)] hover:text-white'
-                  }`}
-                  style={direction === 'sell' ? { background: 'var(--error-red, #ef4444)' } : {}}
-                >
-                  Sell
-                </button>
+          {/* Quote details */}
+          {quote && estimatedOutput && (
+            <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-1.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-[var(--muted)]">Execution Price</span>
+                <span className="text-white">
+                  {formatPrice(quote.executionPrice)} GOR / token
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--muted)]">
+                  {direction === 'buy' ? 'Min. Received' : 'Est. Received'}
+                </span>
+                <span className="text-white">
+                  {direction === 'buy'
+                    ? `${minimumOutput} ${tokenSymbol}`
+                    : `≈ ${estimatedOutput} GOR`}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--muted)]">Fee</span>
+                <span className="text-white">
+                  {formatGor(quote.fee)} GOR ({(quote.effectiveFeeBps / 100).toFixed(1)}%)
+                </span>
               </div>
               {direction === 'buy' && (
-              <button
-                onClick={() => setShowSettings(!showSettings)}
-                className="text-[var(--muted)] hover:text-white text-sm"
-                title="Settings"
-              >
-                ⚙️
-              </button>
-              )}
-            </div>
-
-            {/* Slippage settings (buy only) */}
-            {showSettings && direction === 'buy' && (
-              <div className="mb-4 p-3 bg-[var(--bg-main)] rounded-lg">
-                <label className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-2 block">
-                  Slippage Tolerance
-                </label>
-                <div className="flex gap-2">
-                  {[50, 100, 200, 500, 1000].map((bps) => (
-                    <button
-                      key={bps}
-                      onClick={() => setSlippageBps(bps)}
-                      className={`px-3 py-1 rounded text-xs font-medium ${
-                        slippageBps === bps
-                          ? 'bg-[var(--money-green)] text-white'
-                          : 'bg-[var(--bg-card)] text-[var(--muted)] hover:text-white border border-[var(--border)]'
-                      }`}
-                    >
-                      {bps / 100}%
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Input: You Pay */}
-            <div className="bg-[var(--bg-main)] rounded-lg p-4 mb-2">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-[var(--muted)]">You Pay</span>
-                {direction === 'sell' && sovereign?.tokenMint && tokenBalances[sovereign.tokenMint] > 0 && (
-                  <button
-                    onClick={() => { setAmount(tokenBalances[sovereign.tokenMint].toString()); resetSwap(); }}
-                    className="text-[10px] font-bold px-2 py-0.5 rounded bg-[var(--money-green)]/15 text-[var(--money-green)] hover:bg-[var(--money-green)]/25 transition-colors"
-                  >
-                    MAX
-                  </button>
-                )}
-              </div>
-              <div className="flex items-center gap-3">
-                <input
-                  type="number"
-                  value={amount}
-                  onChange={(e) => { setAmount(e.target.value); resetSwap(); }}
-                  placeholder="0.0"
-                  className="w-full bg-transparent text-2xl text-white font-medium focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  min="0"
-                  step="any"
-                />
-                <div className="flex items-center gap-2 bg-[var(--bg-card)] px-3 py-1.5 rounded-lg shrink-0">
-                  {direction === 'buy' ? (
-                    <span className="text-white text-sm font-medium">GOR</span>
-                  ) : (
-                    <>
-                      {tokenImage && <img src={tokenImage} alt="" className="w-4 h-4 rounded-full" />}
-                      <span className="text-white text-sm font-medium">
-                        {sovereign?.tokenSymbol || 'TOKEN'}
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Arrow divider */}
-            <div className="flex justify-center -my-1.5 relative z-10">
-              <button
-                onClick={toggleDirection}
-                className="w-8 h-8 rounded-full bg-[var(--bg-card)] border-2 border-[var(--border)] flex items-center justify-center hover:border-[var(--money-green)] transition-colors"
-              >
-                <span className="text-[var(--muted)]">↕</span>
-              </button>
-            </div>
-
-            {/* Output: You Receive */}
-            <div className="bg-[var(--bg-main)] rounded-lg p-4 mt-2">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-[var(--muted)]">You Receive (est.)</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-full text-2xl font-medium" style={{ color: estimatedOutput ? 'white' : 'var(--muted)' }}>
-                  {estimatedOutput || '0.0'}
-                </div>
-                <div className="flex items-center gap-2 bg-[var(--bg-card)] px-3 py-1.5 rounded-lg shrink-0">
-                  {direction === 'sell' ? (
-                    <span className="text-white text-sm font-medium">GOR</span>
-                  ) : (
-                    <>
-                      {tokenImage && <img src={tokenImage} alt="" className="w-4 h-4 rounded-full" />}
-                      <span className="text-white text-sm font-medium">
-                        {sovereign?.tokenSymbol || 'TOKEN'}
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Quote details */}
-            {quote && estimatedOutput && (
-              <div className="mt-3 space-y-1.5 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-[var(--muted)]">Execution Price</span>
-                  <span className="text-white">
-                    {formatPrice(quote.executionPrice)} GOR / token
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--muted)]">
-                    {direction === 'buy' ? 'Min. Received' : 'Est. Received'}
-                  </span>
-                  <span className="text-white">
-                    {direction === 'buy'
-                      ? `${minimumOutput} ${sovereign?.tokenSymbol || 'TOKEN'}`
-                      : `≈ ${estimatedOutput} GOR`}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[var(--muted)]">Fee</span>
-                  <span className="text-white">
-                    {formatGor(quote.fee)} GOR ({(quote.effectiveFeeBps / 100).toFixed(1)}%)
-                  </span>
-                </div>
-                {direction === 'buy' && (
                 <div className="flex justify-between">
                   <span className="text-[var(--muted)]">Slippage</span>
                   <span className="text-white">{slippageBps / 100}%</span>
                 </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-[var(--muted)]">Spot Price</span>
-                  <span className="text-white">{formatPrice(quote.currentTierPrice)} GOR</span>
-                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-[var(--muted)]">Spot Price</span>
+                <span className="text-white">{formatPrice(quote.currentTierPrice)} GOR</span>
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Sell solvency warning */}
-            {direction === 'sell' && rawAmount && !quote && amount && parseFloat(amount) > 0 && (
-              <div className="mt-3 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
-                Sell amount exceeds pool solvency limits or no tokens have been sold yet.
-                Try a smaller amount.
-              </div>
-            )}
+          {/* Sell solvency warning */}
+          {direction === 'sell' && rawAmount && !quote && amount && parseFloat(amount) > 0 && selectedSovereignId && hasPool && (
+            <div className="mt-3 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
+              Sell amount exceeds pool solvency limits or no tokens have been sold yet.
+              Try a smaller amount.
+            </div>
+          )}
 
-            {/* Swap button */}
-            <button
-              onClick={handleSwap}
-              disabled={!connected || !amount || !quote || swapLoading}
-              className="w-full mt-4 py-3 rounded-lg font-bold text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{
-                background: !connected ? 'var(--muted)' :
-                  direction === 'buy' ? 'var(--money-green)' : 'var(--error-red, #ef4444)',
-                color: 'white',
-              }}
-            >
-              {!connected ? 'Connect Wallet' :
-               swapLoading ? 'Swapping...' :
-               !amount ? 'Enter Amount' :
-               !quote ? 'Invalid Amount' :
-               direction === 'buy' ? `Buy ${sovereign?.tokenSymbol || 'Token'}` :
-               `Sell ${sovereign?.tokenSymbol || 'Token'}`}
-            </button>
+          {/* Swap button */}
+          <button
+            onClick={!selectedSovereignId ? () => setPickerOpen(true) : handleSwap}
+            disabled={selectedSovereignId ? (!connected || !amount || !quote || swapLoading) : false}
+            className="w-full mt-4 py-3 rounded-xl font-bold text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{
+              background: !selectedSovereignId ? 'var(--money-green)' :
+                !connected ? 'var(--muted)' :
+                direction === 'buy' ? 'var(--money-green)' : 'var(--error-red, #ef4444)',
+              color: 'white',
+            }}
+          >
+            {!selectedSovereignId ? 'Select a Token' :
+             !connected ? 'Connect Wallet' :
+             swapLoading ? 'Swapping...' :
+             !amount ? 'Enter Amount' :
+             poolLoading ? 'Loading Pool...' :
+             !hasPool ? 'No Pool Available' :
+             !quote ? 'Invalid Amount' :
+             direction === 'buy' ? `Buy ${tokenSymbol}` :
+             `Sell ${tokenSymbol}`}
+          </button>
 
-            {/* Swap error */}
-            {swapError && (
-              <div className="mt-3 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
-                {swapError}
-              </div>
-            )}
+          {/* Swap error */}
+          {swapError && (
+            <div className="mt-3 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
+              {swapError}
+            </div>
+          )}
 
-            {/* Success */}
-            {txSignature && (
-              <div className="mt-3 p-3 rounded bg-[var(--money-green)]/10 border border-[var(--money-green)]/30">
-                <p className="text-[var(--money-green)] text-sm font-medium mb-1">Swap successful!</p>
-                <a
-                  href={`${config.explorerUrl}${config.explorerTxPath}${txSignature}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[var(--money-green)] text-xs hover:underline break-all"
-                >
-                  View transaction →
-                </a>
-              </div>
-            )}
-          </div>
-        )}
+          {/* Success */}
+          {txSignature && (
+            <div className="mt-3 p-3 rounded bg-[var(--money-green)]/10 border border-[var(--money-green)]/30">
+              <p className="text-[var(--money-green)] text-sm font-medium mb-1">Swap successful!</p>
+              <a
+                href={`${config.explorerUrl}${config.explorerTxPath}${txSignature}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[var(--money-green)] text-xs hover:underline break-all"
+              >
+                View transaction →
+              </a>
+            </div>
+          )}
 
-        {/* No pool state */}
-        {selectedSovereignId && !poolLoading && !enginePool && sovereign && (
-          <div className="card card-clean p-4 text-center">
-            <p className="text-[var(--muted)] text-sm">
-              This sovereign doesn&apos;t have an engine pool yet.
-            </p>
-            <p className="text-[var(--muted)] text-xs mt-1">
-              Status: <span className="text-white">{sovereign.status}</span>
-            </p>
-          </div>
-        )}
-
-        {/* Pool paused */}
-        {selectedSovereignId && enginePool?.isPaused && (
-          <div className="card card-clean p-4 text-center">
-            <p className="text-[var(--muted)] text-sm">
+          {/* Pool paused inline */}
+          {selectedSovereignId && enginePool?.isPaused && (
+            <div className="mt-3 p-2 rounded bg-[var(--hazard-yellow)]/10 border border-[var(--hazard-yellow)]/30 text-[var(--hazard-yellow)] text-xs text-center">
               This pool is currently paused by the creator.
-            </p>
-          </div>
-        )}
+            </div>
+          )}
 
-        {/* Not connected state */}
+          {/* No pool inline */}
+          {selectedSovereignId && !poolLoading && !enginePool && sovereign && (
+            <div className="mt-3 p-2 rounded bg-white/5 border border-[var(--border)] text-[var(--muted)] text-xs text-center">
+              This sovereign doesn&apos;t have an engine pool yet. Status: <span className="text-white">{sovereign.status}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Not connected hint */}
         {!connected && selectedSovereignId && hasPool && (
           <div className="card card-clean p-4 text-center mt-3">
             <p className="text-[var(--muted)] text-sm">
@@ -557,6 +531,19 @@ export default function SwapPage() {
           </div>
         )}
       </div>
+
+      {/* Token Picker Modal */}
+      <TokenPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(id) => {
+          setSelectedSovereignId(id);
+          setAmount('');
+          resetSwap();
+        }}
+        tokens={pickerTokens}
+        selectedSovereignId={selectedSovereignId}
+      />
     </div>
   );
 }

@@ -2,114 +2,199 @@
 
 import Link from 'next/link';
 import { SovereignDisplayData } from '@/types/sovereign';
-import { StatusBadge } from './StatusBadge';
-import { useTokenImage } from '@/hooks/useTokenImage';
-import { formatDistanceToNow } from 'date-fns';
+import { useTokenMetadata } from '@/hooks/useTokenMetadata';
 
 interface SovereignCardProps {
   sovereign: SovereignDisplayData;
 }
 
 export function SovereignCard({ sovereign }: SovereignCardProps) {
-  const { data: imageUrl } = useTokenImage(sovereign.metadataUri);
-  const timeRemaining = sovereign.bondDeadline > new Date() 
-    ? formatDistanceToNow(sovereign.bondDeadline, { addSuffix: true })
-    : 'Ended';
+  const { data: metadata } = useTokenMetadata(sovereign.metadataUri);
+  const imageUrl = metadata?.image;
+  const description = metadata?.description;
+
+  // Determine progress % based on state
+  const progressPct = sovereign.status === 'Bonding'
+    ? sovereign.bondProgress
+    : sovereign.status === 'Recovery'
+    ? sovereign.recoveryProgress
+    : null;
+
+  // Short creator address
+  const creatorShort = sovereign.creator
+    ? `${sovereign.creator.toString().slice(0, 4)}...${sovereign.creator.toString().slice(-4)}`
+    : '';
 
   return (
     <Link href={`/sovereign/${sovereign.sovereignId}`}>
-      <div className="card card-clean hover:border-[rgba(242,183,5,0.35)] transition-all cursor-pointer">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-3">
-            {imageUrl ? (
-              <img
-                src={imageUrl}
-                alt={sovereign.tokenSymbol || sovereign.name}
-                className="w-10 h-10 rounded-full object-cover border border-[var(--border)]"
-              />
-            ) : (
-              <div className="w-10 h-10 rounded-full bg-[var(--card-bg)] border border-[var(--border)] flex items-center justify-center text-[var(--muted)] text-sm font-bold">
+      <div className="group relative rounded-xl bg-[var(--landfill-black)] border border-[var(--border)] hover:border-[var(--hazard-yellow)] transition-all cursor-pointer overflow-hidden">
+        {/* Status indicator stripe */}
+        <div className="absolute top-0 left-0 right-0 h-[2px]" style={{
+          background: sovereign.status === 'Active' ? 'var(--money-green)'
+            : sovereign.status === 'Bonding' ? 'var(--hazard-yellow)'
+            : sovereign.status === 'Recovery' ? 'var(--hazard-orange)'
+            : sovereign.status === 'Failed' ? 'var(--loss)'
+            : 'var(--border)'
+        }} />
+
+        {/* Image area */}
+        <div className="relative w-full aspect-square bg-[var(--dark-green-bg)] overflow-hidden">
+          {imageUrl ? (
+            <img
+              src={imageUrl}
+              alt={sovereign.tokenSymbol || sovereign.name}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <span className="text-4xl font-bold text-[var(--border)] select-none">
                 {(sovereign.tokenSymbol || sovereign.name || '?').charAt(0).toUpperCase()}
-              </div>
-            )}
-            <div>
-              <h3 className="h3 text-white mb-1">{sovereign.name}</h3>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-[var(--muted)]">
-                  {sovereign.tokenSymbol || 'TOKEN'}
-                </span>
-                <span className="text-[var(--faint)]">•</span>
-                <span className="text-sm text-[var(--faint)]">
-                  {sovereign.sovereignType === 'TokenLaunch' ? 'Token Launch' : 'BYO Token'}
-                </span>
-              </div>
+              </span>
             </div>
-          </div>
-          <StatusBadge status={sovereign.status} />
-        </div>
-
-        {/* Progress Bar */}
-        {sovereign.status === 'Bonding' && (
-          <div className="mb-4">
-            <div className="flex justify-between text-sm mb-2">
-              <span className="text-[var(--muted)]">Bond Progress</span>
-              <span className="text-white font-bold">{sovereign.bondProgress.toFixed(1)}%</span>
-            </div>
-            <div className="progress-bar money">
-              <div 
-                className="fill" 
-                style={{ width: `${Math.min(sovereign.bondProgress, 100)}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Recovery Progress */}
-        {sovereign.status === 'Recovery' && (
-          <div className="mb-4">
-            <div className="flex justify-between text-sm mb-2">
-              <span className="text-[var(--muted)]">Recovery Progress</span>
-              <span className="text-white font-bold">{sovereign.recoveryProgress.toFixed(1)}%</span>
-            </div>
-            <div className="progress-bar">
-              <div 
-                className="fill" 
-                style={{ width: `${Math.min(sovereign.recoveryProgress, 100)}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="stat">
-            <div className="k">Target</div>
-            <div className="v text-lg">{sovereign.bondTargetSol} GOR</div>
-          </div>
-          <div className="stat">
-            <div className="k">Raised</div>
-            <div className="v text-lg">{sovereign.totalDepositedSol} GOR</div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between mt-4 pt-4 border-t border-[var(--border)]">
-          <div className="flex items-center gap-2">
-            <span className="text-[var(--faint)]">👥</span>
-            <span className="text-sm text-[var(--muted)]">
-              {sovereign.depositorCount} depositor{sovereign.depositorCount !== 1 ? 's' : ''}
-            </span>
-          </div>
-          {sovereign.status === 'Bonding' && (
-            <span className="text-sm text-[var(--hazard-yellow)]">
-              {timeRemaining}
-            </span>
           )}
-          {sovereign.status === 'Recovery' && sovereign.sellFeeBps > 0 && (
-            <span className="text-sm text-[var(--slime)]">
-              {(sovereign.sellFeeBps / 100).toFixed(1)}% sell fee
+
+          {/* Progress bar overlay at bottom of image */}
+          {progressPct !== null && (
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40">
+              <div
+                className="h-full transition-all duration-500"
+                style={{
+                  width: `${Math.min(progressPct, 100)}%`,
+                  background: sovereign.status === 'Recovery' ? 'var(--hazard-orange)' : 'var(--money-green)',
+                }}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Card body */}
+        <div className="p-3">
+          {/* Name row */}
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <h3 className="text-sm font-bold text-white truncate leading-tight">
+              {sovereign.name}
+            </h3>
+            <span className="text-[10px] font-bold text-[var(--muted)] bg-[var(--dark-green-bg)] px-1.5 py-0.5 rounded flex-shrink-0">
+              ${sovereign.tokenSymbol || 'TOKEN'}
             </span>
+          </div>
+
+          {/* Creator */}
+          {creatorShort && (
+            <p className="text-[10px] text-[var(--faint)] mb-1 font-mono">
+              by {creatorShort}
+            </p>
+          )}
+
+          {/* Description snippet */}
+          {description && (
+            <p className="text-[10px] text-[var(--muted)] leading-tight mb-2 line-clamp-2">
+              {description}
+            </p>
+          )}
+
+          {/* Context-aware stats row */}
+          {sovereign.status === 'Bonding' && (
+            <>
+              <div className="flex items-center justify-between text-[11px]">
+                <div>
+                  <span className="text-[var(--muted)]">Bonded: </span>
+                  <span className="text-[var(--money-green)] font-bold">
+                    {sovereign.bondProgress.toFixed(1)}%
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[var(--muted)]">LPs: </span>
+                  <span className="text-white font-bold">{sovereign.depositorCount}</span>
+                </div>
+              </div>
+              <div className="text-[10px] text-[var(--faint)] mt-1">
+                {sovereign.totalDepositedSol?.toFixed(2) || '0'} / {sovereign.bondTargetSol?.toFixed(2) || '0'} GOR
+              </div>
+            </>
+          )}
+
+          {(sovereign.status === 'Recovery') && (
+            <>
+              <div className="flex items-center justify-between text-[11px]">
+                <div>
+                  <span className="text-[var(--muted)]">Recovery: </span>
+                  <span className="text-[var(--hazard-orange)] font-bold">
+                    {sovereign.recoveryProgress?.toFixed(1) || '0'}%
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[var(--muted)]">Fees: </span>
+                  <span className="text-white font-bold">
+                    {(sovereign.totalFeesCollectedGor || 0).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+              <div className="text-[10px] text-[var(--faint)] mt-1">
+                {sovereign.depositorCount} LPs
+              </div>
+            </>
+          )}
+
+          {sovereign.status === 'Active' && (
+            <>
+              <div className="flex items-center justify-between text-[11px]">
+                <div>
+                  <span className="text-[var(--muted)]">Fees: </span>
+                  <span className="text-[var(--money-green)] font-bold">
+                    {(sovereign.totalFeesCollectedGor || 0).toFixed(2)} GOR
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[var(--muted)]">LPs: </span>
+                  <span className="text-white font-bold">{sovereign.depositorCount}</span>
+                </div>
+              </div>
+              <div className="text-[10px] text-[var(--faint)] mt-1">
+                Recovered {sovereign.bondTargetSol?.toFixed(2) || '0'} GOR
+              </div>
+            </>
+          )}
+
+          {(sovereign.status === 'Unwinding' || sovereign.status === 'Unwound' || sovereign.activityCheckInitiated) && (
+            <>
+              <div className="flex items-center justify-between text-[11px]">
+                <div>
+                  <span className="text-[var(--muted)]">Unwind: </span>
+                  <span className="text-[var(--loss)] font-bold">
+                    {(() => {
+                      const UNWIND_MS = 90 * 24 * 60 * 60 * 1000;
+                      const start = sovereign.activityCheckInitiatedAt
+                        ? new Date(sovereign.activityCheckInitiatedAt).getTime()
+                        : sovereign.lastActivity
+                        ? new Date(sovereign.lastActivity).getTime()
+                        : 0;
+                      if (!start) return '90d left';
+                      const days = Math.max(0, Math.ceil((start + UNWIND_MS - Date.now()) / (24 * 60 * 60 * 1000)));
+                      return `${days}d left`;
+                    })()}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[var(--muted)]">LPs: </span>
+                  <span className="text-white font-bold">{sovereign.depositorCount}</span>
+                </div>
+              </div>
+              <div className="text-[10px] text-[var(--faint)] mt-1">90-day inactivity period</div>
+            </>
+          )}
+
+          {/* Fallback for other statuses */}
+          {!['Bonding', 'Recovery', 'Active', 'Unwinding', 'Unwound'].includes(sovereign.status) && !sovereign.activityCheckInitiated && (
+            <div className="flex items-center justify-between text-[11px]">
+              <div>
+                <span className="text-[var(--muted)]">LPs: </span>
+                <span className="text-white font-bold">{sovereign.depositorCount}</span>
+              </div>
+              <div className="text-[10px] text-[var(--faint)]">
+                {sovereign.totalDepositedSol?.toFixed(2) || '0'} GOR
+              </div>
+            </div>
           )}
         </div>
       </div>

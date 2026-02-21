@@ -14,7 +14,6 @@ import {
   getSovereignTypeString,
   getFeeModeString,
   fetchPendingEngineLpFees,
-  fetchPendingClaimableFees,
   fetchTokenFeeStats,
   fetchEnginePool,
   SovereignLiquidityProgram,
@@ -35,7 +34,6 @@ export const QUERY_KEYS = {
   sovereignDepositors: (sovereign: string) => ['sovereignDepositors', sovereign],
   walletDeposits: (wallet: string) => ['walletDeposits', wallet],
   pendingHarvestFees: (sovereignId: string) => ['pendingHarvestFees', sovereignId],
-  pendingClaimableFees: (sovereignId: string, depositor: string) => ['pendingClaimableFees', sovereignId, depositor],
   tokenFeeStats: (sovereignId: string) => ['tokenFeeStats', sovereignId],
 } as const;
 
@@ -112,6 +110,16 @@ export function useSovereigns() {
         totalRecoveredGor: Number(account.totalRecovered) / LAMPORTS_PER_GOR,
         recoveryComplete: account.recoveryComplete,
         createdAt: new Date(Number(account.createdAt) * 1000),
+        // Fees & activity fields for list-level filtering
+        totalFeesCollected: account.totalFeesCollected?.toString() || '0',
+        totalFeesCollectedGor: Number(account.totalFeesCollected || 0) / LAMPORTS_PER_GOR,
+        activityCheckInitiated: !!account.activityCheckInitiated,
+        activityCheckInitiatedAt: Number(account.activityCheckInitiatedAt || 0) > 0
+          ? new Date(Number(account.activityCheckInitiatedAt) * 1000)
+          : null,
+        lastActivity: Number(account.lastActivity || 0) > 0
+          ? new Date(Number(account.lastActivity) * 1000)
+          : null,
         // Progress calculations
         bondingProgress: safeNum(account.bondTarget) > 0 
           ? (safeNum(account.totalDeposited) / safeNum(account.bondTarget)) * 100 
@@ -317,9 +325,14 @@ export function useWalletDeposits() {
         amountGor: Number(account.amount) / LAMPORTS_PER_GOR,
         sharesBps: account.sharesBps,
         sharesPercent: account.sharesBps / 100,
+        votingPowerBps: account.votingPowerBps || account.sharesBps,
+        votingPowerPercent: (account.votingPowerBps || account.sharesBps) / 100,
         feesClaimed: account.feesClaimed.toString(),
         feesClaimedGor: Number(account.feesClaimed) / LAMPORTS_PER_GOR,
         nftMinted: account.nftMinted,
+        nftMint: account.nftMint?.toBase58() ?? null,
+        unwindClaimed: account.unwindClaimed,
+        refundClaimed: account.refundClaimed,
         depositedAt: new Date(Number(account.depositedAt) * 1000),
       }));
     },
@@ -423,26 +436,6 @@ export function useEnginePool(sovereignId: string | number | undefined) {
  * Hook to fetch how much GOR a depositor can claim from the fee vault.
  * Shows the depositor's unclaimed share of already-harvested fees.
  */
-export function usePendingClaimableFees(sovereignId: string | number | undefined) {
-  const program = useReadOnlyProgram();
-  const { connection } = useConnection();
-  const { publicKey } = useWalletAddress();
-
-  return useQuery({
-    queryKey: QUERY_KEYS.pendingClaimableFees(
-      sovereignId?.toString() ?? '',
-      publicKey?.toBase58() ?? '',
-    ),
-    queryFn: async () => {
-      if (!program || !sovereignId || !publicKey) return null;
-      return fetchPendingClaimableFees(connection, program, BigInt(sovereignId), publicKey);
-    },
-    staleTime: 10_000,
-    refetchInterval: 30_000,
-    enabled: !!program && !!sovereignId && !!publicKey,
-  });
-}
-
 /**
  * Hook to fetch Token-2022 transfer fee stats for a sovereign.
  * Shows vault balance, harvestable withheld fees, and fee rate.

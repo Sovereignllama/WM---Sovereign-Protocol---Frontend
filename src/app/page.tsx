@@ -1,34 +1,20 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import Link from 'next/link';
-import { SovereignList } from '@/components/SovereignList';
-import { SovereignDisplayData, SovereignStatus } from '@/types/sovereign';
+import { SovereignDisplayData } from '@/types/sovereign';
 import { PublicKey } from '@solana/web3.js';
-import { useSovereigns, useProtocolState } from '@/hooks';
+import { useSovereigns, useProtocolState, useProtocolStats } from '@/hooks';
 import { LAMPORTS_PER_GOR } from '@/lib/config';
 
-type FilterType = SovereignStatus | 'all' | 'lowVolume';
-
-export default function SovereignsPage() {
-  const [filter, setFilter] = useState<FilterType>('all');
-  
-  // Fetch real data from on-chain
-  const { data: sovereignsData, isLoading: sovereignsLoading, error: sovereignsError } = useSovereigns();
+export default function LandingPage() {
+  const { data: sovereignsData, isLoading: sovereignsLoading } = useSovereigns();
   const { data: protocolState, isLoading: protocolLoading } = useProtocolState();
+  const { data: backendStats, isLoading: statsLoading } = useProtocolStats();
 
-  const filters: { value: FilterType; label: string }[] = [
-    { value: 'Bonding', label: 'Bonding' },
-    { value: 'Recovery', label: 'Recovery' },
-    { value: 'Active', label: 'Active' },
-    { value: 'lowVolume', label: 'Low Volume' },
-    { value: 'all', label: 'All' },
-  ];
-
-  // Transform on-chain data to display format
+  // Transform to display format
   const sovereigns: SovereignDisplayData[] = useMemo(() => {
     if (!sovereignsData) return [];
-    
     return sovereignsData.map((s: any) => ({
       sovereignId: BigInt(s.sovereignId),
       publicKey: new PublicKey(s.publicKey),
@@ -39,12 +25,12 @@ export default function SovereignsPage() {
       tokenSymbol: s.tokenSymbol || undefined,
       tokenName: s.tokenName || undefined,
       tokenDecimals: 9,
-      tokenSupplyDeposited: BigInt(0), // TODO: Add to query
+      tokenSupplyDeposited: BigInt(0),
       tokenTotalSupply: BigInt(0),
       bondTarget: BigInt(s.bondTarget),
       bondDeadline: s.bondDeadline,
-      bondDurationDays: 14, // TODO: Calculate from on-chain
-      status: s.status as SovereignStatus,
+      bondDurationDays: 14,
+      status: s.status,
       totalDeposited: BigInt(s.totalDeposited),
       depositorCount: s.depositorCount,
       sellFeeBps: s.sellFeeBps,
@@ -59,9 +45,9 @@ export default function SovereignsPage() {
       recoveryComplete: s.recoveryComplete,
       unwindSolBalance: BigInt(0),
       unwindTokenBalance: BigInt(0),
-      activityCheckInitiated: false, // TODO: Add to query
+      activityCheckInitiated: false,
       autoUnwindPeriod: 90 * 24 * 60 * 60,
-      // Computed fields
+      metadataUri: s.metadataUri || '',
       bondProgress: s.bondingProgress,
       recoveryProgress: s.recoveryProgress,
       bondTargetSol: s.bondTargetGor,
@@ -70,122 +56,197 @@ export default function SovereignsPage() {
     }));
   }, [sovereignsData]);
 
-  // Calculate stats from real data
-  const stats = useMemo(() => {
-    if (!sovereigns.length) {
-      return {
-        totalRaised: 0,
-        feesDistributed: 0,
-        activePools: 0,
-        totalDepositors: 0,
-      };
-    }
-    
-    return {
-      totalRaised: sovereigns.reduce((sum, s) => sum + s.totalDepositedSol, 0),
-      feesDistributed: sovereigns.reduce((sum, s) => sum + Number(s.totalSolFeesDistributed) / LAMPORTS_PER_GOR, 0),
-      activePools: sovereigns.filter(s => s.status === 'Active' || s.status === 'Recovery').length,
-      totalDepositors: sovereigns.reduce((sum, s) => sum + s.depositorCount, 0),
-    };
+  // Trending: Active/Recovery first, sorted by depositor count, then by total raised
+  const trending = useMemo(() => {
+    if (!sovereigns.length) return [];
+    return [...sovereigns]
+      .sort((a, b) => {
+        const statusOrder = (s: string) => {
+          if (s === 'Active') return 0;
+          if (s === 'Recovery') return 1;
+          if (s === 'Bonding') return 2;
+          return 3;
+        };
+        const diff = statusOrder(a.status) - statusOrder(b.status);
+        if (diff !== 0) return diff;
+        if (b.depositorCount !== a.depositorCount) return b.depositorCount - a.depositorCount;
+        return b.totalDepositedSol - a.totalDepositedSol;
+      })
+      .slice(0, 6);
   }, [sovereigns]);
 
-  // Count by status
-  const counts: Record<FilterType, number> = useMemo(() => ({
-    all: sovereigns.length,
-    Bonding: sovereigns.filter(s => s.status === 'Bonding').length,
-    Finalizing: sovereigns.filter(s => s.status === 'Finalizing').length,
-    PoolCreated: sovereigns.filter(s => s.status === 'PoolCreated').length,
-    Recovery: sovereigns.filter(s => s.status === 'Recovery').length,
-    Active: sovereigns.filter(s => s.status === 'Active').length,
-    Unwinding: sovereigns.filter(s => s.status === 'Unwinding').length,
-    Unwound: sovereigns.filter(s => s.status === 'Unwound').length,
-    Failed: sovereigns.filter(s => s.status === 'Failed').length,
-    EmergencyUnlocked: sovereigns.filter(s => s.status === 'EmergencyUnlocked').length,
-    Retired: sovereigns.filter(s => s.status === 'Retired').length,
-    lowVolume: sovereigns.filter(s => s.activityCheckInitiated).length,
-  }), [sovereigns]);
+  // Protocol-wide stats (on-chain fees + backend volume)
+  const stats = useMemo(() => {
+    const totalSovereigns = sovereigns.length;
+    const totalFees = sovereigns.reduce((sum, s) => sum + Number(s.totalSolFeesCollected) / LAMPORTS_PER_GOR, 0);
+    const tradingVolume = backendStats?.totalTradingVolumeGor ?? 0;
+    const tradeCount = backendStats?.totalTradeCount ?? 0;
+    return { totalSovereigns, totalFees, tradingVolume, tradeCount };
+  }, [sovereigns, backendStats]);
 
   const isLoading = sovereignsLoading || protocolLoading;
 
   return (
     <div className="h-full md:overflow-y-auto">
       <div className="max-w-5xl mx-auto px-4 py-6">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="h1 mb-2" style={{ color: 'var(--text-light)' }}>$overeigns</h1>
-          <p className="text-[var(--muted)]">
-            Browse bonding, active, and unwinding $overeigns.
+
+        {/* Hero */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl md:text-5xl font-black mb-3" style={{ color: 'var(--text-light)' }}>
+            $overeign Protocol
+          </h1>
+          <p className="text-[var(--muted)] text-lg max-w-2xl mx-auto mb-6">
+            Vibe the Dream. Liquidify the Token. Become $overeign.
           </p>
-        </div>
-
-        {/* Stats Overview */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="stat money">
-            <div className="k">Total Raised</div>
-            <div className="v">{isLoading ? '...' : `${stats.totalRaised.toFixed(2)} GOR`}</div>
-          </div>
-          <div className="stat profit">
-            <div className="k">Fees Distributed</div>
-            <div className="v">{isLoading ? '...' : `${stats.feesDistributed.toFixed(2)} GOR`}</div>
-          </div>
-          <div className="stat">
-            <div className="k">Active Pools</div>
-            <div className="v">{isLoading ? '...' : stats.activePools}</div>
-          </div>
-          <div className="stat">
-            <div className="k">Total Depositors</div>
-            <div className="v">{isLoading ? '...' : stats.totalDepositors}</div>
+          <div className="flex items-center justify-center gap-4">
+            <Link href="/mint" className="btn btn-primary btn-lg">
+              Launch a $overeign
+            </Link>
+            <Link href="/sovereigns" className="btn btn-outline btn-lg">
+              Browse All
+            </Link>
           </div>
         </div>
 
-        {/* Filter Tabs */}
-        <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
-          {filters.map((f) => (
-            <button
-              key={f.value}
-              onClick={() => setFilter(f.value)}
-              className={`btn btn-sm whitespace-nowrap ${
-                filter === f.value ? 'btn-primary' : 'btn-outline'
-              }`}
-            >
-              {f.label}
-              {counts[f.value] > 0 && (
-                <span className="ml-1 opacity-70">({counts[f.value]})</span>
+        {/* Trending Sovereigns Ticker */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="h2 text-white">Trending $overeigns</h2>
+            <Link href="/sovereigns" className="text-sm text-[var(--hazard-yellow)] hover:underline">
+              View all →
+            </Link>
+          </div>
+
+          {isLoading ? (
+            <div className="card card-clean text-center py-12">
+              <div className="text-4xl mb-4 animate-pulse">👑</div>
+              <p className="text-[var(--muted)]">Loading from chain...</p>
+            </div>
+          ) : trending.length > 0 ? (
+            <div className="relative overflow-hidden rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+              {/* Fade edges */}
+              <div className="absolute left-0 top-0 bottom-0 w-12 z-10" style={{ background: 'linear-gradient(to right, var(--surface), transparent)' }} />
+              <div className="absolute right-0 top-0 bottom-0 w-12 z-10" style={{ background: 'linear-gradient(to left, var(--surface), transparent)' }} />
+              {/* Scrolling ticker */}
+              <div className="ticker-track py-3">
+                {/* Duplicate items for seamless loop */}
+                {[...trending, ...trending].map((sovereign, i) => (
+                  <Link
+                    key={`${sovereign.sovereignId}-${i}`}
+                    href={`/sovereign/${sovereign.sovereignId}`}
+                    className="flex items-center gap-3 px-5 flex-shrink-0 hover:opacity-80 transition-opacity"
+                    style={{ minWidth: '280px' }}
+                  >
+                    <span className="text-lg">👑</span>
+                    <div className="flex flex-col">
+                      <span className="text-white font-bold text-sm truncate max-w-[160px]">
+                        {sovereign.name}
+                      </span>
+                      <span className="text-xs text-[var(--muted)]">
+                        #{sovereign.sovereignId.toString()}
+                      </span>
+                    </div>
+                    <div className="flex flex-col items-end ml-auto">
+                      <span className="text-sm font-bold" style={{ color: 'var(--hazard-yellow)' }}>
+                        {sovereign.totalDepositedSol.toFixed(2)} GOR
+                      </span>
+                      <span className={`text-xs font-semibold ${
+                        sovereign.status === 'Active' ? 'text-[var(--profit)]' :
+                        sovereign.status === 'Recovery' ? 'text-[var(--hazard-yellow)]' :
+                        sovereign.status === 'Bonding' ? 'text-[var(--slime)]' :
+                        'text-[var(--muted)]'
+                      }`}>
+                        {sovereign.status}
+                      </span>
+                    </div>
+                    {/* Separator */}
+                    <span className="text-[var(--border)] ml-2">│</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="card card-clean text-center py-12">
+              <div className="text-4xl mb-4">🚀</div>
+              <p className="text-[var(--muted)]">No sovereigns yet. Be the first to launch!</p>
+              <Link href="/mint" className="btn btn-primary mt-4">
+                Launch Now
+              </Link>
+            </div>
+          )}
+        </div>
+
+        {/* Protocol Stats Counters */}
+        <div className="mb-8">
+          <h2 className="h2 text-white mb-4 text-center">Protocol Stats</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="card card-clean text-center py-6">
+              <div className="text-3xl md:text-4xl font-black mb-1" style={{ color: 'var(--hazard-yellow)' }}>
+                {isLoading ? '...' : stats.totalSovereigns}
+              </div>
+              <div className="text-[var(--muted)] text-sm font-medium uppercase tracking-wider">
+                $overeigns Launched
+              </div>
+            </div>
+            <div className="card card-clean text-center py-6">
+              <div className="text-3xl md:text-4xl font-black mb-1" style={{ color: 'var(--profit)' }}>
+                {statsLoading ? '...' : `${stats.tradingVolume.toLocaleString(undefined, { maximumFractionDigits: 1 })} GOR`}
+              </div>
+              <div className="text-[var(--muted)] text-sm font-medium uppercase tracking-wider">
+                Trading Volume
+              </div>
+              {stats.tradeCount > 0 && (
+                <div className="text-[var(--muted)] text-xs mt-1">
+                  {stats.tradeCount.toLocaleString()} trades
+                </div>
               )}
-            </button>
-          ))}
+            </div>
+            <div className="card card-clean text-center py-6">
+              <div className="text-3xl md:text-4xl font-black mb-1" style={{ color: 'var(--slime)' }}>
+                {isLoading ? '...' : `${stats.totalFees.toFixed(1)} GOR`}
+              </div>
+              <div className="text-[var(--muted)] text-sm font-medium uppercase tracking-wider">
+                Fees Generated
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Loading State */}
-        {isLoading && (
-          <div className="card card-clean text-center py-12">
-            <div className="text-4xl mb-4 animate-pulse">👑</div>
-            <p className="text-[var(--muted)]">Loading sovereigns from chain...</p>
+        {/* How It Works */}
+        <div className="card card-clean mb-8">
+          <h2 className="h2 text-white mb-6 text-center">How It Works</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="text-center">
+              <div className="text-3xl mb-3">🚀</div>
+              <h3 className="text-white font-bold mb-2">1. Launch</h3>
+              <p className="text-[var(--muted)] text-sm">
+                Create your token, set your funding goal, and rally Liquidity Providers behind your vision.
+              </p>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl mb-3">🛡️</div>
+              <h3 className="text-white font-bold mb-2">2. Recover</h3>
+              <p className="text-[var(--muted)] text-sm">
+                LPers deposit GOR, establish the price floor, and collect 100% of trading fees until your principal is fully returned.
+              </p>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl mb-3">👑</div>
+              <h3 className="text-white font-bold mb-2">3. Earn</h3>
+              <p className="text-[var(--muted)] text-sm">
+                Once fully repaid, fees split between Liquidity Providers and creators. Passive income for all.
+              </p>
+            </div>
           </div>
-        )}
+        </div>
 
-        {/* Error State */}
-        {sovereignsError && (
-          <div className="card card-clean text-center py-12 border-[var(--loss)]">
-            <div className="text-4xl mb-4">⚠️</div>
-            <p className="text-[var(--loss)]">Failed to load sovereigns</p>
-            <p className="text-[var(--muted)] text-sm mt-2">
-              {sovereignsError instanceof Error ? sovereignsError.message : 'Unknown error'}
-            </p>
-          </div>
-        )}
+        {/* Read Docs CTA */}
+        <div className="text-center mb-8">
+          <Link href="/docs" className="text-[var(--hazard-yellow)] hover:underline font-bold">
+            Read our docs to learn more →
+          </Link>
+        </div>
 
-        {/* Sovereign List */}
-        {!isLoading && !sovereignsError && (
-          <SovereignList 
-            sovereigns={sovereigns} 
-            filter={filter}
-            emptyMessage={sovereigns.length === 0 
-              ? 'No sovereigns created yet. Be the first to launch!' 
-              : `No ${filter === 'all' ? '' : filter.toLowerCase()} sovereigns found`
-            }
-          />
-        )}
       </div>
     </div>
   );

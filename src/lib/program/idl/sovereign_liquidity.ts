@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/sovereign_liquidity.json`.
  */
 export type SovereignLiquidity = {
-  "address": "2LPPAG7UhVop1RiRBh8oZtjzMoJ9St9WV4nY7JwmoNbA",
+  "address": "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
   "metadata": {
     "name": "sovereignLiquidity",
     "version": "0.1.0",
@@ -14,25 +14,327 @@ export type SovereignLiquidity = {
   },
   "instructions": [
     {
-      "name": "claimCreatorVault",
+      "name": "acceptAuthorityTransfer",
       "docs": [
-        "Creator withdraws tokens from the vault (waterfall-capped during Recovery,",
-        "uncapped during Active). CreatorRevenue fee mode only.",
-        "remaining_accounts during Recovery: [0] pool_wgor_vault, [1] pool_token_vault"
+        "Accept protocol authority transfer (step 2 of 2)"
       ],
       "discriminator": [
-        25,
-        113,
-        249,
+        239,
+        248,
+        177,
+        2,
+        206,
+        97,
+        46,
+        255
+      ],
+      "accounts": [
+        {
+          "name": "newAuthority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocolState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "adminSweepVault",
+      "docs": [
+        "Admin sweep — transfer remaining sol_vault balance to treasury.",
+        "Use after all investor/creator obligations are cleared.",
+        "Protocol authority only. Sovereign must be Halted, Unwound, or Retired."
+      ],
+      "discriminator": [
+        55,
+        167,
+        169,
         85,
-        158,
-        187,
-        122,
-        46
+        135,
+        189,
+        215,
+        84
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocolState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "sovereign",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign.sovereign_id",
+                "account": "sovereignState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solVault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claimCreatorUnwind",
+      "docs": [
+        "Creator reclaims tokens and surplus GOR after unwind.",
+        "BYO: returns all tokens + surplus GOR above investor principal.",
+        "TokenLaunch: returns unsold tokens (surplus goes to token holders instead)."
+      ],
+      "discriminator": [
+        110,
+        150,
+        147,
+        57,
+        37,
+        90,
+        54,
+        185
       ],
       "accounts": [
         {
           "name": "creator",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "sovereign"
+          ]
+        },
+        {
+          "name": "sovereign",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign.sovereign_id",
+                "account": "sovereignState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solVault",
+          "docs": [
+            "Source of surplus GOR returned to creator after governance unwind.",
+            "Funds flow only to `creator` (validated by has_one on sovereign) — no arbitrary withdrawal."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenVault",
+          "docs": [
+            "Token vault — holds unsold/returned tokens"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenMint",
+          "docs": [
+            "Token mint — for transfer_checked"
+          ]
+        },
+        {
+          "name": "creatorTokenAccount",
+          "docs": [
+            "Creator's token account — receives returned tokens"
+          ],
+          "writable": true
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claimPoolLpFees",
+      "docs": [
+        "Claim LP fees (NFT holder). Verifies NFT, then CPIs to engine program."
+      ],
+      "discriminator": [
+        2,
+        71,
+        114,
+        148,
+        196,
+        222,
+        169,
+        161
+      ],
+      "accounts": [
+        {
+          "name": "holder",
+          "docs": [
+            "Current NFT holder (bearer of the Genesis NFT position)"
+          ],
           "writable": true,
           "signer": true
         },
@@ -64,15 +366,175 @@ export type SovereignLiquidity = {
           }
         },
         {
-          "name": "tokenMint",
+          "name": "originalDepositor"
+        },
+        {
+          "name": "depositRecord",
           "docs": [
-            "Token mint — needed for supply + decimals"
+            "The investor's deposit record (proves a valid deposit position)"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  95,
+                  114,
+                  101,
+                  99,
+                  111,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              },
+              {
+                "kind": "account",
+                "path": "originalDepositor"
+              }
+            ]
+          }
+        },
+        {
+          "name": "nftTokenAccount",
+          "docs": [
+            "Genesis NFT token account — proves the holder possesses the position NFT."
           ]
         },
         {
-          "name": "recoveryTokenVault",
+          "name": "enginePool",
           "docs": [
-            "Recovery token vault — source of accumulated creator revenue tokens.",
+            "Engine pool (owned by engine program)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "lpClaim",
+          "docs": [
+            "LP claim record (owned by engine program, init_if_needed)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "engineGorVault",
+          "docs": [
+            "Engine pool GOR vault"
+          ],
+          "writable": true
+        },
+        {
+          "name": "engineProgram",
+          "docs": [
+            "The sovereign-engine program"
+          ],
+          "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt"
+        },
+        {
+          "name": "protocolState",
+          "docs": [
+            "Protocol state — needed to read default_swap_fee_bps if transition fires"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claimTransferFees",
+      "docs": [
+        "Creator claims accumulated transfer fee tokens from the vault.",
+        "Optionally harvests withheld fees from remaining_accounts first.",
+        "No cap, no state gate — creator can claim anytime."
+      ],
+      "discriminator": [
+        255,
+        50,
+        252,
+        109,
+        231,
+        252,
+        248,
+        71
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sovereign",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign.sovereign_id",
+                "account": "sovereignState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenMint",
+          "docs": [
+            "Token mint — needed for decimals + harvest"
+          ],
+          "writable": true
+        },
+        {
+          "name": "tokenVault",
+          "docs": [
+            "Token vault — source of accumulated transfer fee tokens.",
             "Authority = sovereign PDA."
           ],
           "writable": true,
@@ -104,412 +566,13 @@ export type SovereignLiquidity = {
         {
           "name": "creatorTokenAccount",
           "docs": [
-            "Creator's token account — destination for withdrawn tokens"
+            "Creator's token account — destination for claimed tokens"
           ],
           "writable": true
         },
         {
           "name": "tokenProgram2022",
           "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
-        }
-      ],
-      "args": [
-        {
-          "name": "requestedAmount",
-          "type": "u64"
-        }
-      ]
-    },
-    {
-      "name": "claimDepositorFees",
-      "docs": [
-        "Claim depositor's share of accumulated fees"
-      ],
-      "discriminator": [
-        25,
-        69,
-        126,
-        212,
-        100,
-        100,
-        130,
-        211
-      ],
-      "accounts": [
-        {
-          "name": "holder",
-          "docs": [
-            "Current NFT holder (bearer of the position)"
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "sovereign",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  111,
-                  118,
-                  101,
-                  114,
-                  101,
-                  105,
-                  103,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign.sovereign_id",
-                "account": "sovereignState"
-              }
-            ]
-          }
-        },
-        {
-          "name": "originalDepositor",
-          "docs": [
-            "Verified implicitly by PDA seed match."
-          ]
-        },
-        {
-          "name": "depositRecord",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  101,
-                  112,
-                  111,
-                  115,
-                  105,
-                  116,
-                  95,
-                  114,
-                  101,
-                  99,
-                  111,
-                  114,
-                  100
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign"
-              },
-              {
-                "kind": "account",
-                "path": "originalDepositor"
-              }
-            ]
-          }
-        },
-        {
-          "name": "nftTokenAccount",
-          "docs": [
-            "Genesis NFT token account — proves the holder possesses the position NFT"
-          ]
-        },
-        {
-          "name": "feeVault",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  111,
-                  108,
-                  95,
-                  118,
-                  97,
-                  117,
-                  108,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign"
-              }
-            ]
-          }
-        },
-        {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": []
-    },
-    {
-      "name": "claimPoolCreatorFees",
-      "docs": [
-        "Claim creator fees (after recovery)"
-      ],
-      "discriminator": [
-        120,
-        103,
-        135,
-        91,
-        62,
-        169,
-        163,
-        157
-      ],
-      "accounts": [
-        {
-          "name": "creator",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "sovereign",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  111,
-                  118,
-                  101,
-                  114,
-                  101,
-                  105,
-                  103,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign.sovereign_id",
-                "account": "sovereignState"
-              }
-            ]
-          }
-        },
-        {
-          "name": "enginePool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  101,
-                  110,
-                  103,
-                  105,
-                  110,
-                  101,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign"
-              }
-            ]
-          }
-        },
-        {
-          "name": "engineGorVault",
-          "writable": true
-        },
-        {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": []
-    },
-    {
-      "name": "claimPoolLpFees",
-      "docs": [
-        "Claim LP fees (NFT holder / depositor)"
-      ],
-      "discriminator": [
-        2,
-        71,
-        114,
-        148,
-        196,
-        222,
-        169,
-        161
-      ],
-      "accounts": [
-        {
-          "name": "holder",
-          "docs": [
-            "Current NFT holder (bearer of the Genesis NFT position)"
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "sovereign",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  111,
-                  118,
-                  101,
-                  114,
-                  101,
-                  105,
-                  103,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign.sovereign_id",
-                "account": "sovereignState"
-              }
-            ]
-          }
-        },
-        {
-          "name": "enginePool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  101,
-                  110,
-                  103,
-                  105,
-                  110,
-                  101,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign"
-              }
-            ]
-          }
-        },
-        {
-          "name": "originalDepositor",
-          "docs": [
-            "Does NOT need to sign; the NFT token account proves authorization."
-          ]
-        },
-        {
-          "name": "depositRecord",
-          "docs": [
-            "The investor's deposit record (proves a valid deposit position exists)"
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  101,
-                  112,
-                  111,
-                  115,
-                  105,
-                  116,
-                  95,
-                  114,
-                  101,
-                  99,
-                  111,
-                  114,
-                  100
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign"
-              },
-              {
-                "kind": "account",
-                "path": "originalDepositor"
-              }
-            ]
-          }
-        },
-        {
-          "name": "nftTokenAccount",
-          "docs": [
-            "Genesis NFT token account — proves the holder possesses the position NFT.",
-            "This is the bearer authorization: whoever holds this NFT controls the fee claim."
-          ]
-        },
-        {
-          "name": "lpClaim",
-          "docs": [
-            "The LP claim record — keyed by original_depositor (position-bound, survives NFT transfers)"
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  101,
-                  110,
-                  103,
-                  105,
-                  110,
-                  101,
-                  95,
-                  108,
-                  112,
-                  95,
-                  99,
-                  108,
-                  97,
-                  105,
-                  109
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "enginePool"
-              },
-              {
-                "kind": "account",
-                "path": "originalDepositor"
-              }
-            ]
-          }
-        },
-        {
-          "name": "engineGorVault",
-          "writable": true
-        },
-        {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
         }
       ],
       "args": []
@@ -540,6 +603,7 @@ export type SovereignLiquidity = {
         },
         {
           "name": "sovereign",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -605,19 +669,23 @@ export type SovereignLiquidity = {
         {
           "name": "nftMint",
           "docs": [
-            "Genesis NFT mint — will be burned"
+            "Genesis NFT mint — will be burned (Token-2022)"
           ],
           "writable": true
         },
         {
           "name": "nftTokenAccount",
           "docs": [
-            "Genesis NFT token account — must hold exactly 1, will be burned"
+            "Genesis NFT token account — must hold exactly 1, will be burned (Token-2022)"
           ],
           "writable": true
         },
         {
           "name": "solVault",
+          "docs": [
+            "Holds investor deposits returned by drain_pool. Funds flow only to `holder`",
+            "after NFT burn under Unwound state guard — no arbitrary withdrawal possible."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -643,12 +711,217 @@ export type SovereignLiquidity = {
           }
         },
         {
-          "name": "tokenProgram",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          "name": "clock",
+          "address": "SysvarC1ock11111111111111111111111111111111"
+        },
+        {
+          "name": "tokenProgram"
         },
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "closeSovereign",
+      "docs": [
+        "Close a sovereign and all its vaults permanently.",
+        "Sweeps remaining SOL to treasury, burns tokens, recovers rent.",
+        "Works with old/outdated account layouts (raw byte parsing).",
+        "Protocol authority only. Sovereign must be Retired."
+      ],
+      "discriminator": [
+        227,
+        250,
+        87,
+        86,
+        158,
+        17,
+        11,
+        84
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocolState",
+          "docs": [
+            "Cannot use Account<> because old ProtocolState may be undersized."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "sovereign",
+          "docs": [
+            "because old sovereign accounts may not match current struct layout."
+          ],
+          "writable": true
+        },
+        {
+          "name": "solVault",
+          "writable": true
+        },
+        {
+          "name": "tokenVault",
+          "writable": true
+        },
+        {
+          "name": "tokenMint"
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "closeVoteRecord",
+      "docs": [
+        "Close a finalized VoteRecord account and return rent to the original voter.",
+        "Protocol authority only. Proposal must be in Passed or Failed state."
+      ],
+      "discriminator": [
+        41,
+        137,
+        198,
+        76,
+        80,
+        223,
+        157,
+        10
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "protocolState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "proposal",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal.sovereign",
+                "account": "proposal"
+              },
+              {
+                "kind": "account",
+                "path": "proposal.proposal_id",
+                "account": "proposal"
+              }
+            ]
+          }
+        },
+        {
+          "name": "voter",
+          "writable": true
+        },
+        {
+          "name": "voteRecord",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  111,
+                  116,
+                  101,
+                  95,
+                  114,
+                  101,
+                  99,
+                  111,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal"
+              },
+              {
+                "kind": "account",
+                "path": "vote_record.genesis_nft_mint",
+                "account": "voteRecord"
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -707,7 +980,10 @@ export type SovereignLiquidity = {
         {
           "name": "sovereign",
           "docs": [
-            "Use Box to reduce stack usage - SovereignState is the largest account"
+            "Sovereign PDA — seeded with `sovereign_count + 1` to match the ID assigned",
+            "in the handler after incrementing. This is safe because Solana executes",
+            "transactions sequentially within a slot: the PDA init and the count increment",
+            "are atomic within this single transaction."
           ],
           "writable": true
         },
@@ -751,13 +1027,12 @@ export type SovereignLiquidity = {
           "docs": [
             "Validated against the hardcoded TREASURY constant."
           ],
-          "writable": true,
-          "address": "4RKDExub3WSqgairnZBGFLzvrxmJLxM2ocPaVDr7GXnL"
+          "writable": true
         },
         {
           "name": "tokenMint",
           "docs": [
-            "Token mint - for BYO this is the existing token",
+            "Token mint - for BYO this is the existing token (SPL Token or Token-2022)",
             "For TokenLaunch this will be created in a separate instruction"
           ],
           "optional": true
@@ -773,7 +1048,7 @@ export type SovereignLiquidity = {
         {
           "name": "tokenVault",
           "docs": [
-            "Sovereign's token vault - Use Box to reduce stack usage"
+            "Sovereign's token vault"
           ],
           "writable": true,
           "optional": true,
@@ -804,7 +1079,9 @@ export type SovereignLiquidity = {
         },
         {
           "name": "tokenProgram",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          "docs": [
+            "Token program - SPL Token or Token-2022 (for BYO compatibility)"
+          ]
         },
         {
           "name": "systemProgram",
@@ -1139,6 +1416,185 @@ export type SovereignLiquidity = {
       ]
     },
     {
+      "name": "emergencyDrainEngine",
+      "docs": [
+        "Emergency drain engine pool — CPIs to engine drain_pool from Halted state.",
+        "Protocol authority only. Use for Recovery/Active sovereigns where GOR is in engine vaults."
+      ],
+      "discriminator": [
+        209,
+        249,
+        148,
+        100,
+        112,
+        208,
+        221,
+        47
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocolState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "sovereign",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign.sovereign_id",
+                "account": "sovereignState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "enginePool",
+          "docs": [
+            "Engine pool (owned by engine program)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "engineGorVault",
+          "docs": [
+            "Engine pool GOR vault"
+          ],
+          "writable": true
+        },
+        {
+          "name": "engineTokenVault",
+          "docs": [
+            "Engine pool token vault"
+          ],
+          "writable": true
+        },
+        {
+          "name": "tokenMint",
+          "docs": [
+            "Token mint"
+          ]
+        },
+        {
+          "name": "solVault",
+          "docs": [
+            "Sovereign's SOL vault (receives drained GOR)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenVault",
+          "docs": [
+            "Sovereign's token vault (receives unsold tokens)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "engineProgram",
+          "docs": [
+            "The sovereign-engine-v3 program"
+          ],
+          "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt"
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "emergencyTokenRedemption",
       "docs": [
         "Emergency token redemption - external token holders burn sovereign tokens",
@@ -1217,15 +1673,21 @@ export type SovereignLiquidity = {
         {
           "name": "tokenMint",
           "docs": [
-            "Token mint — needed for burn (mut because supply decreases)"
+            "Token mint — needed for transfer_checked (reads decimals)"
           ],
           "writable": true
         },
         {
           "name": "callerTokenAccount",
           "docs": [
-            "Caller's token account — tokens will be burned from here",
-            "Must be owned by caller and hold the sovereign token"
+            "Caller's token account — tokens will be transferred to creator"
+          ],
+          "writable": true
+        },
+        {
+          "name": "creatorTokenAccount",
+          "docs": [
+            "Creator's token account — receives the redeemed tokens instead of burning"
           ],
           "writable": true
         },
@@ -1242,7 +1704,7 @@ export type SovereignLiquidity = {
     {
       "name": "emergencyUnlock",
       "docs": [
-        "Emergency unlock - transitions sovereign to EmergencyUnlocked state",
+        "Emergency unlock - transitions sovereign to Halted state",
         "Callable by protocol authority or sovereign creator from ANY state"
       ],
       "discriminator": [
@@ -1558,10 +2020,17 @@ export type SovereignLiquidity = {
         },
         {
           "name": "tokenMint",
-          "writable": true
+          "docs": [
+            "Must be writable. Address validated in handler."
+          ],
+          "writable": true,
+          "optional": true
         },
         {
-          "name": "tokenProgram"
+          "name": "tokenProgram",
+          "docs": [
+            "Token program — must be SPL Token or Token-2022"
+          ]
         },
         {
           "name": "systemProgram",
@@ -1578,8 +2047,8 @@ export type SovereignLiquidity = {
     {
       "name": "executeEngineUnwind",
       "docs": [
-        "Execute engine pool unwind — drain pool vaults, take protocol fee, prepare distribution",
-        "Called after governance unwind vote passes and observation period elapses"
+        "Execute engine pool unwind — drain pool vaults via CPI, take protocol fee.",
+        "Called after governance unwind vote passes and observation period elapses."
       ],
       "discriminator": [
         120,
@@ -1656,43 +2125,22 @@ export type SovereignLiquidity = {
         },
         {
           "name": "enginePool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  101,
-                  110,
-                  103,
-                  105,
-                  110,
-                  101,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign"
-              }
-            ]
-          }
+          "docs": [
+            "Engine pool (owned by engine program, read for volume check)"
+          ],
+          "writable": true
         },
         {
           "name": "engineGorVault",
           "docs": [
-            "Engine pool GOR vault (native SOL PDA)"
+            "Engine pool GOR vault"
           ],
           "writable": true
         },
         {
           "name": "engineTokenVault",
           "docs": [
-            "Engine pool token vault (holds unsold tokens)"
+            "Engine pool token vault"
           ],
           "writable": true
         },
@@ -1700,13 +2148,14 @@ export type SovereignLiquidity = {
           "name": "tokenMint",
           "docs": [
             "Token mint"
-          ],
-          "writable": true
+          ]
         },
         {
           "name": "solVault",
           "docs": [
-            "Sovereign's SOL vault (receives drained GOR for investor claims)"
+            "Sovereign's SOL vault (receives drained GOR for investor claims)",
+            "Receives GOR drained from the engine pool. Funds flow only to NFT holders",
+            "via claim_unwind after protocol fee deduction — no arbitrary withdrawal possible."
           ],
           "writable": true,
           "pda": {
@@ -1764,6 +2213,13 @@ export type SovereignLiquidity = {
           }
         },
         {
+          "name": "engineProgram",
+          "docs": [
+            "The sovereign-engine-v3 program"
+          ],
+          "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt"
+        },
+        {
           "name": "tokenProgram"
         },
         {
@@ -1776,9 +2232,9 @@ export type SovereignLiquidity = {
     {
       "name": "finalizeEnginePool",
       "docs": [
-        "Finalize sovereign step 1: Create engine pool",
-        "Called after bond target is met (state = Finalizing)",
-        "base_price = total_deposited / total_token_supply (market-determined)"
+        "Finalize sovereign: Create engine pool via CPI to sovereign-engine program.",
+        "Called after bond target is met (state = Finalizing).",
+        "Transfers GOR + tokens to engine vaults, creates pool, optional creator buy-in."
       ],
       "discriminator": [
         86,
@@ -1850,46 +2306,18 @@ export type SovereignLiquidity = {
           }
         },
         {
-          "name": "enginePool",
-          "docs": [
-            "The pool account to initialize"
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  101,
-                  110,
-                  103,
-                  105,
-                  110,
-                  101,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign"
-              }
-            ]
-          }
-        },
-        {
           "name": "tokenMint",
           "docs": [
-            "The sovereign's token mint"
-          ]
+            "The sovereign's token mint (mut: set_transfer_fee writes to mint)"
+          ],
+          "writable": true
         },
         {
           "name": "solVault",
           "docs": [
-            "The bonding SOL vault (holds deposited GOR from investors)"
+            "The bonding SOL vault (holds deposited GOR from investors)",
+            "Holds investor deposits. Funds are transferred to the engine GOR vault in Step 1",
+            "of finalize_engine_pool — only to the canonical engine_gor_vault PDA."
           ],
           "writable": true,
           "pda": {
@@ -1949,76 +2377,46 @@ export type SovereignLiquidity = {
         {
           "name": "engineGorVault",
           "docs": [
-            "The engine pool's GOR vault (native SOL PDA)"
+            "The engine pool's GOR vault (native SOL PDA — derived under engine program)"
           ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  101,
-                  110,
-                  103,
-                  105,
-                  110,
-                  101,
-                  95,
-                  103,
-                  111,
-                  114,
-                  95,
-                  118,
-                  97,
-                  117,
-                  108,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign"
-              }
-            ]
-          }
+          "writable": true
+        },
+        {
+          "name": "enginePool",
+          "docs": [
+            "The engine pool account (will be initialized by engine program via CPI)"
+          ],
+          "writable": true
         },
         {
           "name": "engineTokenVault",
           "docs": [
-            "The engine pool's token vault (ATA owned by engine_pool PDA)"
+            "The engine pool's token vault (will be initialized by engine program via CPI)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "creatorTokenAccount",
+          "docs": [
+            "Optional: Creator's token ATA (receives tokens from creator buy-in).",
+            "Only used if sovereign.creator_escrow > 0."
           ],
           "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  101,
-                  110,
-                  103,
-                  105,
-                  110,
-                  101,
-                  95,
-                  116,
-                  111,
-                  107,
-                  101,
-                  110,
-                  95,
-                  118,
-                  97,
-                  117,
-                  108,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign"
-              }
-            ]
-          }
+          "optional": true
+        },
+        {
+          "name": "binArray",
+          "docs": [
+            "BinArray page 0 (will be initialized by engine program via CPI)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "engineProgram",
+          "docs": [
+            "The sovereign-engine-v3 program"
+          ],
+          "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt"
         },
         {
           "name": "tokenProgram"
@@ -2140,29 +2538,34 @@ export type SovereignLiquidity = {
       "args": []
     },
     {
-      "name": "harvestTransferFees",
+      "name": "initializeCollection",
       "docs": [
-        "Harvest withheld transfer fees from Token-2022 token accounts",
-        "Fees are collected from TransferFeeConfig extension"
+        "Initialize the protocol-wide Genesis NFT collection.",
+        "One-time setup — creates a Metaplex verified collection mint",
+        "so all Genesis NFTs are grouped on marketplaces."
       ],
       "discriminator": [
-        246,
-        104,
-        231,
-        171,
-        131,
-        105,
-        50,
-        55
+        112,
+        62,
+        53,
+        139,
+        173,
+        152,
+        98,
+        93
       ],
       "accounts": [
         {
-          "name": "payer",
+          "name": "authority",
           "writable": true,
-          "signer": true
+          "signer": true,
+          "relations": [
+            "protocolState"
+          ]
         },
         {
           "name": "protocolState",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -2188,117 +2591,159 @@ export type SovereignLiquidity = {
           }
         },
         {
-          "name": "sovereign",
+          "name": "collectionMint",
+          "docs": [
+            "Collection NFT mint — one per protocol, PDA-derived."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
               {
                 "kind": "const",
                 "value": [
-                  115,
-                  111,
-                  118,
-                  101,
-                  114,
-                  101,
-                  105,
                   103,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign.sovereign_id",
-                "account": "sovereignState"
-              }
-            ]
-          }
-        },
-        {
-          "name": "tokenMint",
-          "docs": [
-            "The token mint with TransferFeeConfig"
-          ],
-          "writable": true
-        },
-        {
-          "name": "creatorTokenAccount",
-          "docs": [
-            "Creator's token account - receives fees in CreatorRevenue mode",
-            "or after recovery in RecoveryBoost mode"
-          ],
-          "writable": true
-        },
-        {
-          "name": "recoveryTokenVault",
-          "docs": [
-            "Recovery pool token account - receives fees during recovery",
-            "(except in CreatorRevenue mode)"
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  116,
-                  111,
-                  107,
                   101,
                   110,
+                  101,
+                  115,
+                  105,
+                  115,
                   95,
-                  118,
-                  97,
-                  117,
+                  99,
+                  111,
                   108,
-                  116
+                  108,
+                  101,
+                  99,
+                  116,
+                  105,
+                  111,
+                  110
                 ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign"
               }
             ]
           }
         },
         {
-          "name": "creatorFeeTracker",
+          "name": "collectionTokenAccount",
           "docs": [
-            "Creator fee tracker"
+            "Token account to hold the single collection NFT."
           ],
           "writable": true,
           "pda": {
             "seeds": [
               {
+                "kind": "account",
+                "path": "protocolState"
+              },
+              {
                 "kind": "const",
                 "value": [
-                  99,
-                  114,
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
                   101,
-                  97,
-                  116,
-                  111,
-                  114,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
                   95,
-                  116,
-                  114,
-                  97,
-                  99,
-                  107,
-                  101,
-                  114
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
                 ]
               },
               {
                 "kind": "account",
-                "path": "sovereign"
+                "path": "collectionMint"
               }
-            ]
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
           }
         },
         {
-          "name": "tokenProgram2022",
-          "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+          "name": "collectionMetadata",
+          "writable": true
+        },
+        {
+          "name": "collectionMasterEdition",
+          "writable": true
+        },
+        {
+          "name": "metadataProgram",
+          "address": "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
         }
       ],
       "args": []
@@ -2495,12 +2940,16 @@ export type SovereignLiquidity = {
           }
         },
         {
-          "name": "depositor"
+          "name": "depositor",
+          "docs": [
+            "Depositor who will receive the NFT — must sign to prevent front-running / NFT theft"
+          ],
+          "signer": true
         },
         {
           "name": "nftMint",
           "docs": [
-            "Genesis NFT mint for this specific depositor"
+            "Genesis NFT mint for this specific depositor (Token-2022 for extension support)"
           ],
           "writable": true,
           "pda": {
@@ -2540,7 +2989,7 @@ export type SovereignLiquidity = {
         {
           "name": "nftTokenAccount",
           "docs": [
-            "NFT token account for the depositor"
+            "NFT token account for the depositor (Token-2022)"
           ],
           "writable": true,
           "pda": {
@@ -2550,41 +2999,8 @@ export type SovereignLiquidity = {
                 "path": "depositor"
               },
               {
-                "kind": "const",
-                "value": [
-                  6,
-                  221,
-                  246,
-                  225,
-                  215,
-                  101,
-                  161,
-                  147,
-                  217,
-                  203,
-                  225,
-                  70,
-                  206,
-                  235,
-                  121,
-                  172,
-                  28,
-                  180,
-                  133,
-                  237,
-                  95,
-                  91,
-                  55,
-                  145,
-                  58,
-                  140,
-                  245,
-                  133,
-                  126,
-                  255,
-                  0,
-                  169
-                ]
+                "kind": "account",
+                "path": "tokenProgram"
               },
               {
                 "kind": "account",
@@ -2635,12 +3051,84 @@ export type SovereignLiquidity = {
           "writable": true
         },
         {
+          "name": "protocolState",
+          "docs": [
+            "Protocol state — signs the VerifyCollection CPI as collection authority"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "collectionMint",
+          "docs": [
+            "Collection mint PDA"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  101,
+                  110,
+                  101,
+                  115,
+                  105,
+                  115,
+                  95,
+                  99,
+                  111,
+                  108,
+                  108,
+                  101,
+                  99,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "collectionMetadata",
+          "writable": true
+        },
+        {
+          "name": "collectionMasterEdition",
+          "docs": [
+            "Must be writable: VerifyCollection CPI updates supply tracking on the master edition."
+          ],
+          "writable": true
+        },
+        {
           "name": "metadataProgram",
           "address": "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
         },
         {
-          "name": "tokenProgram",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          "name": "tokenProgram"
         },
         {
           "name": "associatedTokenProgram",
@@ -2653,6 +3141,59 @@ export type SovereignLiquidity = {
         {
           "name": "rent",
           "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "proposeAuthorityTransfer",
+      "docs": [
+        "Propose protocol authority transfer (step 1 of 2)"
+      ],
+      "discriminator": [
+        57,
+        206,
+        225,
+        129,
+        35,
+        111,
+        174,
+        145
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "newAuthority"
+        },
+        {
+          "name": "protocolState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -2683,6 +3224,7 @@ export type SovereignLiquidity = {
         },
         {
           "name": "sovereign",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -2820,23 +3362,85 @@ export type SovereignLiquidity = {
       "args": []
     },
     {
-      "name": "renounceFeeThreshold",
+      "name": "reallocProtocolState",
       "docs": [
-        "Permanently renounce fee threshold (irreversible)"
+        "Realloc ProtocolState account to current layout size.",
+        "One-time migration after program upgrade adds new fields.",
+        "Protocol authority only."
       ],
       "discriminator": [
-        235,
-        172,
-        32,
-        20,
+        119,
         123,
-        134,
-        216,
-        147
+        144,
+        129,
+        40,
+        39,
+        79,
+        47
       ],
       "accounts": [
         {
-          "name": "creator",
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocolState",
+          "docs": [
+            "buffer may be too small for the current ProtocolState layout."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "redeemTokensForGor",
+      "docs": [
+        "Token holders burn sovereign tokens for proportional surplus GOR.",
+        "Only available after governance unwind (Unwound state), within 30-day window."
+      ],
+      "discriminator": [
+        196,
+        246,
+        215,
+        13,
+        59,
+        245,
+        34,
+        166
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "writable": true,
           "signer": true
         },
         {
@@ -2867,28 +3471,26 @@ export type SovereignLiquidity = {
           }
         },
         {
-          "name": "creatorFeeTracker",
+          "name": "solVault",
+          "docs": [
+            "Source of GOR payout to token holders redeeming against the token_redemption_pool.",
+            "Funds flow only to `caller` after verified token transfer — no arbitrary withdrawal possible."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
               {
                 "kind": "const",
                 "value": [
-                  99,
-                  114,
-                  101,
-                  97,
-                  116,
+                  115,
                   111,
-                  114,
+                  108,
                   95,
-                  116,
-                  114,
+                  118,
                   97,
-                  99,
-                  107,
-                  101,
-                  114
+                  117,
+                  108,
+                  116
                 ]
               },
               {
@@ -2897,6 +3499,34 @@ export type SovereignLiquidity = {
               }
             ]
           }
+        },
+        {
+          "name": "tokenMint",
+          "docs": [
+            "Token mint — needed for transfer_checked (reads decimals)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "callerTokenAccount",
+          "docs": [
+            "Caller's token account — tokens will be transferred from here to creator"
+          ],
+          "writable": true
+        },
+        {
+          "name": "creatorTokenAccount",
+          "docs": [
+            "Creator's token account — receives the redeemed tokens instead of burning"
+          ],
+          "writable": true
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": []
@@ -2964,24 +3594,28 @@ export type SovereignLiquidity = {
       "args": []
     },
     {
-      "name": "setCreatorFeeWallet",
+      "name": "retireSovereign",
       "docs": [
-        "Update the creator's fee destination wallet.",
-        "CreatorRevenue fee mode only."
+        "Retire a sovereign after its 30-day claim window expires.",
+        "Permissionless crank — anyone can call.",
+        "Sovereign must be Failed, Halted, or Unwound with unwound_at + 30 days elapsed."
       ],
       "discriminator": [
-        93,
-        15,
-        226,
-        113,
-        182,
-        208,
-        251,
-        46
+        130,
+        38,
+        240,
+        45,
+        78,
+        77,
+        178,
+        199
       ],
       "accounts": [
         {
-          "name": "creator",
+          "name": "caller",
+          "docs": [
+            "Anyone can crank this — no authority check needed."
+          ],
           "signer": true
         },
         {
@@ -3012,12 +3646,7 @@ export type SovereignLiquidity = {
           }
         }
       ],
-      "args": [
-        {
-          "name": "newWallet",
-          "type": "pubkey"
-        }
-      ]
+      "args": []
     },
     {
       "name": "setProtocolPaused",
@@ -3075,146 +3704,53 @@ export type SovereignLiquidity = {
       ]
     },
     {
-      "name": "swapBuy",
+      "name": "setUnwindBalance",
       "docs": [
-        "Buy tokens with GOR via engine pool"
+        "Set unwind_sol_balance from sol_vault balance (migration helper).",
+        "Protocol authority only. Sovereign must be Halted.",
+        "Enables emergency_withdraw to calculate proportional shares."
       ],
       "discriminator": [
-        76,
-        98,
-        154,
-        93,
-        42,
-        113,
-        62,
-        139
-      ],
-      "accounts": [
-        {
-          "name": "trader",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "sovereign",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  111,
-                  118,
-                  101,
-                  114,
-                  101,
-                  105,
-                  103,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign.sovereign_id",
-                "account": "sovereignState"
-              }
-            ]
-          }
-        },
-        {
-          "name": "enginePool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  101,
-                  110,
-                  103,
-                  105,
-                  110,
-                  101,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign"
-              }
-            ]
-          }
-        },
-        {
-          "name": "tokenMint",
-          "docs": [
-            "The token mint"
-          ]
-        },
-        {
-          "name": "engineGorVault",
-          "docs": [
-            "Engine GOR vault — pool receives GOR here"
-          ],
-          "writable": true
-        },
-        {
-          "name": "engineTokenVault",
-          "docs": [
-            "Engine token vault — pool sends tokens from here"
-          ],
-          "writable": true
-        },
-        {
-          "name": "traderTokenAccount",
-          "docs": [
-            "Trader's token account to receive bought tokens"
-          ],
-          "writable": true
-        },
-        {
-          "name": "tokenProgram"
-        },
-        {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "gorInput",
-          "type": "u64"
-        },
-        {
-          "name": "minTokensOut",
-          "type": "u64"
-        }
-      ]
-    },
-    {
-      "name": "swapSell",
-      "docs": [
-        "Sell tokens for GOR via engine pool"
-      ],
-      "discriminator": [
-        176,
-        40,
+        107,
+        14,
+        236,
+        186,
+        119,
+        221,
         55,
-        165,
-        110,
-        62,
-        84,
-        97
+        136
       ],
       "accounts": [
         {
-          "name": "trader",
+          "name": "caller",
           "writable": true,
           "signer": true
+        },
+        {
+          "name": "protocolState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "sovereign",
@@ -3244,24 +3780,24 @@ export type SovereignLiquidity = {
           }
         },
         {
-          "name": "enginePool",
-          "writable": true,
+          "name": "solVault",
+          "docs": [
+            "Sovereign's SOL vault — read balance to set unwind_sol_balance"
+          ],
           "pda": {
             "seeds": [
               {
                 "kind": "const",
                 "value": [
-                  101,
-                  110,
-                  103,
-                  105,
-                  110,
-                  101,
+                  115,
+                  111,
+                  108,
                   95,
-                  112,
-                  111,
-                  111,
-                  108
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
                 ]
               },
               {
@@ -3270,43 +3806,9 @@ export type SovereignLiquidity = {
               }
             ]
           }
-        },
-        {
-          "name": "tokenMint"
-        },
-        {
-          "name": "engineGorVault",
-          "writable": true
-        },
-        {
-          "name": "engineTokenVault",
-          "writable": true
-        },
-        {
-          "name": "traderTokenAccount",
-          "docs": [
-            "Trader's token account to send tokens from"
-          ],
-          "writable": true
-        },
-        {
-          "name": "tokenProgram"
-        },
-        {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
         }
       ],
-      "args": [
-        {
-          "name": "tokenInput",
-          "type": "u64"
-        },
-        {
-          "name": "minGorOut",
-          "type": "u64"
-        }
-      ]
+      "args": []
     },
     {
       "name": "sweepRedemptionPool",
@@ -3421,76 +3923,21 @@ export type SovereignLiquidity = {
       "args": []
     },
     {
-      "name": "transferProtocolAuthority",
-      "docs": [
-        "Transfer protocol authority"
-      ],
+      "name": "syncEngineState",
       "discriminator": [
-        35,
-        76,
-        36,
-        77,
-        136,
-        112,
-        158,
-        222
+        8,
+        187,
+        225,
+        151,
+        102,
+        34,
+        14,
+        202
       ],
       "accounts": [
         {
-          "name": "authority",
-          "signer": true
-        },
-        {
-          "name": "newAuthority"
-        },
-        {
-          "name": "protocolState",
+          "name": "payer",
           "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  112,
-                  114,
-                  111,
-                  116,
-                  111,
-                  99,
-                  111,
-                  108,
-                  95,
-                  115,
-                  116,
-                  97,
-                  116,
-                  101
-                ]
-              }
-            ]
-          }
-        }
-      ],
-      "args": []
-    },
-    {
-      "name": "updateFeeThreshold",
-      "docs": [
-        "Update creator's fee threshold (can only decrease)"
-      ],
-      "discriminator": [
-        78,
-        81,
-        212,
-        95,
-        133,
-        180,
-        7,
-        137
-      ],
-      "accounts": [
-        {
-          "name": "creator",
           "signer": true
         },
         {
@@ -3521,42 +3968,162 @@ export type SovereignLiquidity = {
           }
         },
         {
-          "name": "creatorFeeTracker",
-          "writable": true,
+          "name": "enginePool",
+          "docs": [
+            "Engine pool account (owned by engine program, writable for fee-snap CPI)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "protocolState",
+          "docs": [
+            "Protocol state — needed to read default_swap_fee_bps on transition"
+          ],
           "pda": {
             "seeds": [
               {
                 "kind": "const",
                 "value": [
-                  99,
+                  112,
                   114,
-                  101,
-                  97,
+                  111,
                   116,
                   111,
-                  114,
-                  95,
-                  116,
-                  114,
-                  97,
                   99,
-                  107,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "engineProgram",
+          "docs": [
+            "The sovereign-engine-v3 program (needed for fee-snap CPI)"
+          ],
+          "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "updateEngineFees",
+      "docs": [
+        "Update engine pool fee parameters (swap fee, creator share, bin fee share).",
+        "CPIs to sovereign_engine_v3::update_fees, sovereign PDA signs.",
+        "Protocol authority only (governance-gated)."
+      ],
+      "discriminator": [
+        85,
+        144,
+        7,
+        246,
+        64,
+        172,
+        67,
+        16
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Protocol authority — only admin can adjust engine fees"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocolState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "sovereign",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
                   101,
-                  114
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
                 ]
               },
               {
                 "kind": "account",
-                "path": "sovereign"
+                "path": "sovereign.sovereign_id",
+                "account": "sovereignState"
               }
             ]
           }
+        },
+        {
+          "name": "enginePool",
+          "docs": [
+            "Engine pool (owned by engine program)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "engineProgram",
+          "docs": [
+            "The sovereign-engine-v3 program"
+          ],
+          "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt"
         }
       ],
       "args": [
         {
-          "name": "newThresholdBps",
-          "type": "u16"
+          "name": "newSwapFeeBps",
+          "type": {
+            "option": "u16"
+          }
+        },
+        {
+          "name": "newCreatorFeeShareBps",
+          "type": {
+            "option": "u16"
+          }
+        },
+        {
+          "name": "newBinFeeShareBps",
+          "type": {
+            "option": "u16"
+          }
         }
       ]
     },
@@ -3665,6 +4232,24 @@ export type SovereignLiquidity = {
         },
         {
           "name": "newGovernancePassThresholdBps",
+          "type": {
+            "option": "u16"
+          }
+        },
+        {
+          "name": "newDefaultSwapFeeBps",
+          "type": {
+            "option": "u16"
+          }
+        },
+        {
+          "name": "newByoMinSupplyBps",
+          "type": {
+            "option": "u16"
+          }
+        },
+        {
+          "name": "newCreatorFeeShareBps",
           "type": {
             "option": "u16"
           }
@@ -4146,118 +4731,6 @@ export type SovereignLiquidity = {
       "args": []
     },
     {
-      "name": "withdrawCreatorFees",
-      "docs": [
-        "Creator withdraws earned fees"
-      ],
-      "discriminator": [
-        8,
-        30,
-        213,
-        18,
-        121,
-        105,
-        129,
-        222
-      ],
-      "accounts": [
-        {
-          "name": "creator",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "sovereign",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  111,
-                  118,
-                  101,
-                  114,
-                  101,
-                  105,
-                  103,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign.sovereign_id",
-                "account": "sovereignState"
-              }
-            ]
-          }
-        },
-        {
-          "name": "creatorFeeTracker",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  114,
-                  101,
-                  97,
-                  116,
-                  111,
-                  114,
-                  95,
-                  116,
-                  114,
-                  97,
-                  99,
-                  107,
-                  101,
-                  114
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign"
-              }
-            ]
-          }
-        },
-        {
-          "name": "feeVault",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  111,
-                  108,
-                  95,
-                  118,
-                  97,
-                  117,
-                  108,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign"
-              }
-            ]
-          }
-        },
-        {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": []
-    },
-    {
       "name": "withdrawFailed",
       "docs": [
         "Investor withdraws from failed bonding"
@@ -4401,32 +4874,6 @@ export type SovereignLiquidity = {
       ]
     },
     {
-      "name": "engineLpClaim",
-      "discriminator": [
-        192,
-        153,
-        152,
-        113,
-        30,
-        59,
-        15,
-        117
-      ]
-    },
-    {
-      "name": "enginePool",
-      "discriminator": [
-        33,
-        170,
-        235,
-        4,
-        158,
-        212,
-        146,
-        169
-      ]
-    },
-    {
       "name": "proposal",
       "discriminator": [
         26,
@@ -4520,6 +4967,19 @@ export type SovereignLiquidity = {
       ]
     },
     {
+      "name": "collectionInitialized",
+      "discriminator": [
+        254,
+        157,
+        250,
+        175,
+        1,
+        48,
+        188,
+        53
+      ]
+    },
+    {
       "name": "creatorEscrowed",
       "discriminator": [
         36,
@@ -4546,55 +5006,42 @@ export type SovereignLiquidity = {
       ]
     },
     {
-      "name": "creatorFeeClaimEvent",
+      "name": "creatorFeeShareUpdated",
       "discriminator": [
-        165,
-        50,
-        11,
-        230,
-        122,
-        215,
-        114,
-        169
-      ]
-    },
-    {
-      "name": "creatorFeeWalletUpdated",
-      "discriminator": [
-        28,
-        92,
-        248,
-        103,
-        167,
-        192,
-        243,
-        110
-      ]
-    },
-    {
-      "name": "creatorMarketBuyExecuted",
-      "discriminator": [
-        20,
-        88,
-        173,
-        10,
-        82,
-        209,
-        183,
-        46
-      ]
-    },
-    {
-      "name": "creatorVaultWithdrawn",
-      "discriminator": [
-        188,
-        200,
-        176,
-        20,
-        172,
-        85,
         1,
-        170
+        11,
+        54,
+        164,
+        187,
+        102,
+        133,
+        196
+      ]
+    },
+    {
+      "name": "creatorTransferFeesClaimed",
+      "discriminator": [
+        195,
+        54,
+        49,
+        194,
+        225,
+        10,
+        62,
+        150
+      ]
+    },
+    {
+      "name": "creatorUnwindClaimed",
+      "discriminator": [
+        40,
+        118,
+        40,
+        67,
+        133,
+        10,
+        47,
+        120
       ]
     },
     {
@@ -4608,19 +5055,6 @@ export type SovereignLiquidity = {
         40,
         196,
         254
-      ]
-    },
-    {
-      "name": "emergencyUnlocked",
-      "discriminator": [
-        0,
-        117,
-        48,
-        217,
-        193,
-        189,
-        130,
-        191
       ]
     },
     {
@@ -4647,45 +5081,6 @@ export type SovereignLiquidity = {
         130,
         70,
         107
-      ]
-    },
-    {
-      "name": "feeThresholdRenounced",
-      "discriminator": [
-        53,
-        165,
-        108,
-        68,
-        229,
-        41,
-        1,
-        62
-      ]
-    },
-    {
-      "name": "feeThresholdUpdated",
-      "discriminator": [
-        44,
-        213,
-        134,
-        129,
-        248,
-        94,
-        27,
-        145
-      ]
-    },
-    {
-      "name": "feesClaimed",
-      "discriminator": [
-        22,
-        104,
-        110,
-        222,
-        38,
-        157,
-        14,
-        62
       ]
     },
     {
@@ -4725,45 +5120,6 @@ export type SovereignLiquidity = {
         54,
         114,
         18
-      ]
-    },
-    {
-      "name": "lpFeeClaimEvent",
-      "discriminator": [
-        232,
-        101,
-        32,
-        226,
-        58,
-        178,
-        186,
-        11
-      ]
-    },
-    {
-      "name": "poolCreatedEvent",
-      "discriminator": [
-        25,
-        94,
-        75,
-        47,
-        112,
-        99,
-        53,
-        63
-      ]
-    },
-    {
-      "name": "poolRestricted",
-      "discriminator": [
-        19,
-        188,
-        177,
-        232,
-        218,
-        172,
-        177,
-        242
       ]
     },
     {
@@ -4819,32 +5175,6 @@ export type SovereignLiquidity = {
       ]
     },
     {
-      "name": "recoveryComplete",
-      "discriminator": [
-        125,
-        91,
-        195,
-        23,
-        239,
-        223,
-        59,
-        133
-      ]
-    },
-    {
-      "name": "recoveryCompleteEvent",
-      "discriminator": [
-        58,
-        222,
-        82,
-        88,
-        123,
-        151,
-        27,
-        62
-      ]
-    },
-    {
       "name": "sellFeeRenounced",
       "discriminator": [
         71,
@@ -4871,6 +5201,19 @@ export type SovereignLiquidity = {
       ]
     },
     {
+      "name": "sovereignClosed",
+      "discriminator": [
+        220,
+        11,
+        229,
+        104,
+        150,
+        43,
+        160,
+        218
+      ]
+    },
+    {
       "name": "sovereignCreated",
       "discriminator": [
         201,
@@ -4884,16 +5227,16 @@ export type SovereignLiquidity = {
       ]
     },
     {
-      "name": "sovereignFinalized",
+      "name": "sovereignHalted",
       "discriminator": [
-        74,
-        31,
-        70,
-        10,
-        174,
-        200,
-        37,
-        179
+        124,
+        242,
+        81,
+        56,
+        7,
+        194,
+        12,
+        34
       ]
     },
     {
@@ -4910,19 +5253,6 @@ export type SovereignLiquidity = {
       ]
     },
     {
-      "name": "swapEvent",
-      "discriminator": [
-        64,
-        198,
-        205,
-        232,
-        38,
-        8,
-        113,
-        226
-      ]
-    },
-    {
       "name": "tokenCreated",
       "discriminator": [
         236,
@@ -4936,16 +5266,16 @@ export type SovereignLiquidity = {
       ]
     },
     {
-      "name": "transferFeesHarvested",
+      "name": "tokensRedeemed",
       "discriminator": [
-        12,
-        216,
-        42,
-        166,
-        89,
-        138,
-        67,
-        153
+        45,
+        78,
+        148,
+        246,
+        116,
+        201,
+        3,
+        13
       ]
     },
     {
@@ -5034,588 +5364,338 @@ export type SovereignLiquidity = {
     },
     {
       "code": 6006,
-      "name": "recoveryNotComplete",
-      "msg": "Recovery phase is not complete"
-    },
-    {
-      "code": 6007,
-      "name": "recoveryAlreadyComplete",
-      "msg": "Recovery phase is already complete"
-    },
-    {
-      "code": 6008,
       "name": "creatorDepositExceedsMax",
       "msg": "Creator deposit exceeds maximum allowed (1% of bond target)"
     },
     {
-      "code": 6009,
+      "code": 6007,
       "name": "zeroDeposit",
       "msg": "Deposit amount is zero"
     },
     {
-      "code": 6010,
+      "code": 6008,
       "name": "depositTooSmall",
       "msg": "Deposit amount below minimum (0.1 SOL)"
     },
     {
-      "code": 6011,
+      "code": 6009,
       "name": "noDepositRecord",
       "msg": "No deposit record found"
     },
     {
-      "code": 6012,
-      "name": "depositExceedsBondTarget",
-      "msg": "Deposit exceeds bond target"
-    },
-    {
-      "code": 6013,
-      "name": "insufficientDeposit",
-      "msg": "Withdrawal amount exceeds deposit"
-    },
-    {
-      "code": 6014,
+      "code": 6010,
       "name": "zeroWithdraw",
       "msg": "Withdrawal amount is zero"
     },
     {
-      "code": 6015,
+      "code": 6011,
       "name": "insufficientDepositBalance",
       "msg": "Insufficient deposit balance"
     },
     {
-      "code": 6016,
+      "code": 6012,
       "name": "creatorCannotWithdrawDuringBonding",
       "msg": "Creator cannot withdraw during bonding phase"
     },
     {
-      "code": 6017,
+      "code": 6013,
       "name": "insufficientVaultBalance",
       "msg": "Insufficient vault balance"
     },
     {
-      "code": 6018,
+      "code": 6014,
       "name": "nothingToWithdraw",
       "msg": "Nothing to withdraw"
     },
     {
-      "code": 6019,
+      "code": 6015,
       "name": "creatorMustUseCreatorWithdraw",
       "msg": "Creator must use creator-specific withdraw instruction"
     },
     {
-      "code": 6020,
-      "name": "notNftOwner",
-      "msg": "Caller is not the NFT owner"
-    },
-    {
-      "code": 6021,
-      "name": "nftAlreadyUsed",
-      "msg": "NFT has already been used for this action"
-    },
-    {
-      "code": 6022,
+      "code": 6016,
       "name": "nftAlreadyMinted",
       "msg": "NFT has already been minted"
     },
     {
-      "code": 6023,
+      "code": 6017,
       "name": "wrongNft",
       "msg": "Wrong NFT for this deposit record"
     },
     {
-      "code": 6024,
+      "code": 6018,
       "name": "nftNotMinted",
       "msg": "NFT not yet minted"
     },
     {
-      "code": 6025,
+      "code": 6019,
       "name": "noGenesisNft",
       "msg": "No Genesis NFT - cannot participate in governance"
     },
     {
-      "code": 6026,
-      "name": "creatorCannotClaimDuringRecovery",
-      "msg": "Creator cannot claim fees during recovery phase"
-    },
-    {
-      "code": 6027,
-      "name": "creatorCannotVote",
-      "msg": "Creator cannot vote during recovery phase"
-    },
-    {
-      "code": 6028,
-      "name": "creatorTokensLocked",
-      "msg": "Creator tokens are locked until recovery complete or unwind"
-    },
-    {
-      "code": 6029,
-      "name": "insufficientInactivity",
-      "msg": "Not enough inactivity to propose unwind"
-    },
-    {
-      "code": 6030,
-      "name": "votingNotEnded",
-      "msg": "Voting period has not ended"
-    },
-    {
-      "code": 6031,
+      "code": 6020,
       "name": "votingPeriodNotEnded",
       "msg": "Voting period has not ended yet"
     },
     {
-      "code": 6032,
-      "name": "votingEnded",
-      "msg": "Voting period has ended"
-    },
-    {
-      "code": 6033,
+      "code": 6021,
       "name": "votingPeriodEnded",
       "msg": "Voting period has ended"
     },
     {
-      "code": 6034,
-      "name": "quorumNotReached",
-      "msg": "Proposal did not reach quorum (67%)"
-    },
-    {
-      "code": 6035,
-      "name": "proposalNotPassed",
-      "msg": "Proposal did not pass (need 51%)"
-    },
-    {
-      "code": 6036,
+      "code": 6022,
       "name": "proposalNotActive",
       "msg": "Proposal is not active"
     },
     {
-      "code": 6037,
-      "name": "alreadyVoted",
-      "msg": "Already voted on this proposal"
-    },
-    {
-      "code": 6038,
-      "name": "governanceNotActive",
-      "msg": "Governance is only active during recovery phase"
-    },
-    {
-      "code": 6039,
+      "code": 6023,
       "name": "noVotingPower",
       "msg": "No voting power"
     },
     {
-      "code": 6040,
-      "name": "timelockNotExpired",
-      "msg": "Timelock period has not expired"
-    },
-    {
-      "code": 6041,
-      "name": "proposalAlreadyExecuted",
-      "msg": "Proposal already executed"
-    },
-    {
-      "code": 6042,
+      "code": 6024,
       "name": "activeProposalExists",
       "msg": "Active proposal already exists"
     },
     {
-      "code": 6043,
-      "name": "cannotGovernanceUnwindInActivePhase",
-      "msg": "Cannot unwind in active phase via governance"
+      "code": 6025,
+      "name": "proposalNotFinalized",
+      "msg": "Proposal is not yet finalized — vote record cannot be closed"
     },
     {
-      "code": 6044,
-      "name": "autoUnwindConditionsNotMet",
-      "msg": "Auto-unwind conditions not met"
-    },
-    {
-      "code": 6045,
-      "name": "onlyActivePhase",
-      "msg": "Activity check only valid in Active phase"
-    },
-    {
-      "code": 6046,
-      "name": "activityCheckAlreadyInProgress",
-      "msg": "Activity check already in progress"
-    },
-    {
-      "code": 6047,
+      "code": 6026,
       "name": "activityCheckAlreadyPending",
       "msg": "Activity check already pending"
     },
     {
-      "code": 6048,
-      "name": "noActivityCheckInProgress",
-      "msg": "No activity check in progress"
-    },
-    {
-      "code": 6049,
+      "code": 6027,
       "name": "noActivityCheckPending",
       "msg": "No activity check pending"
     },
     {
-      "code": 6050,
-      "name": "activityCheckTooEarly",
-      "msg": "Must wait 90+ days before executing activity check"
-    },
-    {
-      "code": 6051,
+      "code": 6028,
       "name": "activityCheckPeriodNotElapsed",
       "msg": "Activity check period has not elapsed"
     },
     {
-      "code": 6052,
-      "name": "activityCheckCooldownNotExpired",
-      "msg": "Must wait 7 days after cancelled check before initiating new one"
-    },
-    {
-      "code": 6053,
-      "name": "feeThresholdRenounced",
-      "msg": "Fee threshold has been renounced and cannot be changed"
-    },
-    {
-      "code": 6054,
-      "name": "alreadyRenounced",
-      "msg": "Fee threshold already renounced"
-    },
-    {
-      "code": 6055,
-      "name": "feeThresholdAlreadyRenounced",
-      "msg": "Fee threshold already renounced"
-    },
-    {
-      "code": 6056,
-      "name": "cannotIncreaseFeeThreshold",
-      "msg": "Cannot increase fee threshold"
-    },
-    {
-      "code": 6057,
-      "name": "invalidFeeThreshold",
-      "msg": "Invalid fee threshold"
-    },
-    {
-      "code": 6058,
-      "name": "invalidPool",
-      "msg": "Invalid pool - does not match sovereign's pool_state"
-    },
-    {
-      "code": 6059,
+      "code": 6029,
       "name": "invalidMint",
       "msg": "Invalid mint - does not match sovereign's token_mint"
     },
     {
-      "code": 6060,
-      "name": "invalidProgram",
-      "msg": "Invalid program ID for CPI"
-    },
-    {
-      "code": 6061,
+      "code": 6030,
       "name": "invalidTreasury",
       "msg": "Invalid treasury address - cannot be zero"
     },
     {
-      "code": 6062,
+      "code": 6031,
       "name": "invalidBondTarget",
       "msg": "Invalid bond target - must be at least 50 SOL"
     },
     {
-      "code": 6063,
+      "code": 6032,
       "name": "invalidBondDuration",
       "msg": "Invalid bond duration - must be 7-30 days"
     },
     {
-      "code": 6064,
-      "name": "invalidSellFee",
-      "msg": "Invalid sell fee - must be 0-3%"
-    },
-    {
-      "code": 6065,
+      "code": 6033,
       "name": "invalidAmount",
       "msg": "Invalid amount"
     },
     {
-      "code": 6066,
-      "name": "bondTargetNotMet",
-      "msg": "Bond target not met"
-    },
-    {
-      "code": 6067,
+      "code": 6034,
       "name": "bondTargetMet",
       "msg": "Bond target already met"
     },
     {
-      "code": 6068,
+      "code": 6035,
       "name": "unauthorized",
       "msg": "unauthorized"
     },
     {
-      "code": 6069,
+      "code": 6036,
       "name": "feeTooHigh",
       "msg": "Fee too high"
     },
     {
-      "code": 6070,
-      "name": "poolRestricted",
-      "msg": "Pool is restricted - only Genesis position can LP"
-    },
-    {
-      "code": 6071,
-      "name": "poolNotRestricted",
-      "msg": "Pool is not restricted"
-    },
-    {
-      "code": 6072,
-      "name": "positionAlreadyUnwound",
-      "msg": "Position already unwound"
-    },
-    {
-      "code": 6073,
-      "name": "invalidPosition",
-      "msg": "Invalid position - does not match permanent lock"
-    },
-    {
-      "code": 6074,
+      "code": 6037,
       "name": "sellFeeExceedsMax",
       "msg": "Sell fee exceeds maximum (3%)"
     },
     {
-      "code": 6075,
-      "name": "creationFeeExceedsMax",
-      "msg": "Creation fee exceeds maximum (10%)"
-    },
-    {
-      "code": 6076,
-      "name": "unwindFeeExceedsMax",
-      "msg": "Unwind fee exceeds maximum (10%)"
-    },
-    {
-      "code": 6077,
+      "code": 6038,
       "name": "feeControlRenounced",
       "msg": "Fee control has been renounced"
     },
     {
-      "code": 6078,
-      "name": "insufficientCreationFee",
-      "msg": "Insufficient creation fee"
-    },
-    {
-      "code": 6079,
-      "name": "notProtocolAuthority",
-      "msg": "Caller is not the protocol authority"
-    },
-    {
-      "code": 6080,
-      "name": "invalidAutoUnwindPeriod",
-      "msg": "Auto-unwind period outside valid range (90-365 days)"
-    },
-    {
-      "code": 6081,
-      "name": "metadataUriTooLong",
-      "msg": "Token metadata URI is too long"
-    },
-    {
-      "code": 6082,
-      "name": "tokenNameTooLong",
-      "msg": "Token name is too long"
-    },
-    {
-      "code": 6083,
-      "name": "tokenSymbolTooLong",
-      "msg": "Token symbol is too long"
-    },
-    {
-      "code": 6084,
+      "code": 6039,
       "name": "missingTokenName",
       "msg": "Token Launcher: Missing token name"
     },
     {
-      "code": 6085,
+      "code": 6040,
       "name": "missingTokenSymbol",
       "msg": "Token Launcher: Missing token symbol"
     },
     {
-      "code": 6086,
+      "code": 6041,
       "name": "missingTokenSupply",
       "msg": "Token Launcher: Missing token supply"
     },
     {
-      "code": 6087,
+      "code": 6042,
       "name": "invalidTokenName",
       "msg": "Token Launcher: Invalid token name (1-32 chars)"
     },
     {
-      "code": 6088,
+      "code": 6043,
       "name": "invalidTokenSymbol",
       "msg": "Token Launcher: Invalid token symbol (1-10 chars)"
     },
     {
-      "code": 6089,
+      "code": 6044,
       "name": "invalidTokenSupply",
       "msg": "Token Launcher: Invalid token supply (must be > 0)"
     },
     {
-      "code": 6090,
+      "code": 6045,
       "name": "invalidMetadataUri",
       "msg": "Token Launcher: Invalid metadata URI (1-200 chars)"
     },
     {
-      "code": 6091,
+      "code": 6046,
       "name": "invalidSovereignType",
       "msg": "Invalid sovereign type for this operation"
     },
     {
-      "code": 6092,
+      "code": 6047,
       "name": "tokenAlreadyCreated",
       "msg": "Token has already been created for this sovereign"
     },
     {
-      "code": 6093,
+      "code": 6048,
       "name": "missingExistingMint",
       "msg": "BYO Token: Missing existing mint address"
     },
     {
-      "code": 6094,
+      "code": 6049,
       "name": "missingDepositAmount",
       "msg": "BYO Token: Missing deposit amount"
     },
     {
-      "code": 6095,
+      "code": 6050,
       "name": "insufficientTokenDeposit",
       "msg": "BYO Token: Insufficient token deposit (below minimum % required)"
     },
     {
-      "code": 6096,
-      "name": "failedToReadTokenSupply",
-      "msg": "BYO Token: Failed to read token supply"
+      "code": 6051,
+      "name": "byoMintAuthorityNotRenounced",
+      "msg": "BYO Token: Mint authority must be renounced (set to None) before creating a BYO sovereign"
     },
     {
-      "code": 6097,
+      "code": 6052,
+      "name": "byoFreezeAuthorityNotRenounced",
+      "msg": "BYO Token: Freeze authority must be renounced (set to None) before creating a BYO sovereign"
+    },
+    {
+      "code": 6053,
+      "name": "byoSupplyMismatch",
+      "msg": "BYO Token: Live mint supply does not match snapshot taken at create_sovereign — possible inflation or burn since creation"
+    },
+    {
+      "code": 6054,
+      "name": "vaultAmountMismatch",
+      "msg": "Token vault balance does not match expected deposit amount — possible external injection or token loss"
+    },
+    {
+      "code": 6055,
       "name": "alreadyClaimed",
       "msg": "Already claimed"
     },
     {
-      "code": 6098,
+      "code": 6056,
       "name": "nothingToClaim",
       "msg": "Nothing to claim"
     },
     {
-      "code": 6099,
+      "code": 6057,
       "name": "notCreator",
       "msg": "Caller is not the creator"
     },
     {
-      "code": 6100,
-      "name": "notDepositor",
-      "msg": "Caller is not the depositor"
-    },
-    {
-      "code": 6101,
+      "code": 6058,
       "name": "overflow",
       "msg": "Arithmetic overflow"
     },
     {
-      "code": 6102,
-      "name": "underflow",
-      "msg": "Arithmetic underflow"
-    },
-    {
-      "code": 6103,
+      "code": 6059,
       "name": "divisionByZero",
       "msg": "Division by zero"
     },
     {
-      "code": 6104,
+      "code": 6060,
       "name": "noDeposits",
       "msg": "No deposits in the sovereign"
     },
     {
-      "code": 6105,
-      "name": "slippageExceeded",
-      "msg": "Slippage tolerance exceeded"
-    },
-    {
-      "code": 6106,
+      "code": 6061,
       "name": "protocolPaused",
       "msg": "Protocol is currently paused"
     },
     {
-      "code": 6107,
+      "code": 6062,
       "name": "activityCheckCooldownNotElapsed",
       "msg": "Activity check cooldown has not elapsed (7 days required)"
     },
     {
-      "code": 6108,
-      "name": "poolAlreadyCreated",
-      "msg": "Pool already created for this sovereign"
+      "code": 6063,
+      "name": "alreadyHalted",
+      "msg": "Sovereign is already halted"
     },
     {
-      "code": 6109,
-      "name": "poolNotCreated",
-      "msg": "Pool not yet created - call finalize_create_pool first"
-    },
-    {
-      "code": 6110,
-      "name": "invalidTokenOrdering",
-      "msg": "Invalid token ordering - token_mint_0 must be less than token_mint_1"
-    },
-    {
-      "code": 6111,
-      "name": "invalidWgorMint",
-      "msg": "Invalid WGOR mint address"
-    },
-    {
-      "code": 6112,
-      "name": "votingPowerOverflow",
-      "msg": "Voting power calculation overflow - value exceeds u16 max"
-    },
-    {
-      "code": 6113,
-      "name": "alreadyEmergencyUnlocked",
-      "msg": "Sovereign is already emergency unlocked"
-    },
-    {
-      "code": 6114,
+      "code": 6064,
       "name": "noRedemptionPool",
       "msg": "No surplus GOR available for token redemption"
     },
     {
-      "code": 6115,
+      "code": 6065,
       "name": "noCirculatingTokens",
       "msg": "No circulating tokens to redeem against"
     },
     {
-      "code": 6116,
+      "code": 6066,
       "name": "redemptionWindowExpired",
       "msg": "Token redemption window has expired"
     },
     {
-      "code": 6117,
+      "code": 6067,
       "name": "redemptionWindowNotExpired",
       "msg": "Token redemption window has not expired yet"
     },
     {
-      "code": 6118,
-      "name": "invalidFeeMode",
-      "msg": "Invalid fee mode for this operation"
-    },
-    {
-      "code": 6119,
+      "code": 6068,
       "name": "insufficientAccounts",
       "msg": "Insufficient remaining accounts provided"
     },
     {
-      "code": 6120,
-      "name": "liquidityNotRemoved",
-      "msg": "Liquidity has not been removed yet"
+      "code": 6069,
+      "name": "noPendingAuthorityTransfer",
+      "msg": "No pending authority transfer"
     },
     {
-      "code": 6121,
-      "name": "invalidAccountsProvided",
-      "msg": "Invalid accounts provided"
+      "code": 6070,
+      "name": "invalidTokenProgram",
+      "msg": "Invalid token program - must be SPL Token or Token-2022"
     },
     {
-      "code": 6122,
-      "name": "insufficientFunds",
-      "msg": "Insufficient funds for this operation"
+      "code": 6071,
+      "name": "swapFeeOutOfRange",
+      "msg": "Swap fee must be between 100 and 300 bps (1% - 3%)"
+    },
+    {
+      "code": 6072,
+      "name": "alreadyInitialized",
+      "msg": "Already initialized"
     }
   ],
   "types": [
@@ -5692,6 +5772,22 @@ export type SovereignLiquidity = {
       }
     },
     {
+      "name": "collectionInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "collectionMint",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
       "name": "createSovereignParams",
       "docs": [
         "Parameters for creating a new sovereign"
@@ -5756,16 +5852,6 @@ export type SovereignLiquidity = {
             }
           },
           {
-            "name": "feeMode",
-            "type": {
-              "option": {
-                "defined": {
-                  "name": "feeMode"
-                }
-              }
-            }
-          },
-          {
             "name": "metadataUri",
             "type": {
               "option": "string"
@@ -5776,13 +5862,6 @@ export type SovereignLiquidity = {
             "type": {
               "option": "u64"
             }
-          },
-          {
-            "name": "ammConfig",
-            "docs": [
-              "AMM config account address (legacy field, kept for state layout compatibility)"
-            ],
-            "type": "pubkey"
           },
           {
             "name": "swapFeeBps",
@@ -5875,28 +5954,21 @@ export type SovereignLiquidity = {
       }
     },
     {
-      "name": "creatorFeeClaimEvent",
-      "docs": [
-        "Emitted when creator fees are claimed"
-      ],
+      "name": "creatorFeeShareUpdated",
       "type": {
         "kind": "struct",
         "fields": [
           {
-            "name": "pool",
+            "name": "oldCreatorFeeShareBps",
+            "type": "u16"
+          },
+          {
+            "name": "newCreatorFeeShareBps",
+            "type": "u16"
+          },
+          {
+            "name": "updatedBy",
             "type": "pubkey"
-          },
-          {
-            "name": "creator",
-            "type": "pubkey"
-          },
-          {
-            "name": "amount",
-            "type": "u64"
-          },
-          {
-            "name": "totalClaimed",
-            "type": "u64"
           }
         ]
       }
@@ -5929,32 +6001,47 @@ export type SovereignLiquidity = {
             "type": "pubkey"
           },
           {
-            "name": "totalEarned",
+            "name": "padTotalEarned",
             "docs": [
-              "Total fees earned by creator"
+              "DEPRECATED — was total_earned, never written"
             ],
-            "type": "u64"
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
           },
           {
-            "name": "totalClaimed",
+            "name": "padTotalClaimed",
             "docs": [
-              "Total fees claimed by creator"
+              "DEPRECATED — was total_claimed, never written"
             ],
-            "type": "u64"
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
           },
           {
-            "name": "pendingWithdrawal",
+            "name": "padPendingWithdrawal",
             "docs": [
-              "Pending withdrawal amount"
+              "DEPRECATED — was pending_withdrawal, never populated"
             ],
-            "type": "u64"
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
           },
           {
-            "name": "thresholdRenounced",
+            "name": "padThresholdRenounced",
             "docs": [
-              "Whether fee threshold has been renounced"
+              "DEPRECATED — was threshold_renounced"
             ],
-            "type": "bool"
+            "type": "u8"
           },
           {
             "name": "purchasedTokens",
@@ -5985,18 +6072,28 @@ export type SovereignLiquidity = {
             "type": "bool"
           },
           {
-            "name": "sellTaxAccumulated",
+            "name": "padSellTaxAccumulated",
             "docs": [
-              "Sell tax revenue accumulated (Token Launcher only)"
+              "DEPRECATED — was sell_tax_accumulated, never written"
             ],
-            "type": "u64"
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
           },
           {
-            "name": "sellTaxClaimed",
+            "name": "padSellTaxClaimed",
             "docs": [
-              "Sell tax revenue claimed by creator"
+              "DEPRECATED — was sell_tax_claimed"
             ],
-            "type": "u64"
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
           },
           {
             "name": "failedReclaimed",
@@ -6023,51 +6120,7 @@ export type SovereignLiquidity = {
       }
     },
     {
-      "name": "creatorFeeWalletUpdated",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "sovereignId",
-            "type": "u64"
-          },
-          {
-            "name": "oldWallet",
-            "type": "pubkey"
-          },
-          {
-            "name": "newWallet",
-            "type": "pubkey"
-          }
-        ]
-      }
-    },
-    {
-      "name": "creatorMarketBuyExecuted",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "sovereignId",
-            "type": "u64"
-          },
-          {
-            "name": "creator",
-            "type": "pubkey"
-          },
-          {
-            "name": "solAmount",
-            "type": "u64"
-          },
-          {
-            "name": "tokensReceived",
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "creatorVaultWithdrawn",
+      "name": "creatorTransferFeesClaimed",
       "type": {
         "kind": "struct",
         "fields": [
@@ -6082,13 +6135,29 @@ export type SovereignLiquidity = {
           {
             "name": "tokenAmount",
             "type": "u64"
-          },
+          }
+        ]
+      }
+    },
+    {
+      "name": "creatorUnwindClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
           {
-            "name": "waterfallCapGor",
+            "name": "sovereignId",
             "type": "u64"
           },
           {
-            "name": "vaultRemaining",
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "surplusGor",
+            "type": "u64"
+          },
+          {
+            "name": "tokensReturned",
             "type": "u64"
           }
         ]
@@ -6126,9 +6195,10 @@ export type SovereignLiquidity = {
             "type": "u64"
           },
           {
-            "name": "sharesBps",
+            "name": "positionBps",
             "docs": [
-              "Share of the pool in basis points (calculated on finalization)"
+              "Canonical position share in basis points (replaces shares_bps + voting_power_bps).",
+              "Set at NFT mint time; used for SOL-share, fee-share, and governance weight."
             ],
             "type": "u16"
           },
@@ -6140,11 +6210,17 @@ export type SovereignLiquidity = {
             "type": "pubkey"
           },
           {
-            "name": "feesClaimed",
+            "name": "padFeesClaimed",
             "docs": [
-              "Total fees claimed"
+              "DEPRECATED. Previously tracked depositor fee claims (vault was never funded).",
+              "Preserved as padding for account layout compatibility."
             ],
-            "type": "u64"
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
           },
           {
             "name": "nftMint",
@@ -6156,11 +6232,17 @@ export type SovereignLiquidity = {
             }
           },
           {
-            "name": "votingPowerBps",
+            "name": "padVotingPowerBps",
             "docs": [
-              "Voting power in BPS (set when NFT is minted)"
+              "DEPRECATED: was voting_power_bps — superseded by position_bps at the same memory offset.",
+              "Preserved as explicit byte padding to prevent accidental reads/writes."
             ],
-            "type": "u16"
+            "type": {
+              "array": [
+                "u8",
+                2
+              ]
+            }
           },
           {
             "name": "nftMinted",
@@ -6233,30 +6315,6 @@ export type SovereignLiquidity = {
       }
     },
     {
-      "name": "emergencyUnlocked",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "sovereignId",
-            "type": "u64"
-          },
-          {
-            "name": "caller",
-            "type": "pubkey"
-          },
-          {
-            "name": "previousState",
-            "type": "u8"
-          },
-          {
-            "name": "unlockedAt",
-            "type": "i64"
-          }
-        ]
-      }
-    },
-    {
       "name": "emergencyWithdrawal",
       "type": {
         "kind": "struct",
@@ -6272,342 +6330,6 @@ export type SovereignLiquidity = {
           {
             "name": "amount",
             "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "engineLpClaim",
-      "docs": [
-        "Tracks how much LP fee each depositor has already claimed.",
-        "PDA seeds: [\"engine_lp_claim\", pool.key(), depositor.key()]"
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "pool",
-            "docs": [
-              "The pool this record belongs to"
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "depositor",
-            "docs": [
-              "The depositor who owns this claim record"
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "depositAmount",
-            "docs": [
-              "The depositor's share (their deposit amount in the bonding)"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "lastFeePerShare",
-            "docs": [
-              "Fee-per-share value at last claim"
-            ],
-            "type": "u128"
-          },
-          {
-            "name": "totalClaimed",
-            "docs": [
-              "Total GOR claimed by this depositor"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "PDA bump"
-            ],
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "enginePool",
-      "docs": [
-        "The Liquidity Pool account — one per sovereign.",
-        "PDA seeds: [\"engine_pool\", sovereign.key()]",
-        "",
-        "Holds all state for the stepped price ladder, momentum brake,",
-        "fee accounting, and oracle."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "sovereign",
-            "docs": [
-              "The sovereign this pool belongs to"
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "tokenMint",
-            "docs": [
-              "The sovereign token mint"
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "gorVault",
-            "docs": [
-              "Token account holding GOR reserves (native SOL PDA)"
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "tokenVault",
-            "docs": [
-              "Token account holding unsold sovereign tokens"
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "basePrice",
-            "docs": [
-              "Tier 0 price in lamports per token (= total_gor / total_tokens)"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "baseStepBps",
-            "docs": [
-              "Base price step per tier in bps (e.g. 500 = 5%)"
-            ],
-            "type": "u16"
-          },
-          {
-            "name": "baseTokensPerTier",
-            "docs": [
-              "Base tokens per tier (total_supply / DEFAULT_NUM_TIERS)"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "totalTokenSupply",
-            "docs": [
-              "Total token supply deposited into pool at creation"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "swapFeeBps",
-            "docs": [
-              "Total fee on every swap (buy and sell) in bps"
-            ],
-            "type": "u16"
-          },
-          {
-            "name": "creatorFeeShareBps",
-            "docs": [
-              "Creator's share of fees AFTER recovery, in bps of total fees"
-            ],
-            "type": "u16"
-          },
-          {
-            "name": "activeTier",
-            "docs": [
-              "Current active tier index (buys advance up, sells push down)"
-            ],
-            "type": "u32"
-          },
-          {
-            "name": "tokensRemainingInTier",
-            "docs": [
-              "Tokens remaining in the current active tier"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "gorReserve",
-            "docs": [
-              "Trading reserve: GOR backing token sales (EXCLUDES accumulated fees)",
-              "Invariant: gor_reserve >= initial_gor_reserve (ALWAYS)"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "initialGorReserve",
-            "docs": [
-              "Initial GOR reserve from bonding (solvency floor)"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "totalTokensSold",
-            "docs": [
-              "Total tokens currently sold (in circulation outside pool)"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "momentum",
-            "docs": [
-              "Momentum accumulator (scaled by MOMENTUM_PRECISION)"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "lastTradeSlot",
-            "docs": [
-              "Slot of last trade (for time decay)"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "momentumScale",
-            "docs": [
-              "How much each token traded affects momentum"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "momentumDecayBps",
-            "docs": [
-              "Momentum decay per slot in bps"
-            ],
-            "type": "u16"
-          },
-          {
-            "name": "momentumMax",
-            "docs": [
-              "Maximum momentum cap"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "recoveryTarget",
-            "docs": [
-              "Target GOR amount for investors to recover (= initial_gor_reserve)"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "totalRecovered",
-            "docs": [
-              "Total LP fees distributed toward recovery"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "recoveryComplete",
-            "docs": [
-              "Whether recovery is complete (enables creator fee share)"
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "totalFeesCollected",
-            "docs": [
-              "Lifetime total fees collected (GOR)"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "lpFeesAccumulated",
-            "docs": [
-              "LP fees accumulated (claimable by investors)"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "creatorFeesAccumulated",
-            "docs": [
-              "Creator fees accumulated (claimable by creator, only after recovery)"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "lpFeesClaimed",
-            "docs": [
-              "Total LP fees claimed by investors"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "creatorFeesClaimed",
-            "docs": [
-              "Total creator fees claimed"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "lpFeePerShare",
-            "docs": [
-              "Per-share fee accumulator (scaled by FEE_PRECISION)"
-            ],
-            "type": "u128"
-          },
-          {
-            "name": "lastPrice",
-            "docs": [
-              "Last trade execution price (lamports per token)"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "twapAccumulator",
-            "docs": [
-              "Time-weighted price accumulator"
-            ],
-            "type": "u128"
-          },
-          {
-            "name": "twapLastSlot",
-            "docs": [
-              "Slot of last TWAP update"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "totalVolumeBuy",
-            "docs": [
-              "Lifetime buy volume in GOR"
-            ],
-            "type": "u128"
-          },
-          {
-            "name": "totalVolumeSell",
-            "docs": [
-              "Lifetime sell volume in GOR"
-            ],
-            "type": "u128"
-          },
-          {
-            "name": "totalTrades",
-            "docs": [
-              "Total trade count"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "isPaused",
-            "docs": [
-              "Emergency pause flag"
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "feeControlRenounced",
-            "docs": [
-              "Whether the creator has renounced fee control"
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "PDA bump seed"
-            ],
-            "type": "u8"
           }
         ]
       }
@@ -6635,7 +6357,10 @@ export type SovereignLiquidity = {
     {
       "name": "feeMode",
       "docs": [
-        "Fee distribution mode for Token Launcher"
+        "Fee distribution mode — DEPRECATED.",
+        "All sovereigns now use a single model: transfer fees always go to creator,",
+        "swap fees go to recovery until LPs are made whole.",
+        "Kept as enum for on-chain account layout compatibility."
       ],
       "type": {
         "kind": "enum",
@@ -6648,86 +6373,6 @@ export type SovereignLiquidity = {
           },
           {
             "name": "fairLaunch"
-          }
-        ]
-      }
-    },
-    {
-      "name": "feeThresholdRenounced",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "sovereignId",
-            "type": "u64"
-          },
-          {
-            "name": "oldThresholdBps",
-            "type": "u16"
-          },
-          {
-            "name": "renouncedBy",
-            "type": "pubkey"
-          }
-        ]
-      }
-    },
-    {
-      "name": "feeThresholdUpdated",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "sovereignId",
-            "type": "u64"
-          },
-          {
-            "name": "oldThresholdBps",
-            "type": "u16"
-          },
-          {
-            "name": "newThresholdBps",
-            "type": "u16"
-          }
-        ]
-      }
-    },
-    {
-      "name": "feesClaimed",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "sovereignId",
-            "type": "u64"
-          },
-          {
-            "name": "solFees",
-            "type": "u64"
-          },
-          {
-            "name": "tokenFees",
-            "type": "u64"
-          },
-          {
-            "name": "creatorShare",
-            "type": "u64"
-          },
-          {
-            "name": "investorShare",
-            "type": "u64"
-          },
-          {
-            "name": "protocolShare",
-            "type": "u64"
-          },
-          {
-            "name": "totalRecovered",
-            "type": "u64"
-          },
-          {
-            "name": "recoveryTarget",
-            "type": "u64"
           }
         ]
       }
@@ -6812,100 +6457,6 @@ export type SovereignLiquidity = {
           {
             "name": "totalDeposited",
             "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "lpFeeClaimEvent",
-      "docs": [
-        "Emitted when LP fees are claimed by a depositor"
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "pool",
-            "type": "pubkey"
-          },
-          {
-            "name": "depositor",
-            "type": "pubkey"
-          },
-          {
-            "name": "amount",
-            "type": "u64"
-          },
-          {
-            "name": "depositAmount",
-            "type": "u64"
-          },
-          {
-            "name": "feePerShare",
-            "type": "u128"
-          }
-        ]
-      }
-    },
-    {
-      "name": "poolCreatedEvent",
-      "docs": [
-        "Emitted when pool is created"
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "sovereign",
-            "type": "pubkey"
-          },
-          {
-            "name": "pool",
-            "type": "pubkey"
-          },
-          {
-            "name": "basePrice",
-            "type": "u64"
-          },
-          {
-            "name": "baseStepBps",
-            "type": "u16"
-          },
-          {
-            "name": "baseTokensPerTier",
-            "type": "u64"
-          },
-          {
-            "name": "initialGorReserve",
-            "type": "u64"
-          },
-          {
-            "name": "totalTokenSupply",
-            "type": "u64"
-          },
-          {
-            "name": "swapFeeBps",
-            "type": "u16"
-          },
-          {
-            "name": "creatorFeeShareBps",
-            "type": "u16"
-          }
-        ]
-      }
-    },
-    {
-      "name": "poolRestricted",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "sovereignId",
-            "type": "u64"
-          },
-          {
-            "name": "restricted",
-            "type": "bool"
           }
         ]
       }
@@ -7149,6 +6700,10 @@ export type SovereignLiquidity = {
           {
             "name": "unwindFeeBps",
             "type": "u16"
+          },
+          {
+            "name": "byoMinSupplyBps",
+            "type": "u16"
           }
         ]
       }
@@ -7265,11 +6820,11 @@ export type SovereignLiquidity = {
             "type": "u128"
           },
           {
-            "name": "feeThresholdRenounced",
+            "name": "padFeeThresholdRenounced",
             "docs": [
-              "If true, fee threshold is locked forever"
+              "Padding: was fee_threshold_renounced (bool, 1 byte) — removed"
             ],
-            "type": "bool"
+            "type": "u8"
           },
           {
             "name": "paused",
@@ -7340,61 +6895,40 @@ export type SovereignLiquidity = {
               "NOTE: Placed at end to be backwards-compatible with pre-keeper accounts (reads from padding)."
             ],
             "type": "pubkey"
-          }
-        ]
-      }
-    },
-    {
-      "name": "recoveryComplete",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "sovereignId",
-            "type": "u64"
           },
           {
-            "name": "totalRecovered",
-            "type": "u64"
-          },
-          {
-            "name": "recoveryTarget",
-            "type": "u64"
-          },
-          {
-            "name": "completedAt",
-            "type": "i64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "recoveryCompleteEvent",
-      "docs": [
-        "Emitted when recovery completes"
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "sovereign",
+            "name": "pendingAuthority",
+            "docs": [
+              "Pending authority for two-step authority transfer"
+            ],
             "type": "pubkey"
           },
           {
-            "name": "pool",
+            "name": "defaultSwapFeeBps",
+            "docs": [
+              "Default swap fee applied to every sovereign's engine pool once",
+              "recovery completes (Recovery → Active).  Creators choose a",
+              "higher rate (1-3%) during recovery; this value replaces it.",
+              "Default: 30 bps (0.30%)"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "collectionMint",
+            "docs": [
+              "Collection NFT mint address — set once by initialize_collection.",
+              "Used by mint_genesis_nft to verify collection membership."
+            ],
             "type": "pubkey"
           },
           {
-            "name": "totalRecovered",
-            "type": "u64"
-          },
-          {
-            "name": "recoveryTarget",
-            "type": "u64"
-          },
-          {
-            "name": "tradeCount",
-            "type": "u64"
+            "name": "creatorFeeShareBps",
+            "docs": [
+              "Creator's share of LP swap fees in BPS (0–5000 = 0–50%).",
+              "Default: 2000 (20%). Remainder goes to bin LPs.",
+              "Adjustable by protocol authority via update_protocol_fees."
+            ],
+            "type": "u16"
           }
         ]
       }
@@ -7439,6 +6973,34 @@ export type SovereignLiquidity = {
           {
             "name": "updatedBy",
             "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "sovereignClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sovereignId",
+            "type": "u64"
+          },
+          {
+            "name": "solSwept",
+            "type": "u64"
+          },
+          {
+            "name": "tokensBurned",
+            "type": "u64"
+          },
+          {
+            "name": "rentRecovered",
+            "type": "u64"
+          },
+          {
+            "name": "closedAt",
+            "type": "i64"
           }
         ]
       }
@@ -7489,18 +7051,6 @@ export type SovereignLiquidity = {
             "type": "u16"
           },
           {
-            "name": "feeMode",
-            "type": {
-              "defined": {
-                "name": "feeMode"
-              }
-            }
-          },
-          {
-            "name": "ammConfig",
-            "type": "pubkey"
-          },
-          {
             "name": "swapFeeBps",
             "type": "u16"
           }
@@ -7508,7 +7058,7 @@ export type SovereignLiquidity = {
       }
     },
     {
-      "name": "sovereignFinalized",
+      "name": "sovereignHalted",
       "type": {
         "kind": "struct",
         "fields": [
@@ -7517,23 +7067,15 @@ export type SovereignLiquidity = {
             "type": "u64"
           },
           {
-            "name": "totalDeposited",
-            "type": "u64"
+            "name": "caller",
+            "type": "pubkey"
           },
           {
-            "name": "tokenSupply",
-            "type": "u64"
+            "name": "previousState",
+            "type": "u8"
           },
           {
-            "name": "lpTokens",
-            "type": "u64"
-          },
-          {
-            "name": "recoveryTarget",
-            "type": "u64"
-          },
-          {
-            "name": "finalizedAt",
+            "name": "haltedAt",
             "type": "i64"
           }
         ]
@@ -7700,7 +7242,8 @@ export type SovereignLiquidity = {
           {
             "name": "feeMode",
             "docs": [
-              "Fee distribution mode"
+              "Fee distribution mode — DEPRECATED (ignored by all instructions).",
+              "Preserved for account layout compatibility."
             ],
             "type": {
               "defined": {
@@ -7723,11 +7266,16 @@ export type SovereignLiquidity = {
             "type": "u64"
           },
           {
-            "name": "ammConfig",
+            "name": "padAmmConfig",
             "docs": [
-              "DEPRECATED (legacy layout): was SAMM AmmConfig address"
+              "Padding: was amm_config (Pubkey, 32 bytes)"
             ],
-            "type": "pubkey"
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "swapFeeBps",
@@ -7737,81 +7285,131 @@ export type SovereignLiquidity = {
             "type": "u16"
           },
           {
-            "name": "presetParameter",
+            "name": "padPreset",
             "docs": [
-              "DEPRECATED (legacy layout): was DLMM PresetParameter"
+              "Padding: was preset_parameter (Pubkey, 32 bytes)"
             ],
-            "type": "pubkey"
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
-            "name": "binStep",
+            "name": "padBinStep",
             "docs": [
-              "DEPRECATED (legacy layout): was DLMM bin step"
+              "Padding: was bin_step (u16, 2 bytes)"
             ],
-            "type": "u16"
+            "type": {
+              "array": [
+                "u8",
+                2
+              ]
+            }
           },
           {
-            "name": "activeIdAtLaunch",
+            "name": "padActiveId",
             "docs": [
-              "DEPRECATED (legacy layout): was DLMM active bin ID at launch"
+              "Padding: was active_id_at_launch (i32, 4 bytes)"
             ],
-            "type": "i32"
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
           },
           {
-            "name": "lowerBinId",
+            "name": "padLowerBin",
             "docs": [
-              "DEPRECATED (legacy layout): was DLMM lower bin ID"
+              "Padding: was lower_bin_id (i32, 4 bytes)"
             ],
-            "type": "i32"
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
           },
           {
-            "name": "upperBinId",
+            "name": "padUpperBin",
             "docs": [
-              "DEPRECATED (legacy layout): was DLMM upper bin ID"
+              "Padding: was upper_bin_id (i32, 4 bytes)"
             ],
-            "type": "i32"
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
           },
           {
-            "name": "positionBase",
+            "name": "padPositionBase",
             "docs": [
-              "DEPRECATED (legacy layout): was DLMM position base key"
+              "Padding: was position_base (Pubkey, 32 bytes)"
             ],
-            "type": "pubkey"
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
-            "name": "poolState",
+            "name": "padPoolState",
             "docs": [
-              "DEPRECATED (legacy layout): was SAMM PoolState address"
+              "Padding: was pool_state (Pubkey, 32 bytes)"
             ],
-            "type": "pubkey"
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
-            "name": "lbPair",
+            "name": "padLbPair",
             "docs": [
-              "DEPRECATED (legacy layout): was DLMM LbPair address"
+              "Padding: was lb_pair (Pubkey, 32 bytes)"
             ],
-            "type": "pubkey"
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
-            "name": "positionMint",
+            "name": "padPositionMint",
             "docs": [
-              "DEPRECATED (legacy layout): was SAMM position NFT mint"
+              "Padding: was position_mint (Pubkey, 32 bytes)"
             ],
-            "type": "pubkey"
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
-            "name": "position",
+            "name": "padPosition",
             "docs": [
-              "DEPRECATED (legacy layout): was DLMM Position PDA address"
+              "Padding: was position (Pubkey, 32 bytes)"
             ],
-            "type": "pubkey"
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
-            "name": "poolRestricted",
+            "name": "padPoolRestricted",
             "docs": [
-              "Whether pool restriction is active (LP locked to Genesis only)"
+              "Padding: was pool_restricted (bool, 1 byte)"
             ],
-            "type": "bool"
+            "type": "u8"
           },
           {
             "name": "recoveryTarget",
@@ -7828,11 +7426,16 @@ export type SovereignLiquidity = {
             "type": "u64"
           },
           {
-            "name": "totalTokenFeesDistributed",
+            "name": "padTokenFees",
             "docs": [
-              "Total token fees distributed to investors"
+              "Padding: was total_token_fees_distributed (u64, 8 bytes)"
             ],
-            "type": "u64"
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
           },
           {
             "name": "recoveryComplete",
@@ -7863,11 +7466,16 @@ export type SovereignLiquidity = {
             "type": "bool"
           },
           {
-            "name": "feeThresholdBps",
+            "name": "padFeeThreshold",
             "docs": [
-              "Fee threshold in BPS (creator's share)"
+              "Padding: was fee_threshold_bps (u16, 2 bytes) — removed, never consumed"
             ],
-            "type": "u16"
+            "type": {
+              "array": [
+                "u8",
+                2
+              ]
+            }
           },
           {
             "name": "totalFeesCollected",
@@ -7884,11 +7492,16 @@ export type SovereignLiquidity = {
             "type": "u64"
           },
           {
-            "name": "totalSupply",
+            "name": "padTotalSupply",
             "docs": [
-              "Total supply of tokens (for allocation)"
+              "Padding: was total_supply (u64, 8 bytes)"
             ],
-            "type": "u64"
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
           },
           {
             "name": "genesisNftMint",
@@ -8026,13 +7639,47 @@ export type SovereignLiquidity = {
             "type": "u8"
           },
           {
-            "name": "creatorFeeWallet",
+            "name": "padCreatorFeeWallet",
             "docs": [
-              "Creator's destination wallet for fee revenue (Active mode).",
-              "Defaults to creator pubkey. Can be changed via set_creator_fee_wallet.",
-              "In Active mode, Token-2022 withdraw authority transfers to this wallet."
+              "DEPRECATED. Previously stored the creator's fee destination wallet.",
+              "Preserved as padding for account layout compatibility."
             ],
-            "type": "pubkey"
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "totalUnwindClaimed",
+            "docs": [
+              "Total GOR claimed by NFT holders via claim_unwind"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "totalSurplusRedeemed",
+            "docs": [
+              "Total surplus GOR redeemed by token holders via redeem_tokens_for_gor"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "creatorUnwindSurplus",
+            "docs": [
+              "BYO unwind: surplus GOR above investor principal, earmarked for creator.",
+              "Zero for TokenLaunch (surplus goes to token_redemption_pool instead)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "creatorUnwindClaimed",
+            "docs": [
+              "True after creator has claimed their unwind tokens and surplus GOR.",
+              "Prevents double-claim if token_vault receives tokens after claim."
+            ],
+            "type": "bool"
           }
         ]
       }
@@ -8070,7 +7717,7 @@ export type SovereignLiquidity = {
             "name": "failed"
           },
           {
-            "name": "emergencyUnlocked"
+            "name": "halted"
           },
           {
             "name": "retired"
@@ -8091,57 +7738,6 @@ export type SovereignLiquidity = {
           },
           {
             "name": "byoToken"
-          }
-        ]
-      }
-    },
-    {
-      "name": "swapEvent",
-      "docs": [
-        "Emitted on every swap (buy or sell)"
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "sovereign",
-            "type": "pubkey"
-          },
-          {
-            "name": "trader",
-            "type": "pubkey"
-          },
-          {
-            "name": "isBuy",
-            "type": "bool"
-          },
-          {
-            "name": "gorAmount",
-            "type": "u64"
-          },
-          {
-            "name": "tokenAmount",
-            "type": "u64"
-          },
-          {
-            "name": "fee",
-            "type": "u64"
-          },
-          {
-            "name": "executionPrice",
-            "type": "u64"
-          },
-          {
-            "name": "activeTier",
-            "type": "u32"
-          },
-          {
-            "name": "momentum",
-            "type": "u64"
-          },
-          {
-            "name": "gorReserve",
-            "type": "u64"
           }
         ]
       }
@@ -8183,7 +7779,7 @@ export type SovereignLiquidity = {
       }
     },
     {
-      "name": "transferFeesHarvested",
+      "name": "tokensRedeemed",
       "type": {
         "kind": "struct",
         "fields": [
@@ -8192,20 +7788,16 @@ export type SovereignLiquidity = {
             "type": "u64"
           },
           {
-            "name": "feeMode",
-            "type": {
-              "defined": {
-                "name": "feeMode"
-              }
-            }
+            "name": "redeemer",
+            "type": "pubkey"
           },
           {
-            "name": "toCreator",
-            "type": "bool"
+            "name": "tokensTransferred",
+            "type": "u64"
           },
           {
-            "name": "sourceCount",
-            "type": "u32"
+            "name": "gorReceived",
+            "type": "u64"
           }
         ]
       }
@@ -8242,14 +7834,6 @@ export type SovereignLiquidity = {
           {
             "name": "isSell",
             "type": "bool"
-          },
-          {
-            "name": "feeMode",
-            "type": {
-              "defined": {
-                "name": "feeMode"
-              }
-            }
           }
         ]
       }

@@ -7,6 +7,8 @@ import { useSovereign, useDepositRecord } from '@/hooks/useSovereign';
 import { useDeposit, useWithdraw, useFinalizeEnginePool, useEmergencyUnlock, useEmergencyWithdraw, useEmergencyWithdrawCreator, useMintGenesisNft } from '@/hooks/useTransactions';
 import { useTokenImage } from '@/hooks/useTokenImage';
 import { StatusBadge } from '@/components/StatusBadge';
+import { SovereignPageDisplay } from '@/components/SovereignPageDisplay';
+import { useSovereignPage } from '@/hooks/useSovereignPage';
 import { LAMPORTS_PER_GOR, config } from '@/lib/config';
 import { formatDistanceToNow, format } from 'date-fns';
 import Link from 'next/link';
@@ -27,6 +29,7 @@ export default function SovereignDetailPage() {
   const emergencyWithdrawCreator = useEmergencyWithdrawCreator();
   const mintGenesisNft = useMintGenesisNft();
   const { data: imageUrl } = useTokenImage(sovereign?.metadataUri);
+  const { data: sovereignPage } = useSovereignPage(sovereignId);
 
   const [depositAmount, setDepositAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
@@ -225,7 +228,17 @@ export default function SovereignDetailPage() {
           </div>
           </div>
         </div>
-        <StatusBadge status={sovereign.status as any} />
+        <div className="flex items-center gap-2">
+          {isCreator && (
+            <Link
+              href={`/sovereign/${sovereignId}/edit`}
+              className="px-3 py-1.5 rounded-lg bg-[var(--dark-green-bg)] border border-[var(--border)] text-[var(--money-green)] text-xs font-bold hover:border-[var(--money-green)] transition-colors"
+            >
+              ✏️ Edit Page
+            </Link>
+          )}
+          <StatusBadge status={sovereign.status as any} />
+        </div>
       </div>
 
       {/* Stats Grid */}
@@ -244,10 +257,10 @@ export default function SovereignDetailPage() {
         </div>
         <div className="card card-clean p-4">
           <div className="text-xs text-[var(--muted)] mb-1">
-            {isBonding ? 'Time Remaining' : 'Sell Fee'}
+            {isBonding ? 'Time Remaining' : 'Transfer Fee'}
           </div>
           <div className="text-lg font-bold text-white">
-            {isBonding ? timeRemaining : `${(sovereign.sellFeeBps / 100).toFixed(1)}%`}
+            {isBonding ? timeRemaining : sovereign.feeControlRenounced ? '0% 🔒' : `${(sovereign.sellFeeBps / 100).toFixed(1)}%`}
           </div>
         </div>
       </div>
@@ -321,19 +334,11 @@ export default function SovereignDetailPage() {
               <span className="text-white">{(sovereign.swapFeeBps / 100).toFixed(1)}%</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[var(--muted)]">Token Sell Fee</span>
-              <span className="text-white">{(sovereign.sellFeeBps / 100).toFixed(1)}%</span>
+              <span className="text-[var(--muted)]">Transfer Fee</span>
+              <span className="text-white">
+                {sovereign.feeControlRenounced ? '0% 🔒' : `${(sovereign.sellFeeBps / 100).toFixed(1)}%`}
+              </span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-[var(--muted)]">Fee Mode</span>
-              <span className="text-white">{sovereign.feeMode}</span>
-            </div>
-            {sovereign.feeThresholdBps > 0 && (
-              <div className="flex justify-between">
-                <span className="text-[var(--muted)]">Creator Fee Share</span>
-                <span className="text-white">{(sovereign.feeThresholdBps / 100).toFixed(1)}%</span>
-              </div>
-            )}
             <div className="flex justify-between">
               <span className="text-[var(--muted)]">Bond Duration</span>
               <span className="text-white">{Math.round(Number(sovereign.bondDuration) / 86400)} days</span>
@@ -382,10 +387,6 @@ export default function SovereignDetailPage() {
                 <span className="text-[var(--muted)]">Share</span>
                 <span className="text-white">{depositRecord.sharesPercent.toFixed(2)}%</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--muted)]">Fees Claimed</span>
-                <span className="text-white">{depositRecord.feesClaimedGor.toLocaleString()} GOR</span>
-              </div>
               <div className="flex justify-between items-center">
                 <span className="text-[var(--muted)]">$overeign NFT</span>
                 {depositRecord.nftMinted ? (
@@ -409,6 +410,9 @@ export default function SovereignDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Creator Page Content */}
+      {sovereignPage && <SovereignPageDisplay page={sovereignPage} />}
 
       {/* Actions */}
       {connected && (

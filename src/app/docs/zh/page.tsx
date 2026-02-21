@@ -1,6 +1,49 @@
 'use client';
 
+import { useProtocolState, useSovereigns } from '@/hooks';
+import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { LAMPORTS_PER_GOR } from '@/lib/config';
+import { useReadOnlyProgram } from '@/hooks/useProgram';
+import { fetchEnginePool } from '@/lib/program/client';
+
 export default function DocsPageZh() {
+  const program = useReadOnlyProgram();
+  const { data: protocolState, isLoading: protocolLoading } = useProtocolState();
+  const { data: sovereignsData } = useSovereigns();
+
+  const activeSovereign = useMemo(
+    () => sovereignsData?.find((s: any) => s.status === 'Active' || s.status === 'Recovery'),
+    [sovereignsData],
+  );
+
+  const { data: enginePool } = useQuery({
+    queryKey: ['docsEnginePoolZh', activeSovereign?.sovereignId],
+    queryFn: () => fetchEnginePool(program!, BigInt(activeSovereign!.sovereignId)),
+    enabled: !!program && !!activeSovereign,
+    staleTime: 60_000,
+  });
+
+  const fees = useMemo(() => {
+    const creationFeeBps = protocolState?.creationFeeBps ?? 50;
+    const unwindFeeBps = protocolState?.unwindFeeBps ?? 2000;
+    const proposalFeeLamports = protocolState?.governanceUnwindFeeLamports ?? '50000000';
+    const defaultSwapBps = protocolState?.defaultSwapFeeBps || 30;
+    const creatorShareBps = enginePool?.creatorFeeShareBps ?? 2000;
+    const binShareBps = enginePool?.binFeeShareBps ?? 3000;
+    const lpShareBps = 10000 - creatorShareBps;
+
+    return {
+      creationFee: (creationFeeBps / 100).toFixed(2),
+      activeSwapFee: (defaultSwapBps / 100).toFixed(2),
+      lpPortion: (lpShareBps / 100).toFixed(0),
+      creatorPortion: (creatorShareBps / 100).toFixed(0),
+      binPortion: (binShareBps / 100).toFixed(0),
+      unwindFee: (unwindFeeBps / 100).toFixed(0),
+      proposalFee: (Number(proposalFeeLamports) / LAMPORTS_PER_GOR).toFixed(2),
+    };
+  }, [protocolState, enginePool]);
+
   return (
     <div className="h-full md:overflow-y-auto">
       <div className="max-w-3xl mx-auto px-4 py-6 pb-20">
@@ -30,6 +73,52 @@ export default function DocsPageZh() {
             <li><a href="#governance" className="hover:text-[var(--hazard-yellow)]">→ 治理与解锁</a></li>
             <li><a href="#genesis-nft" className="hover:text-[var(--hazard-yellow)]">→ 创世 NFT</a></li>
           </ul>
+        </div>
+
+        {/* Current Protocol Fees (on-chain) */}
+        <div className="card mb-8" style={{ background: 'rgba(242, 183, 5, 0.05)', borderColor: 'rgba(242, 183, 5, 0.3)' }}>
+          <h2 className="h3 mb-2" style={{ color: 'var(--hazard-yellow)' }}>当前协议费用</h2>
+          <p className="text-xs text-[var(--muted)] mb-4">实时链上协议状态</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="text-center">
+              <div className="text-xl font-black" style={{ color: 'var(--text-light)' }}>
+                {protocolLoading ? '...' : `${fees.creationFee}%`}
+              </div>
+              <div className="text-xs text-[var(--muted)] mt-1">创建费</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black" style={{ color: 'var(--hazard-orange)' }}>
+                {protocolLoading ? '...' : `${fees.activeSwapFee}%`}
+              </div>
+              <div className="text-xs text-[var(--muted)] mt-1">活跃交换费率</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black" style={{ color: 'var(--profit)' }}>
+                {protocolLoading ? '...' : `${fees.lpPortion}%`}
+              </div>
+              <div className="text-xs text-[var(--muted)] mt-1">LP 份额</div>
+              <div className="text-[10px] text-[var(--muted)] opacity-60">扣除 Bin 份额后</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black" style={{ color: 'var(--hazard-yellow)' }}>
+                {protocolLoading ? '...' : `${fees.creatorPortion}%`}
+              </div>
+              <div className="text-xs text-[var(--muted)] mt-1">创作者份额</div>
+              <div className="text-[10px] text-[var(--muted)] opacity-60">扣除 Bin 份额后</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black" style={{ color: '#00c8ff' }}>
+                {protocolLoading ? '...' : `${fees.binPortion}%`}
+              </div>
+              <div className="text-xs text-[var(--muted)] mt-1">Bin 份额（交换费）</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black" style={{ color: 'var(--loss)' }}>
+                {protocolLoading ? '...' : `${fees.unwindFee}%`}
+              </div>
+              <div className="text-xs text-[var(--muted)] mt-1">解锁费</div>
+            </div>
+          </div>
         </div>
 
         {/* Overview */}
@@ -171,9 +260,14 @@ export default function DocsPageZh() {
                 </thead>
                 <tbody className="text-[var(--text-light)]">
                   <tr className="border-b border-[var(--border)]">
-                    <td className="py-3 font-bold">交换费</td>
-                    <td className="py-3">0.3% - 2%</td>
-                    <td className="py-3 text-[var(--muted)]">每次交换的交易费——回本期间 100% 归投资者</td>
+                    <td className="py-3 font-bold">交换费（回本期）</td>
+                    <td className="py-3">1% - 3%</td>
+                    <td className="py-3 text-[var(--muted)]">创作者设定的回本期费率——100% 归投资者以加速回本</td>
+                  </tr>
+                  <tr className="border-b border-[var(--border)]">
+                    <td className="py-3 font-bold">交换费（活跃期）</td>
+                    <td className="py-3">{fees.activeSwapFee}%</td>
+                    <td className="py-3 text-[var(--muted)]">回本完成后的协议默认费率——在 LP、创作者和 Bin 交易者之间分配</td>
                   </tr>
                   <tr className="border-b border-[var(--border)]">
                     <td className="py-3 font-bold">卖出费</td>
@@ -182,21 +276,55 @@ export default function DocsPageZh() {
                   </tr>
                   <tr className="border-b border-[var(--border)]">
                     <td className="py-3 font-bold">创建费</td>
-                    <td className="py-3">0.5%</td>
+                    <td className="py-3">{fees.creationFee}%</td>
                     <td className="py-3 text-[var(--muted)]">债券目标的百分比——托管，债券失败可退还</td>
                   </tr>
                   <tr className="border-b border-[var(--border)]">
                     <td className="py-3 font-bold">治理解锁费</td>
-                    <td className="py-3">0.05 GOR</td>
+                    <td className="py-3">{fees.proposalFee} GOR</td>
                     <td className="py-3 text-[var(--muted)]">在回本期间创建解锁提案的费用</td>
                   </tr>
                   <tr>
                     <td className="py-3 font-bold">解锁费</td>
-                    <td className="py-3">5%</td>
+                    <td className="py-3">{fees.unwindFee}%</td>
                     <td className="py-3 text-[var(--muted)]">从治理解锁返还的 GOR 中扣除</td>
                   </tr>
                 </tbody>
               </table>
+            </div>
+
+            <div className="card mt-4">
+              <h3 className="h3 mb-3" style={{ color: 'var(--text-light)' }}>各阶段费用分配</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--border)]">
+                      <th className="text-left py-2 text-[var(--muted)]">阶段</th>
+                      <th className="text-left py-2 text-[var(--muted)]">流动性提供者</th>
+                      <th className="text-left py-2 text-[var(--muted)]">创作者</th>
+                      <th className="text-left py-2 text-[var(--muted)]">交易者（Bin 奖励）</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-[var(--text-light)]">
+                    <tr className="border-b border-[var(--border)]">
+                      <td className="py-2 font-bold">回本期</td>
+                      <td className="py-2 text-[var(--profit)]">100%</td>
+                      <td className="py-2 text-[var(--loss)]">0%</td>
+                      <td className="py-2 text-[var(--loss)]">0%</td>
+                    </tr>
+                    <tr>
+                      <td className="py-2 font-bold">活跃期</td>
+                      <td className="py-2 text-[var(--profit)]">{fees.lpPortion}%</td>
+                      <td className="py-2 text-[var(--hazard-yellow)]">{fees.creatorPortion}%</td>
+                      <td className="py-2 text-[var(--profit)]">{fees.binPortion}% 交换费</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-[var(--muted)] mt-3">
+                LP 费用根据每位流动性提供者的存款份额按比例分配。
+                买入 Bin 的交易者在卖出时可获得累积的 Bin 奖励（默认 {fees.binPortion}% 交换费，最高 50%）。
+              </p>
             </div>
           </div>
         </section>

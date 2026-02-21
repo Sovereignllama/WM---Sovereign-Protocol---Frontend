@@ -225,7 +225,6 @@ export type CreateSovereignParams = {
   feeMode: FeeMode | null;
   metadataUri: string | null;
   depositAmount: BN | null;
-  ammConfig: PublicKey;
   swapFeeBps: number;
 };
 

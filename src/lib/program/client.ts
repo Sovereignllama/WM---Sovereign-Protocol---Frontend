@@ -24,7 +24,6 @@ import {
 import { 
   CreateSovereignParams as OnChainCreateSovereignParams, 
   SovereignType as OnChainSovereignType, 
-  FeeMode as OnChainFeeMode 
 } from './idl/types';
 
 // Import the IDL
@@ -185,15 +184,14 @@ export interface CreateSovereignFrontendParams {
   tokenSymbol?: string;
   tokenSupply?: bigint;
   sellFeeBps?: number;
-  feeMode?: 'CreatorRevenue' | 'RecoveryBoost' | 'FairLaunch';
   metadataUri?: string;
   // BYO Token fields
   existingMint?: PublicKey;
   depositAmount?: bigint;
-  // Swap fee tier
+  /** Token program that owns the BYO mint (SPL Token or Token-2022) */
+  tokenProgramId?: PublicKey;
+  // Recovery swap fee (1-3%, snaps to protocol default after recovery)
   swapFeeBps: number;
-  // AMM config address for the chosen fee tier
-  ammConfig: PublicKey;
   // Creator buy-in (lamports) - deposited as creator escrow after creation
   creatorBuyIn?: bigint;
 }
@@ -226,14 +224,6 @@ export async function buildCreateSovereignTx(
     ? { tokenLaunch: {} } 
     : { byoToken: {} };
   
-  const feeMode: OnChainFeeMode | null = params.feeMode 
-    ? params.feeMode === 'CreatorRevenue' 
-      ? { creatorRevenue: {} }
-      : params.feeMode === 'RecoveryBoost'
-        ? { recoveryBoost: {} }
-        : { fairLaunch: {} }
-    : null;
-  
   // Convert bond duration from days to seconds
   const bondDurationSeconds = params.bondDurationDays * 24 * 60 * 60;
   
@@ -246,14 +236,15 @@ export async function buildCreateSovereignTx(
     tokenSymbol: params.tokenSymbol || null,
     tokenSupply: params.tokenSupply ? new BN(params.tokenSupply.toString()) : null,
     sellFeeBps: params.sellFeeBps ?? null,
-    feeMode,
+    feeMode: null,
     metadataUri: params.metadataUri || null,
     depositAmount: params.depositAmount ? new BN(params.depositAmount.toString()) : null,
-    ammConfig: params.ammConfig,
     swapFeeBps: params.swapFeeBps,
   };
   
   // Build accounts - some are optional based on sovereign type
+  // For BYO, use the token program that owns the mint (SPL Token or Token-2022)
+  const byoTokenProgram = params.tokenProgramId || TOKEN_PROGRAM_ID;
   const accounts: any = {
     creator,
     protocolState: protocolStatePDA,
@@ -262,10 +253,13 @@ export async function buildCreateSovereignTx(
     treasury,
     tokenMint: params.existingMint || null,
     creatorTokenAccount: params.existingMint 
-      ? getAssociatedTokenAddressSync(params.existingMint, creator)
+      ? getAssociatedTokenAddressSync(
+          params.existingMint, creator, false,
+          byoTokenProgram, ASSOCIATED_TOKEN_PROGRAM_ID,
+        )
       : null,
     tokenVault: params.existingMint ? tokenVaultPDA : null,
-    tokenProgram: TOKEN_PROGRAM_ID,
+    tokenProgram: params.existingMint ? byoTokenProgram : TOKEN_PROGRAM_ID,
     systemProgram: SystemProgram.programId,
   };
 
@@ -410,50 +404,6 @@ export async function buildWithdrawTx(
       sovereign: sovereignPDA,
       depositRecord: depositRecordPDA,
       solVault: solVaultPDA,
-      systemProgram: SystemProgram.programId,
-    })
-    .transaction();
-
-  return tx;
-}
-
-/**
- * Build a claim depositor fees transaction.
- * The holder must own the Genesis NFT referenced in the deposit record.
- * 
- * @param holder - Current NFT holder (signer)
- * @param originalDepositor - The wallet that originally deposited (for PDA derivation)
- * @param sovereignId - The sovereign's numeric ID
- * @param nftMint - The Genesis NFT mint pubkey from deposit_record.nft_mint
- */
-export async function buildClaimDepositorFeesTx(
-  program: SovereignLiquidityProgram,
-  holder: PublicKey,
-  originalDepositor: PublicKey,
-  sovereignId: bigint | number,
-  nftMint: PublicKey
-): Promise<Transaction> {
-  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
-  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, originalDepositor, program.programId);
-  const [feeVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
-
-  // NFT token account for the holder (legacy SPL Token)
-  const nftTokenAccount = getAssociatedTokenAddressSync(
-    nftMint,
-    holder,
-    false,
-    TOKEN_PROGRAM_ID
-  );
-
-  const tx = await (program.methods as any)
-    .claimDepositorFees()
-    .accounts({
-      holder,
-      sovereign: sovereignPDA,
-      originalDepositor,
-      depositRecord: depositRecordPDA,
-      nftTokenAccount,
-      feeVault: feeVaultPDA,
       systemProgram: SystemProgram.programId,
     })
     .transaction();
@@ -1229,61 +1179,65 @@ export async function buildRenounceSellFeeTx(
  *
  * Remaining accounts = source Token-2022 accounts with withheld fees.
  */
-export async function buildHarvestTransferFeesTx(
+// ============================================================
+// Claim Transfer Fees (harvest + claim in one call)
+// ============================================================
+
+export async function buildClaimTransferFeesTx(
   program: SovereignLiquidityProgram,
-  payer: PublicKey,
+  creator: PublicKey,
   sovereignId: bigint | number,
-  sourceTokenAccounts: PublicKey[]
+  sourceTokenAccounts: PublicKey[] = [],
 ): Promise<Transaction> {
-  const [protocolStatePDA] = getProtocolStatePDA(program.programId);
   const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
-  const [creatorTrackerPDA] = getCreatorTrackerPDA(sovereignPDA, program.programId);
-  const [recoveryTokenVaultPDA] = getTokenVaultPDA(sovereignPDA, program.programId);
-  
+  const [tokenVaultPDA] = getTokenVaultPDA(sovereignPDA, program.programId);
+
   const sovereign = await fetchSovereign(program, sovereignPDA);
   const tokenMint = new PublicKey(sovereign.tokenMint);
-  const creatorWallet = new PublicKey(sovereign.creator);
 
-  // Creator's Token-2022 ATA for the sovereign token
+  // Creator's Token-2022 ATA
   const creatorTokenAccount = getAssociatedTokenAddressSync(
     tokenMint,
-    creatorWallet,
+    creator,
     false,
     TOKEN_2022_PROGRAM_ID,
   );
 
-  // Pre-instruction: ensure creator ATA exists (in case fees go to creator)
   const tx = new Transaction();
+
+  // Ensure creator ATA exists
   tx.add(
     createAssociatedTokenAccountIdempotentInstruction(
-      payer,
+      creator,
       creatorTokenAccount,
-      creatorWallet,
+      creator,
       tokenMint,
       TOKEN_2022_PROGRAM_ID,
     ),
   );
 
-  const mainIx = await (program.methods as any)
-    .harvestTransferFees()
+  const builder = (program.methods as any)
+    .claimTransferFees()
     .accounts({
-      payer,
-      protocolState: protocolStatePDA,
+      creator,
       sovereign: sovereignPDA,
       tokenMint,
+      tokenVault: tokenVaultPDA,
       creatorTokenAccount,
-      recoveryTokenVault: recoveryTokenVaultPDA,
-      creatorFeeTracker: creatorTrackerPDA,
       tokenProgram2022: TOKEN_2022_PROGRAM_ID,
-    })
-    .remainingAccounts(
+    });
+
+  if (sourceTokenAccounts.length > 0) {
+    builder.remainingAccounts(
       sourceTokenAccounts.map((pubkey) => ({
         pubkey,
         isWritable: true,
         isSigner: false,
       }))
-    )
-    .transaction();
+    );
+  }
+
+  const mainIx = await builder.transaction();
 
   tx.add(mainIx);
   return tx;
@@ -1656,63 +1610,6 @@ export async function fetchPendingEngineLpFees(
     claimableGor: Number(claimable) / 1_000_000_000,
     totalLpFeesAccumulated: BigInt(pool.lpFeesAccumulated.toString()),
     totalLpFeesClaimed: BigInt(pool.lpFeesClaimed.toString()),
-  };
-}
-
-export interface PendingClaimableFees {
-  /** Total claimable GOR in lamports */
-  claimableLamports: bigint;
-  /** Claimable GOR as a number */
-  claimableGor: number;
-  /** Fee vault total balance in lamports */
-  vaultBalanceLamports: bigint;
-  /** Fee vault balance as GOR */
-  vaultBalanceGor: number;
-}
-
-/**
- * Calculate how much GOR a depositor can claim from the fee vault.
- * claimable = (totalFeesCollected * depositAmount / totalDeposited) - feesClaimed
- *
- * Pure read — sovereign state, deposit record, and fee vault balance.
- */
-export async function fetchPendingClaimableFees(
-  connection: Connection,
-  program: SovereignLiquidityProgram,
-  sovereignId: bigint | number,
-  depositor: PublicKey,
-): Promise<PendingClaimableFees | null> {
-  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
-  const [feeVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
-
-  // Fetch all in parallel
-  const [sovereign, depositRecord, vaultBalance] = await Promise.all([
-    fetchSovereignById(program, sovereignId),
-    fetchDepositRecord(program, sovereignPDA, depositor),
-    connection.getBalance(feeVaultPDA),
-  ]);
-
-  if (!sovereign || !depositRecord) return null;
-
-  const totalFeesCollected = BigInt(sovereign.totalFeesCollected.toString());
-  const depositAmount = BigInt(depositRecord.amount.toString());
-  const totalDeposited = BigInt(sovereign.totalDeposited.toString());
-  const feesClaimed = BigInt(depositRecord.feesClaimed.toString());
-
-  if (totalDeposited === 0n) return null;
-
-  // Same formula as on-chain: share_bps = amount * 10000 / totalDeposited
-  // total_share = totalFeesCollected * share_bps / 10000
-  // claimable = total_share - feesClaimed
-  const shareBps = (depositAmount * 10000n) / totalDeposited;
-  const totalShare = (totalFeesCollected * shareBps) / 10000n;
-  const claimable = totalShare > feesClaimed ? totalShare - feesClaimed : 0n;
-
-  return {
-    claimableLamports: claimable,
-    claimableGor: Number(claimable) / 1_000_000_000,
-    vaultBalanceLamports: BigInt(vaultBalance),
-    vaultBalanceGor: vaultBalance / 1_000_000_000,
   };
 }
 

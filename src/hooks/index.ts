@@ -17,7 +17,6 @@ export {
   useDepositRecord, 
   useWalletDeposits,
   usePendingEngineLpFees,
-  usePendingClaimableFees,
   useTokenFeeStats,
   useEnginePool,
   QUERY_KEYS,
@@ -27,10 +26,8 @@ export {
 export { 
   useDeposit, 
   useWithdraw, 
-  useClaimDepositorFees,
   useClaimPoolLpFees,
   useClaimPoolCreatorFees,
-  useHarvestTransferFees,
   useFinalizeEnginePool,
   useSwapBuy,
   useSwapSell,
@@ -49,3 +46,6 @@ export {
   useClaimUnwind,
   GOVERNANCE_KEYS,
 } from './useGovernance';
+
+// Backend API hooks
+export { useProtocolStats } from './useProtocolStats';

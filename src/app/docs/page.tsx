@@ -1,6 +1,53 @@
 'use client';
 
+import { useProtocolState, useSovereigns } from '@/hooks';
+import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { LAMPORTS_PER_GOR } from '@/lib/config';
+import { useReadOnlyProgram } from '@/hooks/useProgram';
+import { fetchEnginePool } from '@/lib/program/client';
+
 export default function DocsPage() {
+  const program = useReadOnlyProgram();
+  const { data: protocolState, isLoading: protocolLoading } = useProtocolState();
+  const { data: sovereignsData } = useSovereigns();
+
+  // Find first active/recovery sovereign for engine pool read
+  const activeSovereign = useMemo(
+    () => sovereignsData?.find((s: any) => s.status === 'Active' || s.status === 'Recovery'),
+    [sovereignsData],
+  );
+
+  // Fetch engine pool on-chain to read LP/Creator/Bin fee splits
+  const { data: enginePool } = useQuery({
+    queryKey: ['docsEnginePool', activeSovereign?.sovereignId],
+    queryFn: () => fetchEnginePool(program!, BigInt(activeSovereign!.sovereignId)),
+    enabled: !!program && !!activeSovereign,
+    staleTime: 60_000,
+  });
+
+  // Derive all fee values from on-chain state
+  const fees = useMemo(() => {
+    const creationFeeBps = protocolState?.creationFeeBps ?? 50;
+    const unwindFeeBps = protocolState?.unwindFeeBps ?? 2000;
+    const proposalFeeLamports = protocolState?.governanceUnwindFeeLamports ?? '50000000';
+    // Protocol default swap fee (post-recovery), fallback 30 bps (0.30%)
+    const defaultSwapBps = protocolState?.defaultSwapFeeBps || 30;
+    // Engine pool fee splits (on-chain)
+    const creatorShareBps = enginePool?.creatorFeeShareBps ?? 2000;  // 20%
+    const binShareBps = enginePool?.binFeeShareBps ?? 3000;          // 30%
+    const lpShareBps = 10000 - creatorShareBps;                      // remainder
+
+    return {
+      creationFee: (creationFeeBps / 100).toFixed(2),
+      activeSwapFee: (defaultSwapBps / 100).toFixed(2),
+      lpPortion: (lpShareBps / 100).toFixed(0),
+      creatorPortion: (creatorShareBps / 100).toFixed(0),
+      binPortion: (binShareBps / 100).toFixed(0),
+      unwindFee: (unwindFeeBps / 100).toFixed(0),
+      proposalFee: (Number(proposalFeeLamports) / LAMPORTS_PER_GOR).toFixed(2),
+    };
+  }, [protocolState, enginePool]);
   return (
     <div className="h-full md:overflow-y-auto">
       <div className="max-w-3xl mx-auto px-4 py-6 pb-20">
@@ -21,29 +68,84 @@ export default function DocsPage() {
         <div className="card mb-8">
           <h2 className="h3 mb-4" style={{ color: 'var(--text-light)' }}>Contents</h2>
           <ul className="space-y-2 text-[var(--muted)]">
-            <li><a href="#overview" className="hover:text-[var(--hazard-yellow)]">→ What is Sovereign Protocol?</a></li>
+            <li><a href="#overview" className="hover:text-[var(--hazard-yellow)]">→ What is $overeign Protocol?</a></li>
             <li><a href="#how-it-works" className="hover:text-[var(--hazard-yellow)]">→ How It Works</a></li>
-            <li><a href="#launch-types" className="hover:text-[var(--hazard-yellow)]">→ Launch Types</a></li>
+            <li><a href="#slamm" className="hover:text-[var(--hazard-yellow)]">→ The SLAMM Engine</a></li>
             <li><a href="#lifecycle" className="hover:text-[var(--hazard-yellow)]">→ The $overeign Lifecycle</a></li>
-            <li><a href="#recovery" className="hover:text-[var(--hazard-yellow)]">→ Recovery-First Mechanics</a></li>
-            <li><a href="#fees" className="hover:text-[var(--hazard-yellow)]">→ Fees & Revenue</a></li>
-            <li><a href="#governance" className="hover:text-[var(--hazard-yellow)]">→ Governance & Unwind</a></li>
+            <li><a href="#fees" className="hover:text-[var(--hazard-yellow)]">→ Current Fees & Revenues</a></li>
+            <li><a href="#governance" className="hover:text-[var(--hazard-yellow)]">→ Governance</a></li>
+            <li><a href="#dead-pool" className="hover:text-[var(--hazard-yellow)]">→ Failed Project Protection</a></li>
             <li><a href="#genesis-nft" className="hover:text-[var(--hazard-yellow)]">→ $overeign NFTs</a></li>
           </ul>
         </div>
 
+        {/* Current Protocol Fees (on-chain) */}
+        <div className="card mb-8" style={{ background: 'rgba(242, 183, 5, 0.05)', borderColor: 'rgba(242, 183, 5, 0.3)' }}>
+          <h2 className="h3 mb-2" style={{ color: 'var(--hazard-yellow)' }}>Current Protocol Fees</h2>
+          <p className="text-xs text-[var(--muted)] mb-4">Live from on-chain protocol state</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="text-center">
+              <div className="text-xl font-black" style={{ color: 'var(--text-light)' }}>
+                {protocolLoading ? '...' : `${fees.creationFee}%`}
+              </div>
+              <div className="text-xs text-[var(--muted)] mt-1">Creation Fee</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black" style={{ color: 'var(--hazard-orange)' }}>
+                {protocolLoading ? '...' : `${fees.activeSwapFee}%`}
+              </div>
+              <div className="text-xs text-[var(--muted)] mt-1">Active Swap Rate</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black" style={{ color: 'var(--profit)' }}>
+                {protocolLoading ? '...' : `${fees.lpPortion}%`}
+              </div>
+              <div className="text-xs text-[var(--muted)] mt-1">LP Portion</div>
+              <div className="text-[10px] text-[var(--muted)] opacity-60">of fees after bin share</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black" style={{ color: 'var(--hazard-yellow)' }}>
+                {protocolLoading ? '...' : `${fees.creatorPortion}%`}
+              </div>
+              <div className="text-xs text-[var(--muted)] mt-1">Creator Portion</div>
+              <div className="text-[10px] text-[var(--muted)] opacity-60">of fees after bin share</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black" style={{ color: '#00c8ff' }}>
+                {protocolLoading ? '...' : `${fees.binPortion}%`}
+              </div>
+              <div className="text-xs text-[var(--muted)] mt-1">Bin Portion (of swap fees)</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black" style={{ color: 'var(--loss)' }}>
+                {protocolLoading ? '...' : `${fees.unwindFee}%`}
+              </div>
+              <div className="text-xs text-[var(--muted)] mt-1">Unwind Fee</div>
+            </div>
+          </div>
+        </div>
+
         {/* Overview */}
         <section id="overview" className="mb-10">
-          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>What is Sovereign Protocol?</h2>
+          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>What is $overeign Protocol?</h2>
           <div className="space-y-4 text-[var(--text-light)]">
             <p>
-              Sovereign Liquidity Protocol is a fair launch platform that lets creators bootstrap liquidity 
-              for their tokens through community bonding. The protocol is designed with <strong>investor protection first</strong> — 
-              meaning 100% of trading fees go to investors until they recover their entire principal.
+              Unlike traditional launchpads where creators and traders can rug-pull or extract value
+              from Liquidity Providers, <strong>$overeign Protocol</strong> is a token launchpad that
+              incentivizes creators to create and Liquidity Providers to provide liquidity.
             </p>
             <p>
-              Unlike traditional launchpads where creators can rug-pull or extract value, Sovereign Protocol 
-              ensures that creators have skin in the game and investors are protected through smart contract mechanics.
+              It uses a novel swap engine called <strong>SLAMM</strong> ($overeign Liquid Automated
+              Market Maker) that <strong>eliminates impermanent loss</strong> for Liquidity Providers.
+              100% of trading fees flow to LPs until they recover their entire principal — only then
+              do creators begin earning their share.
+            </p>
+            <p>
+              SLAMM creates peace of mind for both sides: <strong>creators</strong> benefit from
+              locked liquidity that can only be pulled in the event their project fails, while <strong>Liquidity Providers</strong> are
+              protected by a novel <strong>Dead Pool</strong> mechanism — if the pool fails to meet a minimum volume threshold
+              over a period of time, LPs can trigger a governance vote to unlock the pool
+              and recover their capital.
             </p>
           </div>
         </section>
@@ -52,42 +154,111 @@ export default function DocsPage() {
         <section id="how-it-works" className="mb-10">
           <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>How It Works</h2>
           <div className="space-y-4 text-[var(--text-light)]">
-            <p>The protocol works in a simple flow:</p>
+            <p>The protocol works in three phases:</p>
             <ol className="list-decimal list-inside space-y-3 ml-4">
-              <li><strong>Creator launches</strong> — Sets up a $overeign with their token, bond target, and duration</li>
-              <li><strong>Investors bond GOR</strong> — Community deposits GOR during the bonding period</li>
-              <li><strong>Bond completes</strong> — If target is met, liquidity pool is created automatically</li>
-              <li><strong>Recovery phase</strong> — 100% of trading fees flow to investors until they recover their GOR (unlockable via governance)</li>
-              <li><strong>Active phase</strong> — After recovery, the LP is locked and trading continues (unlockable only via on-chain low volume mechanic)</li>
+              <li><strong>Creator launches</strong> — Create your token, set your funding goal, and rally Liquidity Providers behind your vision</li>
+              <li><strong>LPs deposit GOR</strong> — Liquidity Providers deposit GOR to establish the price floor and earn fees</li>
+              <li><strong>Bond completes</strong> — If the target is met, the SLAMM engine creates the liquidity pool automatically</li>
+              <li><strong>Recovery phase</strong> — 100% of trading fees flow to Liquidity Providers until they recover their GOR</li>
+              <li><strong>Active phase</strong> — Fees split between Liquidity Providers, creators, and traders via bin fees. Passive income for all</li>
             </ol>
           </div>
         </section>
 
-        {/* Launch Types */}
-        <section id="launch-types" className="mb-10">
-          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>Launch Types</h2>
-          <div className="grid md:grid-cols-2 gap-4 mb-4">
-            <div className="card">
-              <div className="text-2xl mb-2">🚀</div>
-              <h3 className="h3 mb-2" style={{ color: 'var(--text-light)' }}>Token Launch</h3>
-              <ul className="space-y-2 text-sm text-[var(--muted)]">
-                <li>• Create a brand new token</li>
-                <li>• Built-in sell fee (0-3%)</li>
-                <li>• 100% of supply goes to LP</li>
-                <li>• Optional creator buy-in (max 1%)</li>
-                <li>• Perfect for new projects</li>
-              </ul>
+        {/* SLAMM Engine */}
+        <section id="slamm" className="mb-10">
+          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>The SLAMM Engine</h2>
+          <div className="space-y-4 text-[var(--text-light)]">
+            <p>
+              SLAMM (<strong>$overeign Liquid Automated Market Maker</strong>) is a novel swap engine
+              purpose-built for the $overeign Protocol. It uses <strong>asymmetric pricing</strong> — buys and sells
+              are priced differently by design, eliminating impermanent loss for Liquidity Providers.
+            </p>
+            <p>
+              Tokens and GOR are held in <strong>separate vaults</strong> — unlike traditional AMMs that pool
+              both assets together, SLAMM keeps them isolated. This separation is what makes impermanent
+              loss impossible: LP deposits are denominated purely in GOR and never rebalanced against the
+              token side, so the value of an LP&apos;s position can never decline due to price movement.
+            </p>
+
+            <div className="card" style={{ background: 'rgba(46, 235, 127, 0.05)', borderColor: 'rgba(46, 235, 127, 0.2)' }}>
+              <h3 className="h3 mb-3" style={{ color: 'var(--profit)' }}>How Buying Works (CPAMM)</h3>
+              <p className="text-[var(--muted)] mb-3">
+                Buys use standard <strong>constant-product pricing</strong> (x × y = k) for smooth, continuous
+                price discovery. As demand increases, the price rises naturally — just like any AMM.
+              </p>
+              <p className="text-[var(--muted)]">
+                The token supply is divided into <strong>bins</strong>. As buys fill each bin, the engine records
+                exactly how much GOR was paid — creating a locked purchase rate for that bin.
+              </p>
             </div>
+
+            <div className="card" style={{ background: 'rgba(242, 183, 5, 0.05)', borderColor: 'rgba(242, 183, 5, 0.2)' }}>
+              <h3 className="h3 mb-3" style={{ color: 'var(--hazard-yellow)' }}>How Selling Works (Locked-Rate)</h3>
+              <p className="text-[var(--muted)] mb-3">
+                Sells <strong>do not use CPAMM</strong>. Instead, each filled bin pays out at its <strong>locked rate</strong> —
+                the exact weighted-average price that buyers paid into that bin, plus accumulated fee bonuses.
+              </p>
+              <p className="text-[var(--muted)]">
+                This means sellers always receive at least the average entry price for each bin.
+              </p>
+            </div>
+
+            <div className="card" style={{ background: 'rgba(0, 200, 255, 0.05)', borderColor: 'rgba(0, 200, 255, 0.2)' }}>
+              <h3 className="h3 mb-3" style={{ color: '#00c8ff' }}>Solvency Guarantee</h3>
+              <p className="text-[var(--muted)]">
+                Although not required by design,
+                the engine enforces a hard invariant: <strong>GOR reserves can never drop below the original bonding amount</strong>.
+                The pool always has enough GOR to back every token in circulation. This on-chain check is verified
+                on every single trade as an additional layer of safety.
+              </p>
+            </div>
+
             <div className="card">
-              <div className="text-2xl mb-2">🔗</div>
-              <h3 className="h3 mb-2" style={{ color: 'var(--text-light)' }}>BYO Token</h3>
-              <ul className="space-y-2 text-sm text-[var(--muted)]">
-                <li>• Bring your existing token</li>
-                <li>• No sell fee (swap fees only)</li>
-                <li>• Minimum 30% of supply required</li>
-                <li>• Great for existing projects</li>
-                <li>• Bootstrap liquidity fairly</li>
-              </ul>
+              <h3 className="h3 mb-3" style={{ color: 'var(--text-light)' }}>SLAMM vs Traditional AMMs</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--border)]">
+                      <th className="text-left py-2 text-[var(--muted)]">Feature</th>
+                      <th className="text-left py-2 text-[var(--muted)]">SLAMM</th>
+                      <th className="text-left py-2 text-[var(--muted)]">Traditional AMM</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-[var(--text-light)]">
+                    <tr className="border-b border-[var(--border)]">
+                      <td className="py-2">Buy pricing</td>
+                      <td className="py-2 text-[var(--profit)]">CPAMM (smooth)</td>
+                      <td className="py-2 text-[var(--muted)]">CPAMM / CLMM</td>
+                    </tr>
+                    <tr className="border-b border-[var(--border)]">
+                      <td className="py-2">Sell pricing</td>
+                      <td className="py-2 text-[var(--profit)]">Locked-rate (historical avg)</td>
+                      <td className="py-2 text-[var(--muted)]">Same curve as buy</td>
+                    </tr>
+                    <tr className="border-b border-[var(--border)]">
+                      <td className="py-2">Impermanent loss (LPs)</td>
+                      <td className="py-2 text-[var(--profit)]">Eliminated</td>
+                      <td className="py-2 text-[var(--loss)]">Always present</td>
+                    </tr>
+                    <tr className="border-b border-[var(--border)]">
+                      <td className="py-2">LP withdrawal</td>
+                      <td className="py-2 text-[var(--profit)]">Permanently locked while active</td>
+                      <td className="py-2 text-[var(--loss)]">Withdrawable (rug risk)</td>
+                    </tr>
+                    <tr className="border-b border-[var(--border)]">
+                      <td className="py-2">Solvency floor</td>
+                      <td className="py-2 text-[var(--profit)]">Enforced on-chain</td>
+                      <td className="py-2 text-[var(--loss)]">None</td>
+                    </tr>
+                    <tr>
+                      <td className="py-2">Fee beneficiary</td>
+                      <td className="py-2 text-[var(--profit)]">100% to LPs until recovery, then Creators, LPs & traders</td>
+                      <td className="py-2 text-[var(--muted)]">LP providers from day 1</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </section>
@@ -95,98 +266,77 @@ export default function DocsPage() {
         {/* Lifecycle */}
         <section id="lifecycle" className="mb-10">
           <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>The $overeign Lifecycle</h2>
-          
+
           <div className="space-y-6">
             <div className="card border-l-4" style={{ borderLeftColor: 'var(--hazard-yellow)' }}>
               <h3 className="h3 mb-2" style={{ color: 'var(--text-light)' }}>1. Bonding Phase</h3>
               <p className="text-[var(--muted)]">
-                Investors deposit GOR towards the bond target. The creator sets a target (minimum 50 GOR) 
-                and a duration (7-30 days). If the target is met, the $overeign proceeds. If not, 
-                all depositors get a full refund.
+                The creator sets a GOR bond target (minimum 250,000 GOR) and a duration (7-30 days).
+                Liquidity Providers deposit GOR to fund the liquidity pool. If the target is met, the $overeign
+                proceeds to finalization. If not, all depositors get a full refund — no risk.
               </p>
             </div>
 
             <div className="card border-l-4" style={{ borderLeftColor: 'var(--profit)' }}>
               <h3 className="h3 mb-2" style={{ color: 'var(--text-light)' }}>2. Recovery Phase</h3>
               <p className="text-[var(--muted)]">
-                Once bonding completes, a liquidity pool is created and trading begins. Investors receive 
-                <strong style={{ color: 'var(--hazard-yellow)' }}> $overeign NFTs</strong> representing their share of the pool. During this phase, 
-                <strong style={{ color: 'var(--profit)' }}> 100% of all trading fees go to $overeign NFT holders</strong> until 
-                they've recovered their original GOR deposit. The LP is locked and only $overeign NFT holders 
-                can earn fees. Liquidity can be unlocked via governance during this phase.
+                Once bonding completes, the SLAMM engine creates the liquidity pool and trading begins.
+                Liquidity Providers receive <strong style={{ color: 'var(--hazard-yellow)' }}>$overeign NFTs</strong> representing
+                their share. During recovery, <strong style={{ color: 'var(--profit)' }}>100% of all trading fees
+                flow to $overeign NFT holders</strong> until they've recovered their original GOR deposit.
+                The creator earns zero fees during this phase.
               </p>
             </div>
 
             <div className="card border-l-4" style={{ borderLeftColor: 'var(--slime)' }}>
               <h3 className="h3 mb-2" style={{ color: 'var(--text-light)' }}>3. Active Phase</h3>
               <p className="text-[var(--muted)]">
-                After investors recover their principal, the $overeign enters the Active phase. 
-                The LP is locked, external liquidity providers can join, and 
-                trading continues normally. Fees still flow to $overeign NFT holders. Liquidity can only be unlocked through the on-chain low volume mechanic.
+                After Liquidity Providers recover their principal, the $overeign enters the Active phase.
+                Trading fees now split between Liquidity Providers and the creator. The LP remains permanently locked —
+                passive income for everyone. The creator can also claim their share of accumulated fees.
               </p>
-            </div>
-          </div>
-        </section>
-
-        {/* Recovery */}
-        <section id="recovery" className="mb-10">
-          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>Recovery-First Mechanics</h2>
-          <div className="space-y-4 text-[var(--text-light)]">
-            <p>
-              The core innovation of Sovereign Protocol is the <strong>recovery-first</strong> approach:
-            </p>
-            <div className="card" style={{ background: 'rgba(46, 235, 127, 0.1)', borderColor: 'rgba(46, 235, 127, 0.3)' }}>
-              <ul className="space-y-3">
-                <li className="flex items-start gap-3">
-                  <span className="text-[var(--profit)]">✓</span>
-                  <span><strong>100% of LP fees</strong> go to investors until they recover their GOR</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <span className="text-[var(--profit)]">✓</span>
-                  <span><strong>Creators get zero LP fees</strong> during recovery — only sell fee revenue (if configured)</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <span className="text-[var(--profit)]">✓</span>
-                  <span><strong>LP is locked</strong> during recovery and stays locked unless volume fails minimum threshold</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <span className="text-[var(--profit)]">✓</span>
-                  <span><strong>Governance protection</strong> — investors can vote to unwind if needed (creator cannot vote)</span>
-                </li>
-              </ul>
             </div>
           </div>
         </section>
 
         {/* Fees */}
         <section id="fees" className="mb-10">
-          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>Fees & Revenue</h2>
-          
+          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>Current Fees & Revenues</h2>
+
           <div className="space-y-4">
+            <p className="text-[var(--text-light)]">
+              The SLAMM engine has a multi-layered fee system designed to align incentives:
+            </p>
+
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-[var(--border)]">
                     <th className="text-left py-3 text-[var(--muted)]">Fee Type</th>
-                    <th className="text-left py-3 text-[var(--muted)]">Range</th>
+                    <th className="text-left py-3 text-[var(--muted)]">Rate</th>
                     <th className="text-left py-3 text-[var(--muted)]">Description</th>
                   </tr>
                 </thead>
                 <tbody className="text-[var(--text-light)]">
                   <tr className="border-b border-[var(--border)]">
-                    <td className="py-3 font-bold">Swap Fee</td>
-                    <td className="py-3">0.3% - 2%</td>
-                    <td className="py-3 text-[var(--muted)]">Trading fee on each swap — 100% goes to investors during recovery</td>
+                    <td className="py-3 font-bold">Swap Fee (Recovery)</td>
+                    <td className="py-3">1% - 3%</td>
+                    <td className="py-3 text-[var(--muted)]">Creator-chosen rate during Recovery — 100% to Liquidity Providers to accelerate principal recovery</td>
+                  </tr>
+                  <tr className="border-b border-[var(--border)]">
+                    <td className="py-3 font-bold">Swap Fee (Active)</td>
+                    <td className="py-3">{fees.activeSwapFee}%</td>
+                    <td className="py-3 text-[var(--muted)]">Protocol default rate after recovery completes — split between Liquidity Providers, creator, and bin traders</td>
                   </tr>
                   <tr className="border-b border-[var(--border)]">
                     <td className="py-3 font-bold">Sell Fee</td>
                     <td className="py-3">0% - 3%</td>
-                    <td className="py-3 text-[var(--muted)]">Token Launch only — tax on sells, goes to creator treasury</td>
+                    <td className="py-3 text-[var(--muted)]">Token transfer fee on sells — set by creator at launch. Adjustable by governance</td>
                   </tr>
                   <tr className="border-b border-[var(--border)]">
                     <td className="py-3 font-bold">Creation Fee</td>
-                    <td className="py-3">0.5%</td>
-                    <td className="py-3 text-[var(--muted)]">Of bond target — escrowed, refundable if bonding fails</td>
+                    <td className="py-3">0% - 5%</td>
+                    <td className="py-3 text-[var(--muted)]">Of bond target (minimum 50 GOR) — escrowed, refundable if bonding fails</td>
                   </tr>
                   <tr className="border-b border-[var(--border)]">
                     <td className="py-3 font-bold">Governance Unwind Fee</td>
@@ -195,51 +345,114 @@ export default function DocsPage() {
                   </tr>
                   <tr>
                     <td className="py-3 font-bold">Unwind Fee</td>
-                    <td className="py-3">5%</td>
+                    <td className="py-3">5% - 20%</td>
                     <td className="py-3 text-[var(--muted)]">Taken from GOR returned during governance unwind</td>
                   </tr>
                 </tbody>
               </table>
+            </div>
+
+            <div className="card mt-4">
+              <h3 className="h3 mb-3" style={{ color: 'var(--text-light)' }}>Fee Distribution by Phase</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--border)]">
+                      <th className="text-left py-2 text-[var(--muted)]">Phase</th>
+                      <th className="text-left py-2 text-[var(--muted)]">Liquidity Providers</th>
+                      <th className="text-left py-2 text-[var(--muted)]">Creator</th>
+                      <th className="text-left py-2 text-[var(--muted)]">Traders (Bin Fees)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-[var(--text-light)]">
+                    <tr className="border-b border-[var(--border)]">
+                      <td className="py-2 font-bold">Recovery</td>
+                      <td className="py-2 text-[var(--profit)]">100%</td>
+                      <td className="py-2 text-[var(--loss)]">0%</td>
+                      <td className="py-2 text-[var(--loss)]">0%</td>
+                    </tr>
+                    <tr>
+                      <td className="py-2 font-bold">Active</td>
+                      <td className="py-2 text-[var(--profit)]">{fees.lpPortion}%</td>
+                      <td className="py-2 text-[var(--hazard-yellow)]">{fees.creatorPortion}%</td>
+                      <td className="py-2 text-[var(--profit)]">{fees.binPortion}% of swap fees</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-[var(--muted)] mt-3">
+                LP fees are distributed proportionally based on each Liquidity Provider&apos;s deposit share via on-chain per-share accounting.
+                Traders who bought into bins earn accumulated bin fee bonuses when they sell (default {fees.binPortion}% of swap fees, max 50%).
+              </p>
             </div>
           </div>
         </section>
 
         {/* Governance */}
         <section id="governance" className="mb-10">
-          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>Governance & Unwind</h2>
+          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>Governance</h2>
           <div className="space-y-4 text-[var(--text-light)]">
             <p>
-              During the Recovery phase, investors have governance rights to protect their investment:
+              $overeign Protocol gives both creators and Liquidity Providers governance controls
+              to manage their $overeign throughout its lifecycle:
             </p>
-            <ul className="space-y-2 ml-4">
-              <li>• <strong>Investors can vote</strong> to unwind the $overeign and exit</li>
-              <li>• <strong>Creators cannot vote</strong> — only token depositors can participate</li>
-              <li>• <strong>67% quorum required</strong> — most investors must participate</li>
-              <li>• <strong>51% approval needed</strong> — simple majority to pass</li>
-              <li>• <strong>Timelock</strong> — gives time for discussion before execution and for token holders to close their positions</li>
-            </ul>
+
+            <div className="card border-l-4" style={{ borderLeftColor: 'var(--hazard-yellow)' }}>
+              <h3 className="h3 mb-3" style={{ color: 'var(--hazard-yellow)' }}>Creator Controls</h3>
+              <ul className="space-y-2 ml-4 text-[var(--muted)]">
+                <li>&bull; <strong>Adjust sell fee</strong> &mdash; change the token transfer fee on sells (0% - 3%)</li>
+                <li>&bull; <strong>Adjust fee threshold</strong> &mdash; lower the creator fee threshold (can only decrease, never increase)</li>
+                <li>&bull; <strong>Renounce sell fee</strong> &mdash; permanently set sell fee to 0% and remove the authority (irreversible)</li>
+                <li>&bull; <strong>Renounce fee threshold</strong> &mdash; permanently set to 0, giving up all threshold control (irreversible)</li>
+                <li>&bull; <strong>Set creator fee wallet</strong> &mdash; redirect creator fee earnings to a different wallet</li>
+              </ul>
+            </div>
+
+            <div className="card border-l-4" style={{ borderLeftColor: 'var(--profit)' }}>
+              <h3 className="h3 mb-3" style={{ color: 'var(--profit)' }}>Liquidity Provider Controls (via $overeign NFT)</h3>
+              <ul className="space-y-2 ml-4 text-[var(--muted)]">
+                <li>&bull; <strong>Claim fees</strong> &mdash; claim your proportional share of accumulated trading fees on-chain</li>
+                <li>&bull; <strong>Vote on proposals</strong> &mdash; each $overeign NFT carries one vote, weighted by deposit amount</li>
+                <li>&bull; <strong>Propose unwind</strong> &mdash; any NFT holder can propose an unwind vote for their $overeign</li>
+                <li>&bull; <strong>Transfer position</strong> &mdash; sell or transfer your $overeign NFT (governance rights transfer with it)</li>
+              </ul>
+            </div>
+
+            <div className="card border-l-4" style={{ borderLeftColor: '#00c8ff' }}>
+              <h3 className="h3 mb-3" style={{ color: '#00c8ff' }}>Protocol-Level Governance</h3>
+              <ul className="space-y-2 ml-4 text-[var(--muted)]">
+                <li>&bull; <strong>Set default swap fee</strong> &mdash; protocol authority sets the post-recovery swap rate (currently {fees.activeSwapFee}%)</li>
+                <li>&bull; <strong>Adjust bin fee share</strong> &mdash; change the portion of fees allocated to bin bonuses (up to 50%)</li>
+                <li>&bull; <strong>Adjust creator fee share</strong> &mdash; change the creator&apos;s share of post-recovery fees</li>
+                <li>&bull; <strong>Emergency pause</strong> &mdash; pause the protocol in case of critical issues</li>
+              </ul>
+            </div>
+
             <div className="card mt-4" style={{ background: 'rgba(242, 183, 5, 0.1)', borderColor: 'rgba(242, 183, 5, 0.3)' }}>
               <p className="text-sm">
-                <strong>What happens on Unwind?</strong><br/>
-                If governance passes an unwind vote, the liquidity pool is closed. 
-                Investors can claim their GOR back (minus any shortfall), and the creator can claim the remaining tokens.
+                <strong>Voting rules:</strong> Only $overeign NFT holders can vote &mdash; creators cannot participate.
+                67% quorum required with 51% approval to pass. A timelock period gives token holders time to
+                close positions before execution.
               </p>
             </div>
           </div>
         </section>
 
         {/* Auto-Unwind */}
-        <section id="auto-unwind" className="mb-10">
-          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>Low Volume Protection</h2>
+        <section id="dead-pool" className="mb-10">
+          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>Failed Project Protection</h2>
           <div className="space-y-4 text-[var(--text-light)]">
             <p>
-              If a $overeign has very low trading activity for an extended period (90-365 days), 
-              the protocol triggers an <strong>activity check</strong>:
+              While permanently locked liquidity gives creators peace of mind, Liquidity Providers
+              need an exit path if a project fails to gain traction. $overeign Protocol solves this
+              with a novel <strong>Dead Pool</strong> mechanism:
             </p>
             <ul className="space-y-2 ml-4">
-              <li>• The LP can be unwound if volume remains below threshold</li>
-              <li>• This protects investors from being stuck in dead projects</li>
-              <li>• Investors get their GOR back, creator gets remaining tokens</li>
+              <li>• Each pool has a <strong>minimum volume threshold</strong> measured over a period (90-365 days)</li>
+              <li>• If trading activity falls below this threshold, the pool becomes <strong>eligible for governance unwind</strong></li>
+              <li>• Liquidity Providers can then vote to unlock the pool and recover their capital</li>
+              <li>• Creators cannot vote — only LPs who deposited GOR participate in the governance process</li>
+              <li>• This ensures LPs are never permanently stuck in dead projects while still giving active projects the stability of locked liquidity</li>
             </ul>
           </div>
         </section>
@@ -249,19 +462,19 @@ export default function DocsPage() {
           <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>$overeign NFTs</h2>
           <div className="space-y-4 text-[var(--text-light)]">
             <p>
-              When bonding completes, each investor receives a <strong>$overeign NFT</strong> representing 
+              When bonding completes, each Liquidity Provider receives a <strong>$overeign NFT</strong> representing
               their share of the liquidity position:
             </p>
             <ul className="space-y-2 ml-4">
-              <li>• <strong>Tracks your share</strong> — % of total deposit</li>
-              <li>• <strong>Earns fees</strong> — claim your portion of trading fees</li>
+              <li>• <strong>Tracks your share</strong> — proportional to your GOR deposit</li>
+              <li>• <strong>Earns fees</strong> — claim your portion of trading fees on-chain</li>
               <li>• <strong>Transferable</strong> — sell or transfer your position</li>
-              <li>• <strong>Governance rights</strong> — vote on proposals during recovery</li>
+              <li>• <strong>Governance rights</strong> — vote on unwind proposals during recovery</li>
             </ul>
             <div className="card mt-4">
               <p className="text-sm text-[var(--muted)]">
-                <strong>Note:</strong> Creators do NOT receive $overeign NFTs. They cannot claim LP fees — 
-                their only revenue is from sell fees (if configured).
+                <strong>Note:</strong> Creators do NOT receive $overeign NFTs. During recovery, their fee share
+                is locked. After recovery, creators can claim their accumulated share.
               </p>
             </div>
           </div>
@@ -272,7 +485,7 @@ export default function DocsPage() {
           <div className="card card-highlight text-center py-8">
             <h2 className="h2 mb-4" style={{ color: 'var(--text-light)' }}>Ready to launch?</h2>
             <p className="text-[var(--muted)] mb-6">
-              Create your $overeign and bootstrap liquidity the fair way.
+              Vibe the Dream. Liquidify the Token. Become $overeign.
             </p>
             <a href="/mint" className="btn btn-primary btn-lg inline-block">
               Launch Your $overeign

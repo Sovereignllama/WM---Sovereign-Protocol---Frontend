@@ -1,15 +1,16 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { PublicKey } from '@solana/web3.js';
-import { SovereignType, CreateSovereignParams } from '@/types/sovereign';
-import type { FeeMode } from '@/lib/program/client';
-import { PROTOCOL_CONSTANTS, LAMPORTS_PER_GOR, getAmmConfigForFee } from '@/lib/config';
+import { useConnection } from '@solana/wallet-adapter-react';
+import { SovereignType } from '@/lib/program/client';
+import { PROTOCOL_CONSTANTS, LAMPORTS_PER_GOR } from '@/lib/config';
 import { useProtocolState } from '@/hooks/useSovereign';
 import { useCreateSovereign } from '@/hooks/useTransactions';
 import { useRouter } from 'next/navigation';
 import { createTokenMetadata, isPinataConfigured } from '@/lib/upload';
+import { PublicKey } from '@solana/web3.js';
+import { getMint, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 import Link from 'next/link';
 
 type Step = 1 | 2 | 3 | 4;
@@ -27,11 +28,16 @@ interface FormData {
   tokenImagePreview: string;
   tokenDescription: string;
   sellFeeBps: number;
-  feeMode: FeeMode;
   
-  // Step 2: Token Config (BYO)
+  // Step 2: BYO Token Config
   existingMint: string;
   depositAmount: string;
+  byoTokenDecimals: number;
+  byoTokenSupply: string;
+  byoTokenSymbol: string;
+  byoMintValid: boolean;
+  byoMintLoading: boolean;
+  byoTokenProgramId: string;
   
   // Step 3: $overeign Config
   bondTarget: string;
@@ -52,10 +58,17 @@ const defaultFormData: FormData = {
   tokenImagePreview: '',
   tokenDescription: '',
   sellFeeBps: 0,
-  feeMode: 'FairLaunch',
 
+  // BYO defaults
   existingMint: '',
   depositAmount: '',
+  byoTokenDecimals: 0,
+  byoTokenSupply: '0',
+  byoTokenSymbol: '',
+  byoMintValid: false,
+  byoMintLoading: false,
+  byoTokenProgramId: '',
+
   bondTarget: '50',
   bondDurationDays: 14,
   swapFeeBps: 100,
@@ -65,6 +78,7 @@ const defaultFormData: FormData = {
 export default function MintPage() {
   const router = useRouter();
   const { connected } = useWallet();
+  const { connection } = useConnection();
   const { data: protocolState, isLoading: protocolLoading } = useProtocolState();
   const createSovereign = useCreateSovereign();
   const [step, setStep] = useState<Step>(1);
@@ -73,15 +87,52 @@ export default function MintPage() {
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const isTokenLaunch = formData.sovereignType === 'TokenLaunch';
+  const isBYO = formData.sovereignType === 'BYOToken';
+  const byoMinSupplyBps = protocolState?.byoMinSupplyBps ?? PROTOCOL_CONSTANTS.DEFAULT_BYO_MIN_SUPPLY_BPS;
+  const byoMinSupplyPct = byoMinSupplyBps / 100;
+
   // Use live protocol state values with fallbacks to defaults
   const creationFeeBps = protocolState?.creationFeeBps ?? PROTOCOL_CONSTANTS.DEFAULT_CREATION_FEE_BPS;
   const minBondTargetGor = protocolState?.minBondTargetGor ?? (PROTOCOL_CONSTANTS.MIN_BOND_TARGET_LAMPORTS / LAMPORTS_PER_GOR);
   const minDepositGor = protocolState?.minDepositGor ?? (PROTOCOL_CONSTANTS.MIN_DEPOSIT_LAMPORTS / LAMPORTS_PER_GOR);
-  const byoMinSupplyBps = 3000; // TODO: Add to protocolState when available on-chain
 
   const updateForm = (updates: Partial<FormData>) => {
     setFormData(prev => ({ ...prev, ...updates }));
   };
+
+  // ── BYO: Validate mint address on change ──
+  const validateMint = useCallback(async (mintAddress: string) => {
+    updateForm({ byoMintLoading: true, byoMintValid: false, byoTokenSymbol: '', byoTokenSupply: '0', byoTokenDecimals: 0, byoTokenProgramId: '' });
+    try {
+      const mintPubkey = new PublicKey(mintAddress);
+      // Try Token program first, then Token-2022
+      let mintInfo;
+      let programId: PublicKey = TOKEN_PROGRAM_ID;
+      try {
+        mintInfo = await getMint(connection, mintPubkey, 'confirmed', TOKEN_PROGRAM_ID);
+        programId = TOKEN_PROGRAM_ID;
+      } catch {
+        mintInfo = await getMint(connection, mintPubkey, 'confirmed', TOKEN_2022_PROGRAM_ID);
+        programId = TOKEN_2022_PROGRAM_ID;
+      }
+      const supply = mintInfo.supply.toString();
+      const decimals = mintInfo.decimals;
+      updateForm({
+        byoMintValid: true,
+        byoMintLoading: false,
+        byoTokenDecimals: decimals,
+        byoTokenSupply: supply,
+        byoTokenSymbol: `${decimals}d`,
+        byoTokenProgramId: programId.toBase58(),
+      });
+      setError(null);
+    } catch (err: any) {
+      updateForm({ byoMintValid: false, byoMintLoading: false });
+      setError('Invalid mint address or token not found on-chain');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connection]);
 
   const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -125,14 +176,9 @@ export default function MintPage() {
   const canProceed = (): boolean => {
     switch (step) {
       case 1:
-        if (formData.sovereignType === 'TokenLaunch') {
-          return formData.name.length >= 3 && formData.name.length <= 32;
-        } else {
-          // BYO Token doesn't need name in step 1
-          return true;
-        }
+        return formData.name.length >= 3 && formData.name.length <= 32;
       case 2:
-        if (formData.sovereignType === 'TokenLaunch') {
+        if (isTokenLaunch) {
           return (
             formData.tokenName.length >= 1 &&
             formData.tokenSymbol.length >= 1 &&
@@ -141,12 +187,16 @@ export default function MintPage() {
             formData.tokenImage !== null
           );
         } else {
-          return (
-            formData.name.length >= 3 &&
-            formData.name.length <= 32 &&
-            formData.existingMint.length === 44 &&
-            parseFloat(formData.depositAmount) > 0
-          );
+          // BYO Token validation
+          if (!formData.byoMintValid || formData.byoMintLoading) return false;
+          const deposit = parseFloat(formData.depositAmount) || 0;
+          if (deposit <= 0) return false;
+          // Check minimum supply percentage
+          const totalSupply = BigInt(formData.byoTokenSupply);
+          if (totalSupply === 0n) return false;
+          const depositLamports = BigInt(Math.floor(deposit * (10 ** formData.byoTokenDecimals)));
+          const depositBps = Number(depositLamports * 10000n / totalSupply);
+          return depositBps >= byoMinSupplyBps;
         }
       case 3:
         const bondTargetGor = parseFloat(formData.bondTarget) || 0;
@@ -178,22 +228,21 @@ export default function MintPage() {
     setError(null);
     
     try {
-      // Convert form data to transaction params
       const bondTargetLamports = BigInt(Math.floor(parseFloat(formData.bondTarget) * LAMPORTS_PER_GOR));
-      
-      // Upload token metadata (image is mandatory for Token Launch)
-      let metadataUri: string | undefined;
-      if (formData.sovereignType === 'TokenLaunch') {
+
+      if (isTokenLaunch) {
+        // ── Token Launch flow ──
         if (!formData.tokenImage) {
-          throw new Error('Token image is required for Token Launch.');
+          throw new Error('Token image is required.');
         }
         if (!isPinataConfigured()) {
           throw new Error('Image upload not configured. Please contact support.');
         }
-        
+
         setIsUploadingImage(true);
         setError(null);
-        
+
+        let metadataUri: string;
         try {
           metadataUri = await createTokenMetadata(
             formData.tokenName,
@@ -205,49 +254,56 @@ export default function MintPage() {
         } finally {
           setIsUploadingImage(false);
         }
-      }
-      
-      // Resolve AMM config for the chosen swap fee tier
-      const ammTier = getAmmConfigForFee(formData.swapFeeBps);
-      if (!ammTier || !ammTier.address) {
-        throw new Error(`No AMM config address configured for ${(formData.swapFeeBps / 100).toFixed(1)}% swap fee. Please set the NEXT_PUBLIC_AMM_CONFIG_${formData.swapFeeBps}BPS environment variable.`);
-      }
 
-      const params = {
-        sovereignType: formData.sovereignType as 'TokenLaunch' | 'BYOToken',
-        bondTarget: bondTargetLamports,
-        bondDurationDays: formData.bondDurationDays,
-        name: formData.name,
-        swapFeeBps: ammTier.bps,
-        ammConfig: new PublicKey(ammTier.address),
-        // Creator buy-in
-        ...(parseFloat(formData.creatorBuyIn) > 0 && {
-          creatorBuyIn: BigInt(Math.floor(parseFloat(formData.creatorBuyIn) * LAMPORTS_PER_GOR)),
-        }),
-        // Token Launch fields
-        ...(formData.sovereignType === 'TokenLaunch' && {
+        const params = {
+          sovereignType: 'TokenLaunch' as const,
+          bondTarget: bondTargetLamports,
+          bondDurationDays: formData.bondDurationDays,
+          name: formData.name,
+          swapFeeBps: formData.swapFeeBps,
+          ...(parseFloat(formData.creatorBuyIn) > 0 && {
+            creatorBuyIn: BigInt(Math.floor(parseFloat(formData.creatorBuyIn) * LAMPORTS_PER_GOR)),
+          }),
           tokenName: formData.tokenName,
           tokenSymbol: formData.tokenSymbol,
           tokenSupply: BigInt(formData.tokenSupply) * BigInt(10 ** 9), // Always 9 decimals
           sellFeeBps: formData.sellFeeBps,
-          feeMode: formData.feeMode,
           metadataUri,
-        }),
-        // BYO Token fields
-        ...(formData.sovereignType === 'BYOToken' && {
-          existingMint: new PublicKey(formData.existingMint),
-          depositAmount: BigInt(formData.depositAmount),
-        }),
-      };
-      
-      console.log('Creating sovereign with params:', params);
-      
-      const result = await createSovereign.mutateAsync(params);
-      
-      console.log('Sovereign created:', result);
-      
-      // Redirect to the new sovereign page on success
-      router.push(`/sovereign/${result.sovereignId}`);
+        };
+
+        console.log('Creating TokenLaunch sovereign with params:', params);
+        const result = await createSovereign.mutateAsync(params);
+        console.log('Sovereign created:', result);
+        router.push(`/sovereign/${result.sovereignId}`);
+
+      } else {
+        // ── BYO Token flow ──
+        const existingMint = new PublicKey(formData.existingMint);
+        const depositLamports = BigInt(
+          Math.floor(parseFloat(formData.depositAmount) * (10 ** formData.byoTokenDecimals))
+        );
+
+        const params = {
+          sovereignType: 'BYOToken' as const,
+          bondTarget: bondTargetLamports,
+          bondDurationDays: formData.bondDurationDays,
+          name: formData.name,
+          swapFeeBps: formData.swapFeeBps,
+          ...(parseFloat(formData.creatorBuyIn) > 0 && {
+            creatorBuyIn: BigInt(Math.floor(parseFloat(formData.creatorBuyIn) * LAMPORTS_PER_GOR)),
+          }),
+          existingMint,
+          depositAmount: depositLamports,
+          tokenProgramId: formData.byoTokenProgramId
+            ? new PublicKey(formData.byoTokenProgramId)
+            : undefined,
+        };
+
+        console.log('Creating BYOToken sovereign with params:', params);
+        const result = await createSovereign.mutateAsync(params);
+        console.log('Sovereign created:', result);
+        router.push(`/sovereign/${result.sovereignId}`);
+      }
     } catch (err: any) {
       console.error('Failed to create sovereign:', err);
       setError(err.message || 'Failed to create sovereign. Please try again.');
@@ -299,60 +355,60 @@ export default function MintPage() {
           {step === 1 && (
             <div className="space-y-6">
               <div>
-                <h2 className="h3 text-white mb-4">Choose Launch Type</h2>
+                <h2 className="h3 text-white mb-4">Launch Type</h2>
                 <div className="grid grid-cols-2 gap-4">
                   <button
+                    type="button"
                     onClick={() => updateForm({ sovereignType: 'TokenLaunch' })}
                     className={`card text-left transition-all ${
-                      formData.sovereignType === 'TokenLaunch' 
-                        ? 'border-[var(--hazard-yellow)] glow-yellow' 
-                        : 'hover:border-[rgba(242,183,5,0.25)]'
+                      isTokenLaunch
+                        ? 'border-[var(--hazard-yellow)] glow-yellow'
+                        : 'border-[var(--border)] hover:border-[var(--muted)]'
                     }`}
                   >
                     <div className="text-2xl mb-2">🚀</div>
                     <div className="font-bold text-white mb-1">Token Launch</div>
                     <div className="text-sm text-[var(--muted)]">
-                      Create a new token with built-in sell fees (0-3%)
+                      Create a new token with built-in transfer fees (0-3%)
                     </div>
                   </button>
                   <button
+                    type="button"
                     onClick={() => updateForm({ sovereignType: 'BYOToken' })}
                     className={`card text-left transition-all ${
-                      formData.sovereignType === 'BYOToken' 
-                        ? 'border-[var(--hazard-yellow)] glow-yellow' 
-                        : 'hover:border-[rgba(242,183,5,0.25)]'
+                      isBYO
+                        ? 'border-[var(--hazard-yellow)] glow-yellow'
+                        : 'border-[var(--border)] hover:border-[var(--muted)]'
                     }`}
                   >
                     <div className="text-2xl mb-2">🔗</div>
                     <div className="font-bold text-white mb-1">BYO Token</div>
                     <div className="text-sm text-[var(--muted)]">
-                      Bring an existing token (min 30% supply required)
+                      Bring your own existing SPL token (min {byoMinSupplyPct}% supply)
                     </div>
                   </button>
                 </div>
               </div>
 
-              {formData.sovereignType === 'TokenLaunch' && (
-                <div>
-                  <label className="input-label">Sovereign Name</label>
-                  <input
-                    type="text"
-                    className="input"
-                    placeholder="e.g., Moon Protocol"
-                    value={formData.name}
-                    onChange={(e) => updateForm({ name: e.target.value })}
-                    maxLength={32}
-                  />
-                  <div className="text-xs text-[var(--faint)] mt-2">
-                    3-32 characters
-                  </div>
+              <div>
+                <label className="input-label">Sovereign Name</label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="e.g., Moon Protocol"
+                  value={formData.name}
+                  onChange={(e) => updateForm({ name: e.target.value })}
+                  maxLength={32}
+                />
+                <div className="text-xs text-[var(--faint)] mt-2">
+                  3-32 characters
                 </div>
-              )}
+              </div>
             </div>
           )}
 
-          {/* Step 2: Token Configuration */}
-          {step === 2 && formData.sovereignType === 'TokenLaunch' && (
+          {/* Step 2: Token Configuration (Token Launch) */}
+          {step === 2 && isTokenLaunch && (
             <div className="space-y-6">
               <h2 className="h3 text-white mb-4">Token Configuration</h2>
               
@@ -455,7 +511,7 @@ export default function MintPage() {
               </div>
 
               <div>
-                <label className="input-label">Sell Fee ({formData.sellFeeBps / 100}%)</label>
+                <label className="input-label">Transfer Fee ({(formData.sellFeeBps / 100).toFixed(1)}%)</label>
                 <input
                   type="range"
                   className="w-full accent-[var(--hazard-yellow)]"
@@ -469,51 +525,10 @@ export default function MintPage() {
                   <span>0%</span>
                   <span>3%</span>
                 </div>
+                <div className="text-xs text-[var(--faint)] mt-2">
+                  Fee on each token transfer. Split between creator and LP recovery.
+                </div>
               </div>
-
-              {formData.sellFeeBps > 0 && (
-                <>
-                  {/* Fee Mode Selector */}
-                  <div>
-                    <label className="input-label">Fee Mode</label>
-                    <div className="grid grid-cols-1 gap-3 mt-2">
-                      {([
-                        {
-                          value: 'FairLaunch' as FeeMode,
-                          label: '🤝 Fair Launch',
-                          description: 'Fees boost recovery, then auto-renounce to 0%. Best for community trust.',
-                        },
-                        {
-                          value: 'RecoveryBoost' as FeeMode,
-                          label: '🚀 Recovery Boost',
-                          description: 'All fees go to recovery until complete, then to creator.',
-                        },
-                        {
-                          value: 'CreatorRevenue' as FeeMode,
-                          label: '💰 Creator Revenue',
-                          description: 'Fees always go to creator, even during recovery phase.',
-                        },
-                      ]).map((mode) => (
-                        <button
-                          key={mode.value}
-                          type="button"
-                          onClick={() => updateForm({ feeMode: mode.value })}
-                          className={`p-3 rounded-lg border text-left transition-all ${
-                            formData.feeMode === mode.value
-                              ? 'border-[var(--hazard-yellow)] glow-yellow bg-[rgba(242,183,5,0.05)]'
-                              : 'border-[var(--border)] hover:border-[rgba(242,183,5,0.25)]'
-                          }`}
-                        >
-                          <div className="font-bold text-white text-sm">{mode.label}</div>
-                          <div className="text-xs text-[var(--muted)] mt-1">{mode.description}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-
-                </>
-              )}
 
               <div className="alert info">
                 <p className="text-sm">
@@ -523,53 +538,91 @@ export default function MintPage() {
             </div>
           )}
 
-          {step === 2 && formData.sovereignType === 'BYOToken' && (
+          {/* Step 2: BYO Token Configuration */}
+          {step === 2 && isBYO && (
             <div className="space-y-6">
-              <h2 className="h3 text-white mb-4">Existing Token</h2>
-              
-              <div>
-                <label className="input-label">Sovereign Name</label>
-                <input
-                  type="text"
-                  className="input"
-                  placeholder="e.g., Moon Protocol"
-                  value={formData.name}
-                  onChange={(e) => updateForm({ name: e.target.value })}
-                  maxLength={32}
-                />
-                <div className="text-xs text-[var(--faint)] mt-2">
-                  3-32 characters
-                </div>
-              </div>
+              <h2 className="h3 text-white mb-4">BYO Token Configuration</h2>
 
               <div>
                 <label className="input-label">Token Mint Address</label>
                 <input
                   type="text"
                   className="input font-mono text-sm"
-                  placeholder="Enter SPL token mint address"
+                  placeholder="e.g., So11111111111111111111111111111111"
                   value={formData.existingMint}
-                  onChange={(e) => updateForm({ existingMint: e.target.value })}
+                  onChange={(e) => {
+                    const val = e.target.value.trim();
+                    updateForm({ existingMint: val, byoMintValid: false });
+                    if (val.length >= 32 && val.length <= 44) {
+                      validateMint(val);
+                    }
+                  }}
                 />
+                {formData.byoMintLoading && (
+                  <p className="text-xs text-[var(--hazard-yellow)] mt-2 flex items-center gap-1">
+                    <span className="animate-spin">⏳</span> Validating mint...
+                  </p>
+                )}
+                {!formData.byoMintLoading && formData.byoMintValid && (
+                  <div className="mt-3 p-3 rounded-lg bg-[var(--money-green)]/10 border border-[var(--money-green)]/30">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-[var(--muted)]">Total Supply</span>
+                      <span className="text-white font-bold">
+                        {(Number(formData.byoTokenSupply) / 10 ** formData.byoTokenDecimals).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm mt-1">
+                      <span className="text-[var(--muted)]">Decimals</span>
+                      <span className="text-white font-bold">{formData.byoTokenDecimals}</span>
+                    </div>
+                    <div className="flex justify-between text-sm mt-1">
+                      <span className="text-[var(--muted)]">Program</span>
+                      <span className="text-white font-bold text-xs">
+                        {formData.byoTokenProgramId === TOKEN_2022_PROGRAM_ID.toBase58() ? 'Token-2022' : 'SPL Token'}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
-                <label className="input-label">Deposit Amount (Tokens)</label>
+                <label className="input-label">Deposit Amount (tokens)</label>
                 <input
                   type="number"
                   className="input"
-                  placeholder={`Amount to deposit (min ${byoMinSupplyBps / 100}% of supply)`}
+                  placeholder="Amount of tokens to deposit"
                   value={formData.depositAmount}
                   onChange={(e) => updateForm({ depositAmount: e.target.value })}
+                  min={0}
                 />
-                <div className="text-xs text-[var(--faint)] mt-2">
-                  Minimum {byoMinSupplyBps / 100}% of total token supply required
-                </div>
+                {formData.byoMintValid && formData.byoTokenSupply !== '0' && (
+                  (() => {
+                    const deposit = parseFloat(formData.depositAmount) || 0;
+                    const totalHuman = Number(formData.byoTokenSupply) / 10 ** formData.byoTokenDecimals;
+                    const pct = totalHuman > 0 ? (deposit / totalHuman) * 100 : 0;
+                    const meetsMin = pct >= byoMinSupplyPct;
+                    return (
+                      <div className="mt-2">
+                        <div className={`text-xs ${meetsMin ? 'text-[var(--money-green)]' : 'text-[var(--hazard-yellow)]'}`}>
+                          {pct.toFixed(2)}% of total supply {meetsMin ? '✓' : `(minimum ${byoMinSupplyPct}% required)`}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => updateForm({ depositAmount: totalHuman.toString() })}
+                          className="text-xs text-[var(--hazard-yellow)] hover:underline mt-1"
+                        >
+                          Max ({totalHuman.toLocaleString()})
+                        </button>
+                      </div>
+                    );
+                  })()
+                )}
               </div>
 
-              <div className="alert warning">
+              <div className="alert info">
                 <p className="text-sm">
-                  ⚠️ BYO tokens don't have sell fees unless the token has transfer hooks.
+                  🔗 Your existing token will be deposited into the liquidity pool. You must hold at least {byoMinSupplyPct}% of the total supply.
+                  No transfer fee — BYO tokens use standard SPL transfers.
                 </p>
               </div>
             </div>
@@ -610,29 +663,27 @@ export default function MintPage() {
               </div>
 
               <div>
-                <label className="input-label">Swap Fee ({formData.swapFeeBps === 20 ? '0.2' : formData.swapFeeBps === 50 ? '0.5' : formData.swapFeeBps === 100 ? '1' : '2'}%)</label>
+                <label className="input-label">Recovery Swap Fee ({(formData.swapFeeBps / 100).toFixed(1)}%)</label>
                 <input
                   type="range"
                   className="w-full accent-[var(--hazard-yellow)]"
-                  min={0}
-                  max={3}
-                  step={1}
-                  value={[20, 50, 100, 200].indexOf(formData.swapFeeBps)}
-                  onChange={(e) => updateForm({ swapFeeBps: [20, 50, 100, 200][parseInt(e.target.value)] })}
+                  min={100}
+                  max={300}
+                  step={10}
+                  value={formData.swapFeeBps}
+                  onChange={(e) => updateForm({ swapFeeBps: parseInt(e.target.value) })}
                 />
                 <div className="flex justify-between text-xs text-[var(--faint)] mt-1">
-                  <span>0.2%</span>
-                  <span>0.5%</span>
                   <span>1%</span>
                   <span>2%</span>
+                  <span>3%</span>
                 </div>
                 <div className="text-xs text-[var(--faint)] mt-2">
-                  LP trading fee on each swap - 100% goes to investors during recovery
+                  LP trading fee during recovery phase. Snaps to the protocol default rate (0.30%) once recovery completes.
                 </div>
               </div>
 
-              {formData.sovereignType === 'TokenLaunch' && (
-                <div>
+              <div>
                   <label className="input-label">Creator Buy-in (GOR)</label>
                   <input
                     type="number"
@@ -655,7 +706,6 @@ export default function MintPage() {
                     Optional: GOR to market buy tokens at theoretical price upon successful bonding. Max {maxCreatorBuyIn.toFixed(2)} GOR (1% of bond target).
                   </div>
                 </div>
-              )}
 
               <div className="stat money">
                 <div className="k">Creation Fee ({creationFeePercent}% of bond target)</div>
@@ -673,15 +723,15 @@ export default function MintPage() {
               <div className="space-y-4">
                 <div className="flex justify-between py-2 border-b border-[var(--border)]">
                   <span className="text-[var(--muted)]">Type</span>
-                  <span className="text-white font-bold">
-                    {formData.sovereignType === 'TokenLaunch' ? 'Token Launch' : 'BYO Token'}
-                  </span>
+                  <span className="text-white font-bold">{isTokenLaunch ? 'Token Launch' : 'BYO Token'}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-[var(--border)]">
                   <span className="text-[var(--muted)]">Name</span>
                   <span className="text-white font-bold">{formData.name}</span>
                 </div>
-                {formData.sovereignType === 'TokenLaunch' && (
+
+                {/* Token Launch fields */}
+                {isTokenLaunch && (
                   <>
                     <div className="flex justify-between py-2 border-b border-[var(--border)]">
                       <span className="text-[var(--muted)]">Token</span>
@@ -696,11 +746,37 @@ export default function MintPage() {
                       </span>
                     </div>
                     <div className="flex justify-between py-2 border-b border-[var(--border)]">
-                      <span className="text-[var(--muted)]">Sell Fee</span>
+                      <span className="text-[var(--muted)]">Transfer Fee</span>
                       <span className="text-white font-bold">{(formData.sellFeeBps / 100).toFixed(1)}%</span>
                     </div>
                   </>
                 )}
+
+                {/* BYO Token fields */}
+                {isBYO && (
+                  <>
+                    <div className="flex justify-between py-2 border-b border-[var(--border)]">
+                      <span className="text-[var(--muted)]">Token Mint</span>
+                      <span className="text-white font-bold text-xs font-mono">
+                        {formData.existingMint.slice(0, 8)}...{formData.existingMint.slice(-6)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-2 border-b border-[var(--border)]">
+                      <span className="text-[var(--muted)]">Deposit Amount</span>
+                      <span className="text-white font-bold">
+                        {parseFloat(formData.depositAmount).toLocaleString()} tokens
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-2 border-b border-[var(--border)]">
+                      <span className="text-[var(--muted)]">% of Supply</span>
+                      <span className="text-white font-bold">
+                        {((parseFloat(formData.depositAmount) / (Number(formData.byoTokenSupply) / 10 ** formData.byoTokenDecimals)) * 100).toFixed(2)}%
+                      </span>
+                    </div>
+                  </>
+                )}
+
+                {/* Common fields */}
                 <div className="flex justify-between py-2 border-b border-[var(--border)]">
                   <span className="text-[var(--muted)]">Bond Target</span>
                   <span className="text-white font-bold">{formData.bondTarget} GOR</span>
@@ -710,8 +786,11 @@ export default function MintPage() {
                   <span className="text-white font-bold">{formData.bondDurationDays} days</span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-[var(--border)]">
-                  <span className="text-[var(--muted)]">Swap Fee</span>
+                  <span className="text-[var(--muted)]">Recovery Swap Fee</span>
                   <span className="text-white font-bold">{(formData.swapFeeBps / 100).toFixed(1)}%</span>
+                </div>
+                <div className="text-xs text-[var(--faint)] -mt-2 mb-2 text-right">
+                  Snaps to protocol default (0.30%) after recovery
                 </div>
                 {parseFloat(formData.creatorBuyIn) > 0 && (
                   <div className="flex justify-between py-2 border-b border-[var(--border)]">
@@ -728,7 +807,7 @@ export default function MintPage() {
               <div className="alert money">
                 <div className="alert-title">Recovery-First Mechanics</div>
                 <p className="text-sm">
-                  100% of LP fees go to investors until they recover their principal. 
+                  100% of LP fees go to Liquidity Providers until they recover their principal. 
                   LP is locked after recovery completes and stays locked unless volume fails to meet the minimum threshold.
                 </p>
               </div>

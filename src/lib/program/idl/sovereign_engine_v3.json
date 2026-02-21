@@ -592,114 +592,6 @@
       ]
     },
     {
-      "name": "drain_legacy",
-      "docs": [
-        "Migrate GOR from legacy vault to engine vault."
-      ],
-      "discriminator": [
-        98,
-        219,
-        123,
-        11,
-        36,
-        126,
-        71,
-        182
-      ],
-      "accounts": [
-        {
-          "name": "authority",
-          "writable": true,
-          "signer": true,
-          "relations": [
-            "engine_pool"
-          ]
-        },
-        {
-          "name": "sovereign",
-          "relations": [
-            "engine_pool"
-          ]
-        },
-        {
-          "name": "engine_pool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  101,
-                  110,
-                  103,
-                  105,
-                  110,
-                  101,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign"
-              }
-            ]
-          }
-        },
-        {
-          "name": "legacy_gor_vault",
-          "docs": [
-            "Old GOR vault to drain from"
-          ],
-          "writable": true
-        },
-        {
-          "name": "engine_gor_vault",
-          "docs": [
-            "New engine GOR vault"
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  101,
-                  110,
-                  103,
-                  105,
-                  110,
-                  101,
-                  95,
-                  103,
-                  111,
-                  114,
-                  95,
-                  118,
-                  97,
-                  117,
-                  108,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign"
-              }
-            ]
-          }
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": []
-    },
-    {
       "name": "drain_pool",
       "docs": [
         "Emergency drain of all pool assets — governance only."
@@ -1492,45 +1384,6 @@
   ],
   "events": [
     {
-      "name": "BinEmptied",
-      "discriminator": [
-        103,
-        119,
-        152,
-        209,
-        117,
-        189,
-        209,
-        150
-      ]
-    },
-    {
-      "name": "BinFeeSettled",
-      "discriminator": [
-        190,
-        212,
-        196,
-        101,
-        114,
-        215,
-        185,
-        226
-      ]
-    },
-    {
-      "name": "BinFilled",
-      "discriminator": [
-        51,
-        245,
-        212,
-        220,
-        77,
-        218,
-        118,
-        171
-      ]
-    },
-    {
       "name": "BinPageAllocated",
       "discriminator": [
         34,
@@ -1609,19 +1462,6 @@
       ]
     },
     {
-      "name": "RecoveryComplete",
-      "discriminator": [
-        125,
-        91,
-        195,
-        23,
-        239,
-        223,
-        59,
-        133
-      ]
-    },
-    {
       "name": "Swap",
       "discriminator": [
         81,
@@ -1653,148 +1493,118 @@
     },
     {
       "code": 6003,
-      "name": "PoolNotPaused",
-      "msg": "Pool is not paused"
-    },
-    {
-      "code": 6004,
-      "name": "PoolAlreadyInitialized",
-      "msg": "Pool already initialized"
-    },
-    {
-      "code": 6005,
       "name": "InsufficientTokens",
       "msg": "Insufficient tokens in pool to fulfill buy"
     },
     {
-      "code": 6006,
+      "code": 6004,
       "name": "InsufficientReserves",
       "msg": "Insufficient GOR reserves to fulfill sell"
     },
     {
-      "code": 6007,
+      "code": 6005,
       "name": "SolvencyViolation",
       "msg": "Solvency violation: GOR reserve would drop below initial bonding principal"
     },
     {
-      "code": 6008,
+      "code": 6006,
       "name": "ZeroAmount",
       "msg": "Swap amount must be greater than zero"
     },
     {
-      "code": 6009,
+      "code": 6007,
       "name": "SlippageExceeded",
       "msg": "Slippage tolerance exceeded"
     },
     {
-      "code": 6010,
+      "code": 6008,
       "name": "SwapFeeExceedsMax",
       "msg": "Swap fee exceeds maximum allowed (10%)"
     },
     {
-      "code": 6011,
+      "code": 6009,
       "name": "CreatorFeeShareExceedsMax",
       "msg": "Creator fee share exceeds maximum allowed (50%)"
     },
     {
-      "code": 6012,
-      "name": "FeeControlRenounced",
-      "msg": "Fee control has been renounced"
-    },
-    {
-      "code": 6013,
+      "code": 6010,
       "name": "NoFeesToClaim",
       "msg": "No fees available to claim"
     },
     {
-      "code": 6014,
+      "code": 6011,
       "name": "InvalidBinConfig",
       "msg": "Invalid bin configuration"
     },
     {
-      "code": 6015,
+      "code": 6012,
       "name": "ZeroBondingAmount",
       "msg": "Bonding amount must be greater than zero"
     },
     {
-      "code": 6016,
+      "code": 6013,
       "name": "ZeroTokenSupply",
       "msg": "Token supply must be greater than zero"
     },
     {
-      "code": 6017,
+      "code": 6014,
       "name": "RecoveryNotComplete",
       "msg": "Recovery not yet complete — creator fees locked"
     },
     {
-      "code": 6018,
+      "code": 6015,
       "name": "Unauthorized",
       "msg": "Unauthorized: not the pool authority"
     },
     {
-      "code": 6019,
+      "code": 6016,
       "name": "PoolAlreadyDrained",
       "msg": "Pool has already been drained"
     },
     {
-      "code": 6020,
+      "code": 6017,
       "name": "MissingCreatorTokenAccount",
       "msg": "Creator token account required for buy-in"
     },
     {
-      "code": 6021,
+      "code": 6018,
       "name": "BinArrayMismatch",
       "msg": "BinArray does not belong to this pool's sovereign"
     },
     {
-      "code": 6022,
+      "code": 6019,
       "name": "BinPageNotLoaded",
       "msg": "Required BinArray page is not loaded in accounts"
     },
     {
-      "code": 6023,
-      "name": "BinPageNotAllocated",
-      "msg": "BinArray page has not been allocated yet"
-    },
-    {
-      "code": 6024,
-      "name": "BinPageAlreadyExists",
-      "msg": "BinArray page already exists"
-    },
-    {
-      "code": 6025,
+      "code": 6020,
       "name": "BinPageNotSequential",
       "msg": "BinArray page index is not sequential (gap in allocation)"
     },
     {
-      "code": 6026,
+      "code": 6021,
       "name": "BinCountOutOfRange",
       "msg": "Number of bins outside allowed range"
     },
     {
-      "code": 6027,
-      "name": "AllTokensSold",
-      "msg": "All tokens in pool have been sold — no more bins to fill"
-    },
-    {
-      "code": 6028,
-      "name": "InsufficientGor",
-      "msg": "Insufficient GOR in vault"
-    },
-    {
-      "code": 6029,
+      "code": 6022,
       "name": "InvalidFeeConfig",
       "msg": "Invalid fee configuration"
     },
     {
-      "code": 6030,
+      "code": 6023,
       "name": "InvalidBinArrayOwner",
       "msg": "BinArray account owner is not the engine program"
     },
     {
-      "code": 6031,
+      "code": 6024,
       "name": "InvalidBinArraySize",
       "msg": "BinArray account data length is incorrect"
+    },
+    {
+      "code": 6025,
+      "name": "InvalidBinArray",
+      "msg": "BinArray PDA does not match expected address or overflow page ordering is invalid"
     }
   ],
   "types": [
@@ -1932,87 +1742,6 @@
                 128
               ]
             }
-          }
-        ]
-      }
-    },
-    {
-      "name": "BinEmptied",
-      "docs": [
-        "Emitted when a bin returns to Empty (all tokens returned via sells)"
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "pool",
-            "type": "pubkey"
-          },
-          {
-            "name": "bin_index",
-            "type": "u32"
-          }
-        ]
-      }
-    },
-    {
-      "name": "BinFeeSettled",
-      "docs": [
-        "Emitted when a bin's fee credit is settled during a sell"
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "pool",
-            "type": "pubkey"
-          },
-          {
-            "name": "bin_index",
-            "type": "u32"
-          },
-          {
-            "name": "credit_delta",
-            "type": "u64"
-          },
-          {
-            "name": "total_credit",
-            "type": "u64"
-          },
-          {
-            "name": "accumulator",
-            "type": "u128"
-          }
-        ]
-      }
-    },
-    {
-      "name": "BinFilled",
-      "docs": [
-        "Emitted when a bin becomes fully Filled (all tokens purchased)"
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "pool",
-            "type": "pubkey"
-          },
-          {
-            "name": "bin_index",
-            "type": "u32"
-          },
-          {
-            "name": "gor_locked",
-            "type": "u64"
-          },
-          {
-            "name": "bin_capacity",
-            "type": "u64"
-          },
-          {
-            "name": "locked_rate",
-            "type": "u64"
           }
         ]
       }
@@ -2613,33 +2342,6 @@
       }
     },
     {
-      "name": "RecoveryComplete",
-      "docs": [
-        "Emitted when recovery completes"
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "pool",
-            "type": "pubkey"
-          },
-          {
-            "name": "total_recovered",
-            "type": "u64"
-          },
-          {
-            "name": "recovery_target",
-            "type": "u64"
-          },
-          {
-            "name": "trade_count",
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
       "name": "Swap",
       "docs": [
         "Emitted on every swap (buy or sell)"
@@ -2686,6 +2388,13 @@
           {
             "name": "active_bin",
             "type": "u32"
+          },
+          {
+            "name": "is_partial",
+            "docs": [
+              "True when the swap was a partial fill (refund > 0)"
+            ],
+            "type": "bool"
           }
         ]
       }

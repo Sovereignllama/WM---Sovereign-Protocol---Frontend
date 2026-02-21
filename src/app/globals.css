@@ -398,6 +398,22 @@
   animation: spin 1s linear infinite;
 }
 
+/* Stock ticker scroll */
+@keyframes ticker-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.ticker-track {
+  display: flex;
+  width: max-content;
+  animation: ticker-scroll 30s linear infinite;
+}
+
+.ticker-track:hover {
+  animation-play-state: paused;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
