@@ -36,7 +36,7 @@ function toDisplayData(chainSovereign: NonNullable<ReturnType<typeof useSovereig
     totalDeposited: BigInt(chainSovereign.totalDeposited),
     depositorCount: chainSovereign.depositorCount,
     sellFeeBps: chainSovereign.sellFeeBps,
-    swapFeeBps: chainSovereign.swapFeeBps ?? 30,
+    swapFeeBps: chainSovereign.swapFeeBps ?? 0,
     creationFeeEscrowed: BigInt(0),
     creatorEscrow: BigInt(0),
     creatorMaxBuyBps: 100,

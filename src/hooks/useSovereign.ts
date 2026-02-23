@@ -57,6 +57,9 @@ export function useProtocolState() {
         sovereignCount: state.sovereignCount.toString(),
         totalFeesCollected: state.totalFeesCollected.toString(),
         autoUnwindPeriod: state.autoUnwindPeriod.toString(),
+        minFeeGrowthThreshold: Number(state.minFeeGrowthThreshold?.toString() ?? '0'),
+        observationPeriod: Number(state.observationPeriod?.toString() ?? '0'),
+        discussionPeriod: Number(state.discussionPeriod?.toString() ?? '0'),
         paused: state.paused,
         // Formatted values
         minFeeGor: Number(state.minFeeLamports) / LAMPORTS_PER_GOR,
@@ -120,6 +123,12 @@ export function useSovereigns() {
         lastActivity: Number(account.lastActivity || 0) > 0
           ? new Date(Number(account.lastActivity) * 1000)
           : null,
+        feeControlRenounced: !!account.feeControlRenounced,
+        finalizedAt: safeNum(account.finalizedAt) > 0
+          ? new Date(safeNum(account.finalizedAt) * 1000)
+          : null,
+        unwindSolBalanceGor: Number(account.unwindSolBalance || 0) / LAMPORTS_PER_GOR,
+        hasActiveProposal: !!account.hasActiveProposal,
         // Progress calculations
         bondingProgress: safeNum(account.bondTarget) > 0 
           ? (safeNum(account.totalDeposited) / safeNum(account.bondTarget)) * 100 
@@ -266,16 +275,18 @@ export function useDepositRecord(sovereignId: string | number | undefined) {
       // record (amount === 0) means no real investor deposit exists.
       if (Number(record.amount) === 0) return null;
 
-      // Compute shares client-side as fallback when on-chain shares_bps is 0
-      // (shares_bps was not set on-chain prior to the fix)
+      // Compute shares client-side as fallback when on-chain position_bps is 0
+      // (position_bps is set at NFT mint time; before that, compute from deposits)
       const sovereign = await fetchSovereignById(program, BigInt(sovereignId));
       const totalDeposited = Number(sovereign.totalDeposited);
       const depositAmount = Number(record.amount);
       const computedSharesBps = totalDeposited > 0
         ? Math.round((depositAmount / totalDeposited) * 10000)
         : 0;
-      const sharesBps = record.sharesBps > 0 ? record.sharesBps : computedSharesBps;
-      const votingPowerBps = record.votingPowerBps > 0 ? record.votingPowerBps : computedSharesBps;
+      // IDL field: position_bps (camelCase: positionBps) — replaces old shares_bps + voting_power_bps
+      const onChainBps = record.positionBps ?? 0;
+      const sharesBps = onChainBps > 0 ? onChainBps : computedSharesBps;
+      const votingPowerBps = sharesBps; // unified: position_bps covers both
       
       return {
         sovereign: record.sovereign.toBase58(),
@@ -285,8 +296,8 @@ export function useDepositRecord(sovereignId: string | number | undefined) {
         sharesBps,
         sharesPercent: sharesBps / 100,
         genesisNftMint: record.genesisNftMint.toBase58(),
-        feesClaimed: record.feesClaimed.toString(),
-        feesClaimedGor: Number(record.feesClaimed) / LAMPORTS_PER_GOR,
+        feesClaimed: '0', // deprecated: fee vault was never funded
+        feesClaimedGor: 0,
         nftMint: record.nftMint?.toBase58() ?? null,
         votingPowerBps,
         votingPowerPercent: votingPowerBps / 100,
@@ -317,24 +328,28 @@ export function useWalletDeposits() {
       
       const deposits = await fetchWalletDeposits(program, publicKey);
       
-      return deposits.map(({ publicKey: recordPubkey, account }: { publicKey: PublicKey; account: any }) => ({
-        publicKey: recordPubkey.toBase58(),
-        sovereign: account.sovereign.toBase58(),
-        depositor: account.depositor.toBase58(),
-        amount: account.amount.toString(),
-        amountGor: Number(account.amount) / LAMPORTS_PER_GOR,
-        sharesBps: account.sharesBps,
-        sharesPercent: account.sharesBps / 100,
-        votingPowerBps: account.votingPowerBps || account.sharesBps,
-        votingPowerPercent: (account.votingPowerBps || account.sharesBps) / 100,
-        feesClaimed: account.feesClaimed.toString(),
-        feesClaimedGor: Number(account.feesClaimed) / LAMPORTS_PER_GOR,
-        nftMinted: account.nftMinted,
-        nftMint: account.nftMint?.toBase58() ?? null,
-        unwindClaimed: account.unwindClaimed,
-        refundClaimed: account.refundClaimed,
-        depositedAt: new Date(Number(account.depositedAt) * 1000),
-      }));
+      return deposits.map(({ publicKey: recordPubkey, account }: { publicKey: PublicKey; account: any }) => {
+        // IDL field: position_bps (camelCase: positionBps) — replaces old shares_bps + voting_power_bps
+        const bps = account.positionBps ?? 0;
+        return {
+          publicKey: recordPubkey.toBase58(),
+          sovereign: account.sovereign.toBase58(),
+          depositor: account.depositor.toBase58(),
+          amount: account.amount.toString(),
+          amountGor: Number(account.amount) / LAMPORTS_PER_GOR,
+          sharesBps: bps,
+          sharesPercent: bps / 100,
+          votingPowerBps: bps,
+          votingPowerPercent: bps / 100,
+          feesClaimed: '0', // deprecated: fee vault was never funded
+          feesClaimedGor: 0,
+          nftMinted: account.nftMinted,
+          nftMint: account.nftMint?.toBase58() ?? null,
+          unwindClaimed: account.unwindClaimed,
+          refundClaimed: account.refundClaimed,
+          depositedAt: new Date(Number(account.depositedAt) * 1000),
+        };
+      });
     },
     staleTime: 10_000,
     enabled: !!program && !!publicKey,

@@ -6,9 +6,10 @@ import { useTokenMetadata } from '@/hooks/useTokenMetadata';
 
 interface SovereignCardProps {
   sovereign: SovereignDisplayData;
+  priceChange24h?: number;
 }
 
-export function SovereignCard({ sovereign }: SovereignCardProps) {
+export function SovereignCard({ sovereign, priceChange24h }: SovereignCardProps) {
   const { data: metadata } = useTokenMetadata(sovereign.metadataUri);
   const imageUrl = metadata?.image;
   const description = metadata?.description;
@@ -63,6 +64,17 @@ export function SovereignCard({ sovereign }: SovereignCardProps) {
                   background: sovereign.status === 'Recovery' ? 'var(--hazard-orange)' : 'var(--money-green)',
                 }}
               />
+            </div>
+          )}
+
+          {/* 24h price change badge */}
+          {priceChange24h != null && priceChange24h !== 0 && ['Recovery', 'Active'].includes(sovereign.status) && (
+            <div className={`absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-bold backdrop-blur-sm ${
+              priceChange24h > 0
+                ? 'bg-[var(--profit)]/20 text-[var(--profit)]'
+                : 'bg-[var(--loss)]/20 text-[var(--loss)]'
+            }`}>
+              {priceChange24h > 0 ? '▲' : '▼'} {Math.abs(priceChange24h).toFixed(1)}%
             </div>
           )}
         </div>
@@ -149,9 +161,6 @@ export function SovereignCard({ sovereign }: SovereignCardProps) {
                   <span className="text-[var(--muted)]">LPs: </span>
                   <span className="text-white font-bold">{sovereign.depositorCount}</span>
                 </div>
-              </div>
-              <div className="text-[10px] text-[var(--faint)] mt-1">
-                Recovered {sovereign.bondTargetSol?.toFixed(2) || '0'} GOR
               </div>
             </>
           )}

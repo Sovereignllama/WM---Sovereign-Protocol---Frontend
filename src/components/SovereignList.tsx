@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { SovereignDisplayData, SovereignStatus } from '@/types/sovereign';
 import { SovereignCard } from './SovereignCard';
+import type { PoolSnapshot } from '@/hooks';
 
 type CategoryType = 'Bonding' | 'Recovery' | 'Active' | 'Unwind' | 'Archived';
 
@@ -15,6 +16,7 @@ interface SovereignListProps {
   currentPage?: number;
   onPageChange?: (page: number) => void;
   emptyMessage?: string;
+  poolSnapshots?: Record<number, PoolSnapshot>;
 }
 
 /** How many days remain in the 90-day unwind window */
@@ -39,6 +41,7 @@ export function SovereignList({
   currentPage = 1,
   onPageChange,
   emptyMessage,
+  poolSnapshots,
 }: SovereignListProps) {
 
   const filteredSovereigns = useMemo(() => {
@@ -61,7 +64,7 @@ export function SovereignList({
         break;
       case 'Archived':
         result = sovereigns.filter(s =>
-          s.status === 'Unwound' || s.status === 'EmergencyUnlocked'
+          s.status === 'Unwound' || s.status === 'Halted'
         );
         break;
     }
@@ -135,7 +138,11 @@ export function SovereignList({
       {/* Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {paginatedSovereigns.map((sovereign) => (
-          <SovereignCard key={sovereign.sovereignId.toString()} sovereign={sovereign} />
+          <SovereignCard
+            key={sovereign.sovereignId.toString()}
+            sovereign={sovereign}
+            priceChange24h={poolSnapshots?.[Number(sovereign.sovereignId)]?.priceChange24h}
+          />
         ))}
       </div>
 

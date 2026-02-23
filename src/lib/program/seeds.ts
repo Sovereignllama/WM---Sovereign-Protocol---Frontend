@@ -11,6 +11,7 @@ export const PDA_SEEDS = {
   PROPOSAL: 'proposal',
   VOTE_RECORD: 'vote_record',
   GENESIS_NFT_MINT: 'genesis_nft_mint',
+  GENESIS_COLLECTION: 'genesis_collection', // Collection mint for Genesis NFTs
   TOKEN_MINT: 'token_mint', // Token-2022 mint for TokenLaunch
   EXTRA_ACCOUNT_METAS: 'extra-account-metas', // Transfer hook metas
   // Engine pool PDAs

@@ -5,10 +5,10 @@
  * IDL can be found at `target/idl/sovereign_liquidity.json`.
  */
 export type SovereignLiquidity = {
-  "address": "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
+  "address": "2LPPAG7UhVop1RiRBh8oZtjzMoJ9St9WV4nY7JwmoNbA",
   "metadata": {
     "name": "sovereignLiquidity",
-    "version": "0.1.0",
+    "version": "1.0.0-beta.1",
     "spec": "0.1.0",
     "description": "Sovereign Liquidity Protocol - Fair launch with recovery-first LP and Genesis NFT fee rights"
   },
@@ -5279,19 +5279,6 @@ export type SovereignLiquidity = {
       ]
     },
     {
-      "name": "transferHookExecuted",
-      "discriminator": [
-        187,
-        164,
-        179,
-        224,
-        22,
-        91,
-        19,
-        0
-      ]
-    },
-    {
       "name": "unwindClaimed",
       "discriminator": [
         27,
@@ -7798,42 +7785,6 @@ export type SovereignLiquidity = {
           {
             "name": "gorReceived",
             "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "transferHookExecuted",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "sovereignId",
-            "type": "u64"
-          },
-          {
-            "name": "mint",
-            "type": "pubkey"
-          },
-          {
-            "name": "source",
-            "type": "pubkey"
-          },
-          {
-            "name": "destination",
-            "type": "pubkey"
-          },
-          {
-            "name": "amount",
-            "type": "u64"
-          },
-          {
-            "name": "feeAmount",
-            "type": "u64"
-          },
-          {
-            "name": "isSell",
-            "type": "bool"
           }
         ]
       }

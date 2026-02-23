@@ -2,11 +2,12 @@
 
 import { useState } from 'react';
 import { CreatorPosition } from '@/hooks/useMyGovernancePositions';
-import { useSovereign, useEnginePool, useTokenFeeStats } from '@/hooks/useSovereign';
+import { useSovereign, useEnginePool, useTokenFeeStats, useProtocolState } from '@/hooks/useSovereign';
 import { useClaimPoolCreatorFees, useClaimTransferFees, useUpdateSellFee, useRenounceSellFee, useEmergencyWithdrawCreator } from '@/hooks/useTransactions';
+import { useProposals } from '@/hooks/useGovernance';
 import { useTokenImage } from '@/hooks/useTokenImage';
 import { config, LAMPORTS_PER_GOR } from '@/lib/config';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import Link from 'next/link';
 
 interface Props {
@@ -18,7 +19,7 @@ const STATUS_DOT: Record<string, string> = {
   Recovery: 'bg-[var(--hazard-yellow)]',
   Unwinding: 'bg-orange-400',
   Unwound: 'bg-red-400',
-  EmergencyUnlocked: 'bg-red-500',
+  Halted: 'bg-red-500',
 };
 
 export function CreatorPositionCard({ position }: Props) {
@@ -27,8 +28,10 @@ export function CreatorPositionCard({ position }: Props) {
   const { data: sovereign } = useSovereign(position.sovereignId);
   const { data: enginePool } = useEnginePool(position.sovereignId);
   const { data: tokenFeeStats } = useTokenFeeStats(position.sovereignId);
+  const { data: protocolState } = useProtocolState();
 
   const claimCreatorFees = useClaimPoolCreatorFees();
+  const { data: proposals } = useProposals(position.sovereignId);
 
   const claimTransferFees = useClaimTransferFees();
   const updateSellFee = useUpdateSellFee();
@@ -98,7 +101,13 @@ export function CreatorPositionCard({ position }: Props) {
   const pendingActions: string[] = [];
   if (canClaimSwapFees) pendingActions.push(`${pendingGorFees.toFixed(2)} GOR`);
   if (canClaimTransferFees) pendingActions.push(`${pendingTokenFees.toFixed(2)} ${position.tokenSymbol}`);
-  if (position.status === 'EmergencyUnlocked') pendingActions.push('Emergency');
+  if (position.status === 'Halted') pendingActions.push('$overeign Halted');
+
+  // Active / passed unwind proposals
+  const activeProposal = proposals?.find((p: any) => p.status === 'Active');
+  const passedProposal = proposals?.find((p: any) => p.status === 'Passed');
+  const unwindProposal = activeProposal || passedProposal;
+  if (unwindProposal && !expanded) pendingActions.push('⚠️ Unwind Vote');
 
   return (
     <div className="card card-clean overflow-hidden">
@@ -126,7 +135,7 @@ export function CreatorPositionCard({ position }: Props) {
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--hazard-orange)]/15 text-[var(--hazard-orange)] font-bold">Creator</span>
           </div>
           <div className="flex items-center gap-3 text-[11px] text-[var(--muted)] mt-0.5">
-            <span>Swap: {(position.swapFeeBps / 100).toFixed(1)}%</span>
+            <span>Swap: {((enginePool?.swapFeeBps ?? position.swapFeeBps) / 100).toFixed(1)}%</span>
             <span>·</span>
             <span>Sell: {(position.sellFeeBps / 100).toFixed(1)}%</span>
             <span>·</span>
@@ -193,6 +202,129 @@ export function CreatorPositionCard({ position }: Props) {
 
           {/* === ACTIONS === */}
 
+          {/* Active Unwind Proposal Warning */}
+          {activeProposal && (() => {
+            const now = new Date();
+            const votingStarted = activeProposal.votingStartsAt ? activeProposal.votingStartsAt <= now : true;
+            const votingEnded = activeProposal.votingEndsAt < now;
+            const inDiscussion = activeProposal.votingStartsAt && !votingStarted && !votingEnded;
+            const quorumPct = (activeProposal.totalVotedBps / activeProposal.quorumBps) * 100;
+            const forPct = activeProposal.totalVotedBps > 0
+              ? ((activeProposal.votesForBps / activeProposal.totalVotedBps) * 100).toFixed(0)
+              : '0';
+            return (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-sm font-bold text-red-400">🗳️ Unwind Proposal #{activeProposal.proposalId}</span>
+                  {inDiscussion && (
+                    <span className="text-[10px] text-[var(--hazard-orange)]">
+                      discussion period — voting opens {formatDistanceToNow(activeProposal.votingStartsAt, { addSuffix: true })}
+                    </span>
+                  )}
+                  {votingStarted && !votingEnded && (
+                    <span className="text-[10px] text-[var(--muted)]">
+                      ends {formatDistanceToNow(activeProposal.votingEndsAt, { addSuffix: true })}
+                    </span>
+                  )}
+                  {votingEnded && (
+                    <span className="text-[10px] text-[var(--hazard-yellow)]">voting ended — awaiting finalization</span>
+                  )}
+                </div>
+                {inDiscussion ? (
+                  <p className="text-xs text-[var(--hazard-orange)] mb-2">
+                    Your $overeign&apos;s LP holders have initiated a vote to unwind this pool.
+                    You have a <strong>3-day discussion period</strong> to address their concerns before voting opens
+                    on {format(activeProposal.votingStartsAt, 'MMM d h:mm a')}.
+                  </p>
+                ) : (
+                  <p className="text-xs text-[var(--muted)] mb-2">
+                    Your $overeign&apos;s LP holders are voting to unwind this pool.
+                    If the vote passes ({(activeProposal.quorumBps / 100).toFixed(0)}% quorum,{' '}
+                    {(activeProposal.passThresholdBps / 100).toFixed(0)}% majority required), the pool will enter unwinding.
+                  </p>
+                )}
+                <div className="flex items-center gap-4 text-xs">
+                  <span className="text-[var(--money-green)]">For: {forPct}%</span>
+                  <span className="text-red-400">Against: {activeProposal.totalVotedBps > 0 ? (100 - Number(forPct)).toFixed(0) : '0'}%</span>
+                  <span className="text-[var(--muted)]">
+                    Quorum: {(activeProposal.totalVotedBps / 100).toFixed(0)}% / {(activeProposal.quorumBps / 100).toFixed(0)}%
+                  </span>
+                  <span className="text-[var(--muted)]">{activeProposal.voterCount} voter{activeProposal.voterCount !== 1 ? 's' : ''}</span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Passed Unwind Proposal Warning */}
+          {passedProposal && !activeProposal && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-bold text-red-400">⚠️ Unwind Vote Passed — Proposal #{passedProposal.proposalId}</span>
+              </div>
+              <p className="text-xs text-[var(--muted)]">
+                {passedProposal.timelockEndsAt > new Date()
+                  ? `Timelock active — execution available ${format(passedProposal.timelockEndsAt, 'MMM d h:mm a')} (${formatDistanceToNow(passedProposal.timelockEndsAt, { addSuffix: true })})`
+                  : 'Timelock expired — this pool can be unwound at any time.'}
+              </p>
+            </div>
+          )}
+
+          {/* Observation Period Performance — shown when sovereign is Unwinding */}
+          {position.status === 'Unwinding' && sovereign && enginePool && (() => {
+            const DEFAULT_THRESHOLD_BPS = 125;
+            const BPS_DENOM = 10000;
+            const thresholdBps = (protocolState?.minFeeGrowthThreshold ?? 0) > 0
+              ? protocolState!.minFeeGrowthThreshold
+              : DEFAULT_THRESHOLD_BPS;
+            const totalDeposited = Number(sovereign.totalDeposited);
+            const requiredFees = (totalDeposited * thresholdBps) / BPS_DENOM;
+            const currentFees = Number(enginePool.totalFeesCollected);
+            const snapshotFees = Number(sovereign.feeGrowthSnapshotA);
+            const feeDelta = Math.max(0, currentFees - snapshotFees);
+            const performancePct = requiredFees > 0 ? (feeDelta / requiredFees) * 100 : 0;
+            const feeDeltaGor = feeDelta / LAMPORTS_PER_GOR;
+            const requiredFeesGor = requiredFees / LAMPORTS_PER_GOR;
+            const isHealthy = performancePct >= 100;
+            const observationEnd = sovereign.activityCheckTimestamp;
+
+            return (
+              <div className={`border rounded-xl p-3 ${isHealthy ? 'bg-[var(--money-green)]/5 border-[var(--money-green)]/20' : 'bg-red-500/10 border-red-500/30'}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-sm font-bold ${isHealthy ? 'text-[var(--money-green)]' : 'text-red-400'}`}>
+                      {isHealthy ? '✅' : '📉'} Observation Performance
+                    </span>
+                    <span className={`text-lg font-black ${isHealthy ? 'text-[var(--money-green)]' : performancePct >= 50 ? 'text-[var(--hazard-yellow)]' : 'text-red-400'}`}>
+                      {performancePct.toFixed(1)}%
+                    </span>
+                  </div>
+                  {observationEnd && (
+                    <span className="text-[10px] text-[var(--muted)]">
+                      {observationEnd > new Date()
+                        ? `ends ${formatDistanceToNow(observationEnd, { addSuffix: true })}`
+                        : 'observation ended'}
+                    </span>
+                  )}
+                </div>
+                <div className="w-full h-2 bg-[var(--card-bg)] rounded-full overflow-hidden mb-2">
+                  <div
+                    className={`h-full rounded-full transition-all ${isHealthy ? 'bg-[var(--money-green)]' : performancePct >= 50 ? 'bg-[var(--hazard-yellow)]' : 'bg-red-400'}`}
+                    style={{ width: `${Math.min(performancePct, 100)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] text-[var(--muted)]">
+                  <span>Fees earned: {feeDeltaGor.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR</span>
+                  <span>Required: {requiredFeesGor.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR ({(thresholdBps / 100).toFixed(2)}% of TVL)</span>
+                </div>
+                <p className="text-[10px] mt-1.5 text-[var(--muted)]">
+                  {isHealthy
+                    ? 'Volume threshold met — unwind will be cancelled when executed.'
+                    : 'Volume below threshold. Increase trading activity to save this pool before the observation period ends.'}
+                </p>
+              </div>
+            );
+          })()}
+
           {/* Swap Fee Claiming (GOR — requires recovery complete) */}
           {(position.status === 'Recovery' || position.status === 'Active') && (
             <div className="bg-[var(--hazard-orange)]/5 border border-[var(--hazard-orange)]/20 rounded-xl p-3">
@@ -222,7 +354,7 @@ export function CreatorPositionCard({ position }: Props) {
           )}
 
           {/* Transfer Fee Claiming (Tokens — no restriction) */}
-          {(position.status === 'Recovery' || position.status === 'Active') && (
+          {(position.status === 'Recovery' || position.status === 'Active') && !(position.feeControlRenounced && pendingTokenFees < 0.0001) && (
             <div className="bg-[var(--money-green)]/5 border border-[var(--money-green)]/20 rounded-xl p-3">
               <div className="flex items-center justify-between">
                 <div>
@@ -295,12 +427,12 @@ export function CreatorPositionCard({ position }: Props) {
             </div>
           )}
 
-          {/* Emergency Withdrawal */}
-          {position.status === 'EmergencyUnlocked' && (
+          {/* $overeign Halted */}
+          {position.status === 'Halted' && (
             <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm font-bold text-red-400">⚠️ Emergency Withdrawal</div>
+                  <div className="text-sm font-bold text-red-400">⚠️ $overeign Halted</div>
                   <p className="text-[10px] text-[var(--muted)]">
                     Withdraw your escrow, creation fee, and remaining tokens.
                   </p>

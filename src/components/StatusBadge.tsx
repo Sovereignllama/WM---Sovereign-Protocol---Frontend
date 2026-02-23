@@ -16,7 +16,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
     Unwinding: { label: 'Unwinding', className: 'badge recovery' },
     Unwound: { label: 'Unwound', className: 'badge' },
     Failed: { label: 'Failed', className: 'badge loss' },
-    EmergencyUnlocked: { label: 'Emergency', className: 'badge loss' },
+    Halted: { label: 'Halted', className: 'badge loss' },
     Retired: { label: 'Retired', className: 'badge' },
   };
 

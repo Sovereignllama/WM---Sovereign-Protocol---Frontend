@@ -3,7 +3,10 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   images: {
-    domains: ['arweave.net', 'ipfs.io'],
+    remotePatterns: [
+      { protocol: 'https', hostname: 'arweave.net' },
+      { protocol: 'https', hostname: 'ipfs.io' },
+    ],
   },
 };
 

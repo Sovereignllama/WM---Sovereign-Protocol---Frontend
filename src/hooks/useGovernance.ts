@@ -12,6 +12,7 @@ import { QUERY_KEYS } from './useSovereign';
 import {
   fetchProposal,
   fetchSovereignProposals,
+  fetchSovereignById,
   fetchVoteRecord,
   fetchDepositRecord,
   buildProposeUnwindTx,
@@ -66,31 +67,64 @@ export function useProposals(sovereignId: string | number | undefined) {
     queryFn: async () => {
       if (!program || !sovereignId) throw new Error('Missing params');
       const [sovereignPDA] = getSovereignPDA(BigInt(sovereignId), new PublicKey(config.programId));
-      const raw = await fetchSovereignProposals(program, sovereignPDA);
 
-      return raw
-        .map(({ publicKey, account }: { publicKey: PublicKey; account: any }) => ({
-          publicKey: publicKey.toBase58(),
-          sovereign: account.sovereign.toBase58(),
-          proposalId: account.proposalId.toString(),
-          proposer: account.proposer.toBase58(),
-          status: getProposalStatusString(account.status),
-          votesForBps: account.votesForBps,
-          votesAgainstBps: account.votesAgainstBps,
-          totalVotedBps: account.totalVotedBps,
-          voterCount: account.voterCount,
-          quorumBps: account.quorumBps,
-          passThresholdBps: account.passThresholdBps,
-          votingEndsAt: new Date(Number(account.votingEndsAt) * 1000),
-          timelockEndsAt: new Date(Number(account.timelockEndsAt) * 1000),
-          createdAt: new Date(Number(account.createdAt) * 1000),
-          executedAt: safeNum(account.executedAt) > 0
-            ? new Date(Number(account.executedAt) * 1000)
-            : null,
-        }))
-        .sort((a: any, b: any) => Number(b.proposalId) - Number(a.proposalId)); // newest first
+      // Helper to map a raw proposal account to our frontend shape
+      const mapProposal = (publicKey: PublicKey, account: any) => ({
+        publicKey: publicKey.toBase58(),
+        sovereign: account.sovereign.toBase58(),
+        proposalId: account.proposalId.toString(),
+        proposer: account.proposer.toBase58(),
+        status: getProposalStatusString(account.status),
+        votesForBps: account.votesForBps ?? 0,
+        votesAgainstBps: account.votesAgainstBps ?? 0,
+        totalVotedBps: account.totalVotedBps ?? 0,
+        voterCount: account.voterCount ?? 0,
+        quorumBps: account.quorumBps ?? 0,
+        passThresholdBps: account.passThresholdBps ?? 0,
+        votingStartsAt: account.votingStartsAt && safeNum(account.votingStartsAt) > 0
+          ? new Date(Number(account.votingStartsAt) * 1000)
+          : null,
+        votingEndsAt: account.votingEndsAt ? new Date(Number(account.votingEndsAt) * 1000) : null,
+        timelockEndsAt: account.timelockEndsAt ? new Date(Number(account.timelockEndsAt) * 1000) : null,
+        createdAt: account.createdAt ? new Date(Number(account.createdAt) * 1000) : null,
+        executedAt: account.executedAt && safeNum(account.executedAt) > 0
+          ? new Date(Number(account.executedAt) * 1000)
+          : null,
+      });
+
+      // Try bulk fetch first — fastest path
+      try {
+        const raw = await fetchSovereignProposals(program, sovereignPDA);
+        return raw
+          .map(({ publicKey, account }: { publicKey: PublicKey; account: any }) =>
+            mapProposal(publicKey, account))
+          .sort((a: any, b: any) => Number(b.proposalId) - Number(a.proposalId));
+      } catch (bulkErr) {
+        console.warn('Bulk proposal fetch failed (likely old proposal layout), falling back to individual fetch:', bulkErr);
+      }
+
+      // Fallback: fetch proposals individually by PDA
+      // Read sovereign to get proposal_count + active_proposal_id
+      const sovereign = await fetchSovereignById(program, BigInt(sovereignId));
+      const count = Number(sovereign.proposalCount.toString());
+      const results: any[] = [];
+
+      for (let i = 0; i <= count; i++) {
+        try {
+          const [propPDA] = getProposalPDA(sovereignPDA, BigInt(i), new PublicKey(config.programId));
+          const account = await fetchProposal(program, sovereignPDA, BigInt(i));
+          if (account) {
+            results.push(mapProposal(propPDA, account));
+          }
+        } catch {
+          // Skip proposals that can't be deserialized (old layout)
+        }
+      }
+
+      return results.sort((a, b) => Number(b.proposalId) - Number(a.proposalId));
     },
     staleTime: 10_000,
+    refetchInterval: 15_000, // Poll every 15s to pick up new proposals
     enabled: !!program && !!sovereignId,
   });
 }
@@ -120,6 +154,9 @@ export function useProposal(sovereignId: string | number | undefined, proposalId
         voterCount: account.voterCount,
         quorumBps: account.quorumBps,
         passThresholdBps: account.passThresholdBps,
+        votingStartsAt: safeNum(account.votingStartsAt) > 0
+          ? new Date(Number(account.votingStartsAt) * 1000)
+          : null,
         votingEndsAt: new Date(Number(account.votingEndsAt) * 1000),
         timelockEndsAt: new Date(Number(account.timelockEndsAt) * 1000),
         createdAt: new Date(Number(account.createdAt) * 1000),
@@ -237,9 +274,12 @@ export function useProposeUnwind() {
 
       return { signature, success: true, proposalPDA: proposalPDA.toBase58() };
     },
-    onSuccess: (_, variables) => {
+    onSuccess: async (_, variables) => {
+      // Small delay to let the RPC node catch up with confirmed state
+      await new Promise((r) => setTimeout(r, 2000));
       queryClient.invalidateQueries({ queryKey: GOVERNANCE_KEYS.proposals(variables.sovereignId.toString()) });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereigns });
     },
   });
 }
@@ -292,7 +332,8 @@ export function useCastVote() {
 
       return { signature, success: true };
     },
-    onSuccess: (_, variables) => {
+    onSuccess: async (_, variables) => {
+      await new Promise((r) => setTimeout(r, 2000));
       queryClient.invalidateQueries({ queryKey: GOVERNANCE_KEYS.proposals(variables.sovereignId.toString()) });
       queryClient.invalidateQueries({ queryKey: GOVERNANCE_KEYS.proposal(variables.sovereignId.toString(), variables.proposalId.toString()) });
       queryClient.invalidateQueries({ queryKey: GOVERNANCE_KEYS.voteRecord(variables.proposalId.toString(), '') });
@@ -341,10 +382,12 @@ export function useFinalizeVote() {
 
       return { signature, success: true };
     },
-    onSuccess: (_, variables) => {
+    onSuccess: async (_, variables) => {
+      await new Promise((r) => setTimeout(r, 2000));
       queryClient.invalidateQueries({ queryKey: GOVERNANCE_KEYS.proposals(variables.sovereignId.toString()) });
       queryClient.invalidateQueries({ queryKey: GOVERNANCE_KEYS.proposal(variables.sovereignId.toString(), variables.proposalId.toString()) });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereigns });
     },
   });
 }

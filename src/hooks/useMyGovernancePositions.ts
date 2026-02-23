@@ -14,10 +14,14 @@ export interface GovernancePosition {
   creator: string;
   tokenMint: string;
   status: string;
+  sovereignType: string;
   totalDepositedGor: number;
   totalFeesCollectedGor: number;
   depositorCount: number;
   recoveryComplete: boolean;
+  finalizedAt: Date | null;
+  unwindSolBalanceGor: number;
+  hasActiveProposal: boolean;
   // Deposit info
   depositAmountGor: number;
   sharesPercent: number;
@@ -56,7 +60,7 @@ export function useMyGovernancePositions() {
   const { data: deposits, isLoading: depLoading } = useWalletDeposits();
 
   // Governance states that are relevant
-  const GOVERNABLE = ['Recovery', 'Active', 'Unwinding', 'Unwound', 'EmergencyUnlocked'];
+  const GOVERNABLE = ['Recovery', 'Active', 'Unwinding', 'Unwound', 'Halted'];
 
   const positions = useMemo<GovernancePosition[]>(() => {
     if (!sovereigns || !deposits || !publicKey) return [];
@@ -71,6 +75,11 @@ export function useMyGovernancePositions() {
 
     return deposits
       .filter((d: any) => Number(d.amount) > 0 && sovMap.has(d.sovereign))
+      .filter((d: any) => {
+        // Exclude creator's own deposit — they manage via Creator Dashboard
+        const s = sovMap.get(d.sovereign)!;
+        return s.creator !== publicKey.toBase58();
+      })
       .map((d: any) => {
         const s = sovMap.get(d.sovereign)!;
         return {
@@ -83,10 +92,14 @@ export function useMyGovernancePositions() {
           creator: s.creator,
           tokenMint: s.tokenMint,
           status: s.status,
+          sovereignType: s.sovereignType,
           totalDepositedGor: s.totalDepositedGor,
           totalFeesCollectedGor: s.totalFeesCollectedGor,
           depositorCount: s.depositorCount,
           recoveryComplete: s.recoveryComplete,
+          finalizedAt: s.finalizedAt ?? null,
+          unwindSolBalanceGor: s.unwindSolBalanceGor ?? 0,
+          hasActiveProposal: s.hasActiveProposal ?? false,
           depositAmountGor: d.amountGor,
           sharesPercent: d.sharesPercent,
           votingPowerPercent: d.votingPowerPercent,

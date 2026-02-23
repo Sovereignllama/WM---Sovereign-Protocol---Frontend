@@ -2,7 +2,7 @@
   "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt",
   "metadata": {
     "name": "sovereign_engine_v3",
-    "version": "0.1.0",
+    "version": "1.0.0-beta.1",
     "spec": "0.1.0",
     "description": "$overeign Liquid — CPAMM + BinArray Settlement Engine (V3)"
   },

@@ -4,8 +4,8 @@ import { useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { GovernancePosition } from '@/hooks/useMyGovernancePositions';
 import { useProposals, useVoteRecord, useProposeUnwind, useCastVote, useFinalizeVote, useClaimUnwind } from '@/hooks/useGovernance';
-import { useClaimPoolLpFees } from '@/hooks/useTransactions';
-import { usePendingEngineLpFees, useEnginePool } from '@/hooks/useSovereign';
+import { useClaimPoolLpFees, useEmergencyWithdraw } from '@/hooks/useTransactions';
+import { usePendingEngineLpFees, useEnginePool, useSovereign, useProtocolState } from '@/hooks/useSovereign';
 import { useTokenImage } from '@/hooks/useTokenImage';
 import { config, LAMPORTS_PER_GOR } from '@/lib/config';
 import { formatDistanceToNow, format } from 'date-fns';
@@ -20,7 +20,7 @@ const STATUS_DOT: Record<string, string> = {
   Recovery: 'bg-[var(--hazard-yellow)]',
   Unwinding: 'bg-orange-400',
   Unwound: 'bg-red-400',
-  EmergencyUnlocked: 'bg-red-500',
+  Halted: 'bg-red-500',
 };
 
 export function GovernancePositionCard({ position }: Props) {
@@ -31,16 +31,19 @@ export function GovernancePositionCard({ position }: Props) {
   const { data: proposals } = useProposals(position.sovereignId);
   const { data: pendingLpFees } = usePendingEngineLpFees(position.sovereignId);
   const { data: enginePool } = useEnginePool(position.sovereignId);
+  const { data: sovereign } = useSovereign(position.sovereignId);
+  const { data: protocolState } = useProtocolState();
 
   const claimLpFees = useClaimPoolLpFees();
   const proposeUnwind = useProposeUnwind();
+  const emergencyWithdraw = useEmergencyWithdraw();
 
   // Derived state
   const activeProposal = proposals?.find((p: any) => p.status === 'Active');
   const passedProposal = proposals?.find((p: any) => p.status === 'Passed');
   const hasActiveOrPassed = !!activeProposal || !!passedProposal;
   const isGovernanceEligible = position.status === 'Active' || position.status === 'Recovery';
-  const canPropose = connected && position.nftMinted && isGovernanceEligible && !hasActiveOrPassed;
+  const canPropose = connected && position.nftMinted && isGovernanceEligible && !hasActiveOrPassed && !position.hasActiveProposal;
 
   const claimableLpGor = pendingLpFees?.claimableGor ?? 0;
   const totalClaimable = claimableLpGor;
@@ -50,6 +53,7 @@ export function GovernancePositionCard({ position }: Props) {
   if (activeProposal && !expanded) pendingActions.push('Vote');
   if (totalClaimable > 0.0001) pendingActions.push(`Claim ${totalClaimable.toFixed(4)} GOR`);
   if (position.status === 'Unwound' && !position.unwindClaimed) pendingActions.push('Claim unwind');
+  if (position.status === 'Halted') pendingActions.push('$overeign Halted');
 
   return (
     <div className="card card-clean overflow-hidden">
@@ -168,6 +172,18 @@ export function GovernancePositionCard({ position }: Props) {
             />
           )}
 
+          {/* Fallback: sovereign says there's an active proposal but proposals query hasn't loaded it yet */}
+          {!activeProposal && !passedProposal && position.hasActiveProposal && (
+            <div className="bg-[var(--hazard-yellow)]/5 border border-[var(--hazard-yellow)]/20 rounded-xl p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-bold text-[var(--hazard-yellow)]">🗳️ Active Proposal</span>
+              </div>
+              <p className="text-xs text-[var(--muted)]">
+                An unwind proposal is active on this sovereign. Loading proposal details...
+              </p>
+            </div>
+          )}
+
           {/* Passed Proposal — awaiting execution */}
           {passedProposal && !activeProposal && (
             <div className="bg-[var(--money-green)]/5 border border-[var(--money-green)]/20 rounded-xl p-3">
@@ -182,13 +198,74 @@ export function GovernancePositionCard({ position }: Props) {
             </div>
           )}
 
+          {/* Observation Period Performance — shown when sovereign is Unwinding */}
+          {position.status === 'Unwinding' && sovereign && enginePool && (() => {
+            const DEFAULT_THRESHOLD_BPS = 125;
+            const BPS_DENOM = 10000;
+            const thresholdBps = (protocolState?.minFeeGrowthThreshold ?? 0) > 0
+              ? protocolState!.minFeeGrowthThreshold
+              : DEFAULT_THRESHOLD_BPS;
+            const totalDeposited = Number(sovereign.totalDeposited);
+            const requiredFees = (totalDeposited * thresholdBps) / BPS_DENOM;
+            const currentFees = Number(enginePool.totalFeesCollected);
+            const snapshotFees = Number(sovereign.feeGrowthSnapshotA);
+            const feeDelta = Math.max(0, currentFees - snapshotFees);
+            const performancePct = requiredFees > 0 ? (feeDelta / requiredFees) * 100 : 0;
+            const feeDeltaGor = feeDelta / LAMPORTS_PER_GOR;
+            const requiredFeesGor = requiredFees / LAMPORTS_PER_GOR;
+            const isHealthy = performancePct >= 100;
+            const observationEnd = sovereign.activityCheckTimestamp;
+
+            return (
+              <div className={`border rounded-xl p-3 ${isHealthy ? 'bg-[var(--money-green)]/5 border-[var(--money-green)]/20' : 'bg-red-500/10 border-red-500/30'}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-sm font-bold ${isHealthy ? 'text-[var(--money-green)]' : 'text-red-400'}`}>
+                      {isHealthy ? '✅' : '📉'} Observation Performance
+                    </span>
+                    <span className={`text-lg font-black ${isHealthy ? 'text-[var(--money-green)]' : performancePct >= 50 ? 'text-[var(--hazard-yellow)]' : 'text-red-400'}`}>
+                      {performancePct.toFixed(1)}%
+                    </span>
+                  </div>
+                  {observationEnd && (
+                    <span className="text-[10px] text-[var(--muted)]">
+                      {observationEnd > new Date()
+                        ? `ends ${formatDistanceToNow(observationEnd, { addSuffix: true })}`
+                        : 'observation ended'}
+                    </span>
+                  )}
+                </div>
+                <div className="w-full h-2 bg-[var(--card-bg)] rounded-full overflow-hidden mb-2">
+                  <div
+                    className={`h-full rounded-full transition-all ${isHealthy ? 'bg-[var(--money-green)]' : performancePct >= 50 ? 'bg-[var(--hazard-yellow)]' : 'bg-red-400'}`}
+                    style={{ width: `${Math.min(performancePct, 100)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] text-[var(--muted)]">
+                  <span>Fees earned: {feeDeltaGor.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR</span>
+                  <span>Required: {requiredFeesGor.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR ({(thresholdBps / 100).toFixed(2)}% of TVL)</span>
+                </div>
+                <p className="text-[10px] mt-1.5 text-[var(--muted)]">
+                  {isHealthy
+                    ? 'Volume threshold met — unwind will be cancelled when executed.'
+                    : 'Volume below threshold. If this remains below 100% at observation end, the pool will be unwound.'}
+                </p>
+              </div>
+            );
+          })()}
+
           {/* Unwind claim */}
           {position.status === 'Unwound' && !position.unwindClaimed && position.nftMinted && (
             <UnwindClaimPanel position={position} />
           )}
 
+          {/* Emergency Withdraw — shown when sovereign is Halted */}
+          {position.status === 'Halted' && (
+            <EmergencyWithdrawPanel position={position} emergencyWithdraw={emergencyWithdraw} />
+          )}
+
           {/* Propose Unwind */}
-          {canPropose && (
+          {canPropose && !proposeUnwind.isSuccess && (
             <div className="flex items-center justify-between bg-white/[0.03] rounded-xl p-3">
               <div>
                 <div className="text-sm font-bold text-white">Propose Unwind</div>
@@ -210,6 +287,18 @@ export function GovernancePositionCard({ position }: Props) {
               >
                 {proposeUnwind.isPending ? 'Creating...' : 'Create Proposal'}
               </button>
+            </div>
+          )}
+          {proposeUnwind.isSuccess && (
+            <div className="bg-[var(--money-green)]/10 border border-[var(--money-green)]/20 rounded-xl p-3">
+              <p className="text-[var(--money-green)] text-xs font-bold">
+                ✅ Proposal created successfully! Discussion period is now active.
+              </p>
+            </div>
+          )}
+          {proposeUnwind.error && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3">
+              <p className="text-red-400 text-xs">{(proposeUnwind.error as Error).message}</p>
             </div>
           )}
 
@@ -276,9 +365,12 @@ function ActiveProposalPanel({ proposal, position }: { proposal: any; position: 
   const castVote = useCastVote();
   const finalizeVote = useFinalizeVote();
 
-  const votingEnded = proposal.votingEndsAt < new Date();
+  const now = new Date();
+  const votingStarted = proposal.votingStartsAt ? proposal.votingStartsAt <= now : true;
+  const votingEnded = proposal.votingEndsAt < now;
+  const inDiscussion = proposal.votingStartsAt && !votingStarted && !votingEnded;
   const hasVoted = !!voteRecord;
-  const canVote = position.nftMinted && !hasVoted && !votingEnded;
+  const canVote = position.nftMinted && !hasVoted && votingStarted && !votingEnded;
   const canFinalize = votingEnded;
 
   const quorumPct = (proposal.totalVotedBps / proposal.quorumBps) * 100;
@@ -294,7 +386,12 @@ function ActiveProposalPanel({ proposal, position }: { proposal: any; position: 
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className="text-sm font-bold text-[var(--hazard-yellow)]">🗳️ Proposal #{proposal.proposalId}</span>
-          {!votingEnded && (
+          {inDiscussion && (
+            <span className="text-[10px] text-[var(--hazard-orange)]">
+              discussion period — voting opens {formatDistanceToNow(proposal.votingStartsAt, { addSuffix: true })}
+            </span>
+          )}
+          {votingStarted && !votingEnded && (
             <span className="text-[10px] text-[var(--muted)]">
               ends {formatDistanceToNow(proposal.votingEndsAt, { addSuffix: true })}
             </span>
@@ -337,6 +434,17 @@ function ActiveProposalPanel({ proposal, position }: { proposal: any; position: 
       </div>
 
       {/* Vote status + actions */}
+      {inDiscussion && (
+        <div className="bg-[var(--hazard-orange)]/10 border border-[var(--hazard-orange)]/20 rounded-lg p-2.5 mb-2">
+          <p className="text-xs text-[var(--hazard-orange)] font-medium">
+            ⏳ Discussion Period Active
+          </p>
+          <p className="text-[10px] text-[var(--muted)] mt-0.5">
+            Voting opens {format(proposal.votingStartsAt, 'MMM d h:mm a')}. This grace period allows the creator to address community concerns before votes are cast.
+          </p>
+        </div>
+      )}
+
       {!isLoading && hasVoted && (
         <p className={`text-xs mb-2 ${voteRecord.voteFor ? 'text-[var(--money-green)]' : 'text-red-400'}`}>
           You voted {voteRecord.voteFor ? 'FOR' : 'AGAINST'} with {(voteRecord.votingPowerBps / 100).toFixed(1)}% power
@@ -438,6 +546,72 @@ function UnwindClaimPanel({ position }: { position: GovernancePosition }) {
       </div>
       {claimUnwind.error && (
         <p className="text-red-400 text-xs mt-2">{(claimUnwind.error as Error).message}</p>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Emergency Withdraw Panel — shown when sovereign is Halted
+// ============================================================
+
+function EmergencyWithdrawPanel({
+  position,
+  emergencyWithdraw,
+}: {
+  position: GovernancePosition;
+  emergencyWithdraw: ReturnType<typeof useEmergencyWithdraw>;
+}) {
+  const isPostFinalization = !!position.finalizedAt;
+  const unwindGor = position.unwindSolBalanceGor || 0;
+  const totalDepGor = position.totalDepositedGor || 1;
+  const depositGor = position.depositAmountGor;
+  const reclaimableGor =
+    isPostFinalization && unwindGor > 0
+      ? (unwindGor * depositGor) / totalDepGor
+      : depositGor;
+
+  return (
+    <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3">
+      <div className="text-sm font-bold text-red-400 mb-2">⚠️ $overeign Halted</div>
+      <div className="space-y-1 mb-3">
+        <p className="text-xs text-[var(--muted)]">
+          Original deposit: <span className="text-white font-bold">{depositGor.toLocaleString()} GOR</span>
+        </p>
+        {isPostFinalization && (
+          <p className="text-xs text-[var(--muted)]">
+            Reclaimable (your share):{' '}
+            <span className="text-[var(--money-green)] font-bold">
+              {reclaimableGor > 0
+                ? reclaimableGor.toLocaleString(undefined, { maximumFractionDigits: 4 })
+                : '—'}{' '}
+              GOR
+            </span>
+            {unwindGor === 0 && (
+              <span className="text-[var(--hazard-yellow)] ml-2">
+                (LP not yet removed — awaiting admin action)
+              </span>
+            )}
+          </p>
+        )}
+      </div>
+      <button
+        onClick={async () => {
+          await emergencyWithdraw.mutateAsync({
+            sovereignId: position.sovereignId,
+            originalDepositor: position.depositor,
+          });
+        }}
+        disabled={emergencyWithdraw.isPending}
+        className="w-full px-4 py-2 rounded-lg text-xs font-bold bg-red-500 text-white hover:opacity-90 disabled:opacity-40"
+      >
+        {emergencyWithdraw.isPending ? 'Withdrawing...' : 'Reclaim Deposited GOR'}
+      </button>
+      {emergencyWithdraw.isSuccess && (
+        <p className="text-[var(--slime)] text-xs mt-2">Funds reclaimed successfully!</p>
+      )}
+      {emergencyWithdraw.error && (
+        <p className="text-red-400 text-xs mt-2">{(emergencyWithdraw.error as Error).message}</p>
       )}
     </div>
   );

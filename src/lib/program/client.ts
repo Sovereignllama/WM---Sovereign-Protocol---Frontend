@@ -13,6 +13,7 @@ import {
   getExtraAccountMetasPDA,
   getPermanentLockPDA,
   getGenesisNftMintPDA,
+  getCollectionMintPDA,
   getProposalPDA,
   getVoteRecordPDA,
   getEnginePoolPDA,
@@ -34,7 +35,7 @@ export type SovereignLiquidityProgram = Program;
 export type SovereignEngineProgram = Program;
 
 // Engine program ID (V3 — BinArray settlement engine)
-const ENGINE_PROGRAM_ID = new PublicKey('Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt');
+const ENGINE_PROGRAM_ID = new PublicKey(config.engineProgramId);
 
 /**
  * Get the Anchor Program instance
@@ -216,8 +217,8 @@ export async function buildCreateSovereignTx(
   const [creatorTrackerPDA] = getCreatorTrackerPDA(sovereignPDA, program.programId);
   const [tokenVaultPDA] = getTokenVaultPDA(sovereignPDA, program.programId);
   
-  // Protocol treasury - receives non-refundable creation fee
-  const treasury = new PublicKey('4RKDExub3WSqgairnZBGFLzvrxmJLxM2ocPaVDr7GXnL');
+  // Treasury from on-chain protocol state (already fetched above)
+  const treasury: PublicKey = protocolState.treasury;
   
   // Convert frontend params to on-chain params
   const sovereignType: OnChainSovereignType = params.sovereignType === 'TokenLaunch' 
@@ -931,7 +932,7 @@ export async function fetchEnginePool(
 
 /**
  * Build an emergency unlock transaction (protocol authority only)
- * Transitions sovereign to EmergencyUnlocked from any state
+ * Transitions sovereign to Halted from any state
  */
 export async function buildEmergencyUnlockTx(
   program: SovereignLiquidityProgram,
@@ -1070,7 +1071,7 @@ export type SovereignStatus =
   | 'Unwinding'
   | 'Unwound'
   | 'Failed'
-  | 'EmergencyUnlocked'
+  | 'Halted'
   | 'Retired';
 
 export type SovereignType = 'TokenLaunch' | 'BYOToken';
@@ -1089,7 +1090,7 @@ export function getSovereignStatusString(status: any): SovereignStatus {
   if (status.unwinding) return 'Unwinding';
   if (status.unwound) return 'Unwound';
   if (status.failed) return 'Failed';
-  if (status.emergencyUnlocked) return 'EmergencyUnlocked';
+  if (status.halted) return 'Halted';
   if (status.retired) return 'Retired';
   return 'Bonding'; // Default
 }
@@ -1261,8 +1262,11 @@ export async function buildMintGenesisNftTx(
   const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
   const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, depositor, program.programId);
   const [nftMintPDA] = getGenesisNftMintPDA(sovereignPDA, depositor, program.programId);
+  const [protocolStatePDA] = getProtocolStatePDA(program.programId);
+  const [collectionMintPDA] = getCollectionMintPDA(program.programId);
 
-  // NFT token account for the depositor (legacy SPL Token ATA since NFT mint is not Token-2022)
+  // NFT uses legacy SPL Token (collection mint uses Token, and Metaplex CreateMetadataAccountV3
+  // is incompatible with Token-2022 ProgrammableNonFungible assets)
   const nftTokenAccount = getAssociatedTokenAddressSync(
     nftMintPDA,
     depositor,
@@ -1270,8 +1274,20 @@ export async function buildMintGenesisNftTx(
     TOKEN_PROGRAM_ID
   );
 
-  // Metaplex metadata PDA
+  // Metaplex metadata PDAs
   const [metadataAccount] = getMetaplexMetadataPDA(nftMintPDA);
+  const [collectionMetadata] = getMetaplexMetadataPDA(collectionMintPDA);
+
+  // Metaplex master edition PDA for the collection
+  const [collectionMasterEdition] = PublicKey.findProgramAddressSync(
+    [
+      Buffer.from('metadata'),
+      METAPLEX_PROGRAM_ID.toBuffer(),
+      collectionMintPDA.toBuffer(),
+      Buffer.from('edition'),
+    ],
+    METAPLEX_PROGRAM_ID
+  );
 
   const tx = await (program.methods as any)
     .mintGenesisNft()
@@ -1283,6 +1299,10 @@ export async function buildMintGenesisNftTx(
       nftMint: nftMintPDA,
       nftTokenAccount,
       metadataAccount,
+      protocolState: protocolStatePDA,
+      collectionMint: collectionMintPDA,
+      collectionMetadata,
+      collectionMasterEdition,
       metadataProgram: METAPLEX_PROGRAM_ID,
       tokenProgram: TOKEN_PROGRAM_ID,
       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,

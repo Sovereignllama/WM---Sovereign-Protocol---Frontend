@@ -1,5 +1,6 @@
 'use client';
 
+import { useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useConnection } from '@solana/wallet-adapter-react';
@@ -44,14 +45,40 @@ interface CreateSovereignResult extends TransactionResult {
   sovereignPDA: string;
 }
 
+// ── Creation Progress Types ──
+export interface CreationStepInfo {
+  label: string;
+  status: 'pending' | 'signing' | 'confirming' | 'confirmed' | 'error';
+  signature?: string;
+}
+
+export interface CreationProgress {
+  currentStep: number;
+  totalSteps: number;
+  steps: CreationStepInfo[];
+}
+
+export type OnCreationProgress = (progress: CreationProgress) => void;
+
 /**
- * Hook to create a new sovereign
+ * Hook to create a new sovereign with step-by-step progress reporting
  */
-export function useCreateSovereign() {
+export function useCreateSovereign(onProgress?: OnCreationProgress) {
   const program = useProgram();
   const { publicKey, signTransaction, sendTransaction } = useWallet();
   const { connection } = useConnection();
   const queryClient = useQueryClient();
+  const progressRef = useRef(onProgress);
+  progressRef.current = onProgress;
+
+  // Helper to build the steps array and report progress
+  const report = (steps: CreationStepInfo[], currentStep: number) => {
+    progressRef.current?.({
+      currentStep,
+      totalSteps: steps.length,
+      steps: [...steps],
+    });
+  };
 
   return useMutation({
     mutationFn: async (params: CreateSovereignFrontendParams): Promise<CreateSovereignResult> => {
@@ -59,34 +86,60 @@ export function useCreateSovereign() {
         throw new Error('Wallet not connected');
       }
 
-      // Step 1: Build and send create_sovereign transaction
+      // ── Determine steps dynamically ──
+      const isTokenLaunch = params.sovereignType === 'TokenLaunch';
+      const hasBuyIn = params.creatorBuyIn && params.creatorBuyIn > BigInt(0);
+
+      const steps: CreationStepInfo[] = [
+        { label: 'Creating $overeign', status: 'pending' },
+      ];
+      if (isTokenLaunch) {
+        steps.push({ label: 'Creating Token', status: 'pending' });
+      }
+      if (hasBuyIn) {
+        steps.push({ label: 'Creator Buy-in', status: 'pending' });
+      }
+
+      let stepIdx = 0;
+
+      // ── Step 1: create_sovereign ──
+      steps[stepIdx].status = 'signing';
+      report(steps, stepIdx);
+
       const { tx, sovereignPDA, sovereignId } = await buildCreateSovereignTx(
         program,
         publicKey,
         params
       );
 
-      // Get recent blockhash
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
       tx.recentBlockhash = blockhash;
       tx.feePayer = publicKey;
 
-      // Send transaction (skipPreflight to avoid wallet RPC mismatch)
       const signature = await sendTransaction(tx, connection, {
         skipPreflight: true,
         preflightCommitment: 'confirmed',
       });
 
-      // Wait for confirmation
+      steps[stepIdx].status = 'confirming';
+      steps[stepIdx].signature = signature;
+      report(steps, stepIdx);
+
       await connection.confirmTransaction({
         signature,
         blockhash,
         lastValidBlockHeight,
       }, 'confirmed');
 
-      // Step 2: For TokenLaunch, create the token mint in a second transaction
-      if (params.sovereignType === 'TokenLaunch') {
-        // Default metadata URI if none was uploaded (on-chain requires 1-200 chars)
+      steps[stepIdx].status = 'confirmed';
+      report(steps, stepIdx);
+      stepIdx++;
+
+      // ── Step 2 (TokenLaunch only): create_token ──
+      if (isTokenLaunch) {
+        steps[stepIdx].status = 'signing';
+        report(steps, stepIdx);
+
         const defaultUri = `https://trashscan.io/address/${sovereignId}`;
         const { tx: tokenTx } = await buildCreateTokenTx(
           program,
@@ -109,23 +162,33 @@ export function useCreateSovereign() {
           preflightCommitment: 'confirmed',
         });
 
+        steps[stepIdx].status = 'confirming';
+        steps[stepIdx].signature = tokenSignature;
+        report(steps, stepIdx);
+
         await connection.confirmTransaction({
           signature: tokenSignature,
           blockhash: tokenBlockhash,
           lastValidBlockHeight: tokenLastValid,
         }, 'confirmed');
 
+        steps[stepIdx].status = 'confirmed';
+        report(steps, stepIdx);
         console.log('Token created:', tokenSignature);
+        stepIdx++;
       }
 
-      // Step 3: If creator buy-in specified, deposit as creator escrow
-      if (params.creatorBuyIn && params.creatorBuyIn > BigInt(0)) {
+      // ── Step 3 (optional): creator buy-in deposit ──
+      if (hasBuyIn) {
+        steps[stepIdx].status = 'signing';
+        report(steps, stepIdx);
+
         const sovereignIdNum = BigInt(sovereignId);
         const depositTx = await buildDepositTx(
           program,
           publicKey,
           sovereignIdNum,
-          params.creatorBuyIn
+          params.creatorBuyIn!
         );
 
         const { blockhash: depositBlockhash, lastValidBlockHeight: depositLastValid } =
@@ -138,12 +201,18 @@ export function useCreateSovereign() {
           preflightCommitment: 'confirmed',
         });
 
+        steps[stepIdx].status = 'confirming';
+        steps[stepIdx].signature = depositSignature;
+        report(steps, stepIdx);
+
         await connection.confirmTransaction({
           signature: depositSignature,
           blockhash: depositBlockhash,
           lastValidBlockHeight: depositLastValid,
         }, 'confirmed');
 
+        steps[stepIdx].status = 'confirmed';
+        report(steps, stepIdx);
         console.log('Creator buy-in deposited:', depositSignature);
       }
 
@@ -155,7 +224,6 @@ export function useCreateSovereign() {
       };
     },
     onSuccess: () => {
-      // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereigns });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.protocolState });
     },
@@ -758,6 +826,7 @@ export function useUpdateSellFee() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['tokenFeeStats', variables.sovereignId.toString()] });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereigns });
     },
   });
 }
@@ -809,6 +878,7 @@ export function useRenounceSellFee() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['tokenFeeStats', variables.sovereignId.toString()] });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereigns });
     },
   });
 }

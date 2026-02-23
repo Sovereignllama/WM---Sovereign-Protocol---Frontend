@@ -6,12 +6,15 @@ import { useConnection } from '@solana/wallet-adapter-react';
 import { SovereignType } from '@/lib/program/client';
 import { PROTOCOL_CONSTANTS, LAMPORTS_PER_GOR } from '@/lib/config';
 import { useProtocolState } from '@/hooks/useSovereign';
-import { useCreateSovereign } from '@/hooks/useTransactions';
+import { useCreateSovereign, type CreationProgress } from '@/hooks/useTransactions';
 import { useRouter } from 'next/navigation';
 import { createTokenMetadata, isPinataConfigured } from '@/lib/upload';
 import { PublicKey } from '@solana/web3.js';
 import { getMint, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 import Link from 'next/link';
+import CreationStepper from '@/components/CreationStepper';
+import { BYOTokenPicker } from '@/components/BYOTokenPicker';
+import { useTrackedTokens, type TrackedToken } from '@/hooks/useTrackedTokens';
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -38,6 +41,8 @@ interface FormData {
   byoMintValid: boolean;
   byoMintLoading: boolean;
   byoTokenProgramId: string;
+  byoMintAuthorityRenounced: boolean;
+  byoFreezeAuthorityRenounced: boolean;
   
   // Step 3: $overeign Config
   bondTarget: string;
@@ -68,6 +73,8 @@ const defaultFormData: FormData = {
   byoMintValid: false,
   byoMintLoading: false,
   byoTokenProgramId: '',
+  byoMintAuthorityRenounced: false,
+  byoFreezeAuthorityRenounced: false,
 
   bondTarget: '50',
   bondDurationDays: 14,
@@ -80,12 +87,59 @@ export default function MintPage() {
   const { connected } = useWallet();
   const { connection } = useConnection();
   const { data: protocolState, isLoading: protocolLoading } = useProtocolState();
-  const createSovereign = useCreateSovereign();
   const [step, setStep] = useState<Step>(1);
   const [formData, setFormData] = useState<FormData>(defaultFormData);
   const [error, setError] = useState<string | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── BYO token picker state ──
+  const [byoPickerOpen, setByoPickerOpen] = useState(false);
+  const { tokens: trackedTokens, walletBalances } = useTrackedTokens();
+  const [selectedTrackedToken, setSelectedTrackedToken] = useState<TrackedToken | null>(null);
+
+  // ── BYO: Get market price from tracked token data (GOR per token) ──
+  const getByoMarketPrice = (): number => {
+    if (selectedTrackedToken?.currentPrice && selectedTrackedToken.currentPrice > 0) {
+      return selectedTrackedToken.currentPrice;
+    }
+    if (formData.existingMint && trackedTokens.length > 0) {
+      const match = trackedTokens.find(t => t.tokenMint === formData.existingMint);
+      if (match?.currentPrice && match.currentPrice > 0) {
+        return match.currentPrice;
+      }
+    }
+    return 0;
+  };
+
+  const formatGorPrice = (p: number): string => {
+    if (p <= 0) return '\u2014';
+    if (p >= 1) return p.toFixed(4);
+    if (p >= 0.001) return p.toFixed(6);
+    if (p >= 0.000001) return p.toFixed(9);
+    return p.toExponential(3);
+  };
+
+  // ── BYO: Auto-populate bond target at 10% below market price ──
+  const autoCalcByoBondTarget = (depositHuman?: number, marketPriceOverride?: number) => {
+    const deposit = depositHuman ?? (parseFloat(formData.depositAmount) || 0);
+    const marketPrice = marketPriceOverride ?? getByoMarketPrice();
+    if (deposit > 0 && marketPrice > 0) {
+      const targetPrice = marketPrice * 0.9; // 10% below market
+      const recommendedBond = deposit * targetPrice;
+      const effectiveBond = Math.max(recommendedBond, minBondTargetGor);
+      updateForm({ bondTarget: effectiveBond.toFixed(2) });
+    }
+  };
+
+  // ── Creation stepper state ──
+  const [creationProgress, setCreationProgress] = useState<CreationProgress | null>(null);
+  const [creationError, setCreationError] = useState<string | null>(null);
+  const createdSovereignIdRef = useRef<string | null>(null);
+
+  const createSovereign = useCreateSovereign((progress) => {
+    setCreationProgress(progress);
+  });
 
   const isTokenLaunch = formData.sovereignType === 'TokenLaunch';
   const isBYO = formData.sovereignType === 'BYOToken';
@@ -103,7 +157,7 @@ export default function MintPage() {
 
   // ── BYO: Validate mint address on change ──
   const validateMint = useCallback(async (mintAddress: string) => {
-    updateForm({ byoMintLoading: true, byoMintValid: false, byoTokenSymbol: '', byoTokenSupply: '0', byoTokenDecimals: 0, byoTokenProgramId: '' });
+    updateForm({ byoMintLoading: true, byoMintValid: false, byoTokenSymbol: '', byoTokenSupply: '0', byoTokenDecimals: 0, byoTokenProgramId: '', byoMintAuthorityRenounced: false, byoFreezeAuthorityRenounced: false });
     try {
       const mintPubkey = new PublicKey(mintAddress);
       // Try Token program first, then Token-2022
@@ -118,6 +172,8 @@ export default function MintPage() {
       }
       const supply = mintInfo.supply.toString();
       const decimals = mintInfo.decimals;
+      const mintAuthorityRenounced = mintInfo.mintAuthority === null;
+      const freezeAuthorityRenounced = mintInfo.freezeAuthority === null;
       updateForm({
         byoMintValid: true,
         byoMintLoading: false,
@@ -125,6 +181,8 @@ export default function MintPage() {
         byoTokenSupply: supply,
         byoTokenSymbol: `${decimals}d`,
         byoTokenProgramId: programId.toBase58(),
+        byoMintAuthorityRenounced: mintAuthorityRenounced,
+        byoFreezeAuthorityRenounced: freezeAuthorityRenounced,
       });
       setError(null);
     } catch (err: any) {
@@ -211,6 +269,10 @@ export default function MintPage() {
   };
 
   const handleNext = () => {
+    // BYO: ensure bond target is populated before entering Step 3
+    if (step === 2 && isBYO) {
+      autoCalcByoBondTarget();
+    }
     if (step < 4) {
       setStep((step + 1) as Step);
     }
@@ -226,6 +288,9 @@ export default function MintPage() {
     if (!connected) return;
     
     setError(null);
+    setCreationError(null);
+    setCreationProgress(null);
+    createdSovereignIdRef.current = null;
     
     try {
       const bondTargetLamports = BigInt(Math.floor(parseFloat(formData.bondTarget) * LAMPORTS_PER_GOR));
@@ -274,7 +339,7 @@ export default function MintPage() {
         console.log('Creating TokenLaunch sovereign with params:', params);
         const result = await createSovereign.mutateAsync(params);
         console.log('Sovereign created:', result);
-        router.push(`/sovereign/${result.sovereignId}`);
+        createdSovereignIdRef.current = result.sovereignId;
 
       } else {
         // ── BYO Token flow ──
@@ -302,11 +367,34 @@ export default function MintPage() {
         console.log('Creating BYOToken sovereign with params:', params);
         const result = await createSovereign.mutateAsync(params);
         console.log('Sovereign created:', result);
-        router.push(`/sovereign/${result.sovereignId}`);
+        createdSovereignIdRef.current = result.sovereignId;
       }
     } catch (err: any) {
       console.error('Failed to create sovereign:', err);
-      setError(err.message || 'Failed to create sovereign. Please try again.');
+      const message = err.message || 'Failed to create sovereign. Please try again.';
+      setError(message);
+      setCreationError(message);
+
+      // Mark current step as error in the progress
+      if (creationProgress) {
+        setCreationProgress(prev => {
+          if (!prev) return prev;
+          const updated = { ...prev, steps: prev.steps.map(s => ({ ...s })) };
+          const activeStep = updated.steps.find(s => s.status === 'signing' || s.status === 'confirming');
+          if (activeStep) activeStep.status = 'error';
+          return updated;
+        });
+      }
+    }
+  };
+
+  const handleStepperClose = () => {
+    if (createdSovereignIdRef.current && creationProgress?.steps.every(s => s.status === 'confirmed')) {
+      router.push(`/sovereign/${createdSovereignIdRef.current}`);
+    } else {
+      // Error case — dismiss overlay, keep form state
+      setCreationProgress(null);
+      setCreationError(null);
     }
   };
 
@@ -355,7 +443,6 @@ export default function MintPage() {
           {step === 1 && (
             <div className="space-y-6">
               <div>
-                <h2 className="h3 text-white mb-4">Launch Type</h2>
                 <div className="grid grid-cols-2 gap-4">
                   <button
                     type="button"
@@ -545,24 +632,85 @@ export default function MintPage() {
 
               <div>
                 <label className="input-label">Token Mint Address</label>
-                <input
-                  type="text"
-                  className="input font-mono text-sm"
-                  placeholder="e.g., So11111111111111111111111111111111"
-                  value={formData.existingMint}
-                  onChange={(e) => {
-                    const val = e.target.value.trim();
-                    updateForm({ existingMint: val, byoMintValid: false });
-                    if (val.length >= 32 && val.length <= 44) {
-                      validateMint(val);
-                    }
-                  }}
-                />
+                {/* Token selector button + manual input */}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setByoPickerOpen(true)}
+                    className="flex items-center gap-2 bg-[var(--card-bg)] hover:border-[var(--money-green)] border border-[var(--border)] px-3 py-2 rounded-xl shrink-0 transition-all cursor-pointer group"
+                  >
+                    {selectedTrackedToken ? (
+                      <>
+                        {selectedTrackedToken.tokenImage ? (
+                          <img src={selectedTrackedToken.tokenImage} alt="" className="w-6 h-6 rounded-full object-cover" />
+                        ) : (
+                          <div className="w-6 h-6 rounded-full bg-[var(--border)] flex items-center justify-center text-[9px] font-bold text-[var(--muted)]">
+                            {(selectedTrackedToken.tokenSymbol || '?').charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <span className="text-white text-sm font-bold">{selectedTrackedToken.tokenName || selectedTrackedToken.tokenSymbol}</span>
+                      </>
+                    ) : (
+                      <span className="text-[var(--money-green)] text-sm font-bold">Select token</span>
+                    )}
+                    <span className="text-[var(--muted)] group-hover:text-white text-[10px] transition-colors">▼</span>
+                  </button>
+                  <input
+                    type="text"
+                    className="input font-mono text-sm flex-1"
+                    placeholder="Or paste mint address..."
+                    value={formData.existingMint}
+                    onChange={(e) => {
+                      const val = e.target.value.trim();
+                      updateForm({ existingMint: val, byoMintValid: false });
+                      setSelectedTrackedToken(null); // clear picker selection on manual input
+                      if (val.length >= 32 && val.length <= 44) {
+                        validateMint(val);
+                      }
+                    }}
+                  />
+                </div>
+
+                {/* Loading state */}
                 {formData.byoMintLoading && (
                   <p className="text-xs text-[var(--hazard-yellow)] mt-2 flex items-center gap-1">
                     <span className="animate-spin">⏳</span> Validating mint...
                   </p>
                 )}
+
+                {/* Wallet balance (from manual input or tracked token) */}
+                {formData.existingMint && !formData.byoMintLoading && (() => {
+                  // Check wallet balance for this specific mint
+                  const bal = walletBalances[formData.existingMint];
+                  const tracked = selectedTrackedToken;
+                  const decimals = formData.byoMintValid ? formData.byoTokenDecimals : (tracked?.tokenDecimals ?? 9);
+                  const humanBal = bal ? Number(bal.raw) / 10 ** decimals : (tracked?.walletBalance ?? 0);
+                  if (humanBal <= 0) return null;
+                  return (
+                    <div className="mt-2 flex items-center gap-2 text-xs">
+                      <span className="text-[var(--muted)]">Wallet balance:</span>
+                      <span className="text-white font-bold">
+                        {humanBal.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                        {tracked ? ` ${tracked.tokenSymbol}` : ''}
+                      </span>
+                    </div>
+                  );
+                })()}
+
+                {/* Market price from existing pool */}
+                {formData.existingMint && !formData.byoMintLoading && (() => {
+                  const mp = getByoMarketPrice();
+                  if (mp <= 0) return null;
+                  return (
+                    <div className="mt-1 flex items-center gap-2 text-xs">
+                      <span className="text-[var(--muted)]">Market price:</span>
+                      <span className="text-[var(--hazard-yellow)] font-bold">{formatGorPrice(mp)} GOR/token</span>
+                      <span className="text-[var(--faint)]">(pool defaults to 10% below)</span>
+                    </div>
+                  );
+                })()}
+
+                {/* Validated mint info */}
                 {!formData.byoMintLoading && formData.byoMintValid && (
                   <div className="mt-3 p-3 rounded-lg bg-[var(--money-green)]/10 border border-[var(--money-green)]/30">
                     <div className="flex justify-between text-sm">
@@ -592,7 +740,11 @@ export default function MintPage() {
                   className="input"
                   placeholder="Amount of tokens to deposit"
                   value={formData.depositAmount}
-                  onChange={(e) => updateForm({ depositAmount: e.target.value })}
+                  onChange={(e) => {
+                    updateForm({ depositAmount: e.target.value });
+                    const deposit = parseFloat(e.target.value) || 0;
+                    if (deposit > 0) autoCalcByoBondTarget(deposit);
+                  }}
                   min={0}
                 />
                 {formData.byoMintValid && formData.byoTokenSupply !== '0' && (
@@ -601,14 +753,21 @@ export default function MintPage() {
                     const totalHuman = Number(formData.byoTokenSupply) / 10 ** formData.byoTokenDecimals;
                     const pct = totalHuman > 0 ? (deposit / totalHuman) * 100 : 0;
                     const meetsMin = pct >= byoMinSupplyPct;
+                    const safe = formData.byoMintAuthorityRenounced && formData.byoFreezeAuthorityRenounced;
                     return (
                       <div className="mt-2">
+                        <div className={`text-xs ${safe ? 'text-[var(--money-green)]' : 'text-[var(--hazard-red)]'}`}>
+                          Token Safety: {safe ? '✓' : `✗ ${!formData.byoMintAuthorityRenounced ? 'Mint authority not renounced' : 'Freeze authority not renounced'}`}
+                        </div>
                         <div className={`text-xs ${meetsMin ? 'text-[var(--money-green)]' : 'text-[var(--hazard-yellow)]'}`}>
                           {pct.toFixed(2)}% of total supply {meetsMin ? '✓' : `(minimum ${byoMinSupplyPct}% required)`}
                         </div>
                         <button
                           type="button"
-                          onClick={() => updateForm({ depositAmount: totalHuman.toString() })}
+                          onClick={() => {
+                            updateForm({ depositAmount: totalHuman.toString() });
+                            autoCalcByoBondTarget(totalHuman);
+                          }}
                           className="text-xs text-[var(--hazard-yellow)] hover:underline mt-1"
                         >
                           Max ({totalHuman.toLocaleString()})
@@ -627,6 +786,24 @@ export default function MintPage() {
               </div>
             </div>
           )}
+
+          {/* BYO token picker modal */}
+          <BYOTokenPicker
+            open={byoPickerOpen}
+            onClose={() => setByoPickerOpen(false)}
+            tokens={trackedTokens}
+            selectedMint={formData.existingMint || null}
+            onSelect={(token) => {
+              setSelectedTrackedToken(token);
+              updateForm({ existingMint: token.tokenMint, byoMintValid: false });
+              validateMint(token.tokenMint);
+              // Auto-calc bond target with this token's price
+              const deposit = parseFloat(formData.depositAmount) || 0;
+              if (deposit > 0 && token.currentPrice > 0) {
+                autoCalcByoBondTarget(deposit, token.currentPrice);
+              }
+            }}
+          />
 
           {/* Step 3: $overeign Configuration */}
           {step === 3 && (
@@ -647,6 +824,38 @@ export default function MintPage() {
                   Minimum {minBondTargetGor} GOR required
                 </div>
               </div>
+
+              {/* BYO: Implied pool price vs market */}
+              {isBYO && (() => {
+                const depositHuman = parseFloat(formData.depositAmount) || 0;
+                const bondGor = parseFloat(formData.bondTarget) || 0;
+                if (depositHuman <= 0 || bondGor <= 0) return null;
+                const impliedPrice = bondGor / depositHuman;
+                const marketPrice = getByoMarketPrice();
+                const discount = marketPrice > 0 ? ((1 - impliedPrice / marketPrice) * 100) : 0;
+                return (
+                  <div className="p-3 rounded-lg bg-[var(--card-bg)] border border-[var(--border)] space-y-1">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-[var(--muted)]">Implied Pool Price</span>
+                      <span className="text-white font-bold">{formatGorPrice(impliedPrice)} GOR/token</span>
+                    </div>
+                    {marketPrice > 0 && (
+                      <>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-[var(--muted)]">Current Market</span>
+                          <span className="text-[var(--faint)]">{formatGorPrice(marketPrice)} GOR/token</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-[var(--muted)]">vs Market</span>
+                          <span className={`font-bold ${discount > 0 ? 'text-[var(--money-green)]' : discount < 0 ? 'text-[var(--hazard-red)]' : 'text-white'}`}>
+                            {discount > 0 ? `${discount.toFixed(1)}% below` : discount < 0 ? `${Math.abs(discount).toFixed(1)}% above` : 'At market'}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div>
                 <label className="input-label">Bond Duration</label>
@@ -685,23 +894,32 @@ export default function MintPage() {
 
               <div>
                   <label className="input-label">Creator Buy-in (GOR)</label>
-                  <input
-                    type="number"
-                    className="input"
-                    placeholder="0"
-                    value={formData.creatorBuyIn}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 0;
-                      if (val <= maxCreatorBuyIn) {
-                        updateForm({ creatorBuyIn: e.target.value });
-                      } else {
-                        updateForm({ creatorBuyIn: maxCreatorBuyIn.toString() });
-                      }
-                    }}
-                    min={0}
-                    max={maxCreatorBuyIn}
-                    step="0.1"
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      className="input flex-1"
+                      placeholder="0"
+                      value={formData.creatorBuyIn}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        if (val <= maxCreatorBuyIn) {
+                          updateForm({ creatorBuyIn: e.target.value });
+                        } else {
+                          updateForm({ creatorBuyIn: maxCreatorBuyIn.toString() });
+                        }
+                      }}
+                      min={0}
+                      max={maxCreatorBuyIn}
+                      step="0.1"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => updateForm({ creatorBuyIn: maxCreatorBuyIn.toFixed(2) })}
+                      className="px-3 py-2 text-xs font-bold text-[var(--hazard-yellow)] border border-[var(--border)] rounded-xl hover:border-[var(--hazard-yellow)] transition-colors shrink-0"
+                    >
+                      MAX
+                    </button>
+                  </div>
                   <div className="text-xs text-[var(--faint)] mt-2">
                     Optional: GOR to market buy tokens at theoretical price upon successful bonding. Max {maxCreatorBuyIn.toFixed(2)} GOR (1% of bond target).
                   </div>
@@ -773,6 +991,31 @@ export default function MintPage() {
                         {((parseFloat(formData.depositAmount) / (Number(formData.byoTokenSupply) / 10 ** formData.byoTokenDecimals)) * 100).toFixed(2)}%
                       </span>
                     </div>
+                    {(() => {
+                      const depositHuman = parseFloat(formData.depositAmount) || 0;
+                      const bondGor = parseFloat(formData.bondTarget) || 0;
+                      const impliedPrice = depositHuman > 0 && bondGor > 0 ? bondGor / depositHuman : 0;
+                      if (impliedPrice <= 0) return null;
+                      const marketPrice = getByoMarketPrice();
+                      return (
+                        <>
+                          <div className="flex justify-between py-2 border-b border-[var(--border)]">
+                            <span className="text-[var(--muted)]">Implied Pool Price</span>
+                            <span className="text-white font-bold">{formatGorPrice(impliedPrice)} GOR/token</span>
+                          </div>
+                          {marketPrice > 0 && (
+                            <div className="flex justify-between py-2 border-b border-[var(--border)]">
+                              <span className="text-[var(--muted)]">vs Market</span>
+                              <span className={`font-bold ${
+                                impliedPrice < marketPrice ? 'text-[var(--money-green)]' : 'text-[var(--hazard-red)]'
+                              }`}>
+                                {((1 - impliedPrice / marketPrice) * 100).toFixed(1)}% {impliedPrice < marketPrice ? 'below' : 'above'}
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </>
                 )}
 
@@ -863,14 +1106,21 @@ export default function MintPage() {
             )}
           </div>
           
-          {/* Error display */}
-          {error && (
+          {/* Error display (only when stepper is not showing) */}
+          {error && !creationProgress && (
             <div className="mt-4 p-4 bg-red-500/20 border border-red-500 rounded-lg text-red-400 text-center">
               {error}
             </div>
           )}
         </div>
       </div>
+
+      {/* Creation progress overlay */}
+      <CreationStepper
+        progress={creationProgress}
+        error={creationError}
+        onClose={handleStepperClose}
+      />
     </div>
   );
 }

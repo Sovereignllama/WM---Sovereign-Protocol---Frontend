@@ -2,7 +2,7 @@
   "address": "2LPPAG7UhVop1RiRBh8oZtjzMoJ9St9WV4nY7JwmoNbA",
   "metadata": {
     "name": "sovereign_liquidity",
-    "version": "0.1.0",
+    "version": "1.0.0-beta.1",
     "spec": "0.1.0",
     "description": "Sovereign Liquidity Protocol - Fair launch with recovery-first LP and Genesis NFT fee rights"
   },
@@ -2532,6 +2532,221 @@
       "args": []
     },
     {
+      "name": "force_close_proposal",
+      "docs": [
+        "Force-close a broken or stuck proposal account.",
+        "Clears the sovereign's has_active_proposal flag and returns rent.",
+        "Protocol authority only."
+      ],
+      "discriminator": [
+        122,
+        93,
+        90,
+        74,
+        251,
+        118,
+        127,
+        95
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "protocol_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "sovereign",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "sovereign_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "proposal",
+          "docs": [
+            "Proposal layout changed (e.g. old account missing voting_starts_at).",
+            "Rent is returned to the authority."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              },
+              {
+                "kind": "arg",
+                "path": "proposal_id"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "sovereign_id",
+          "type": "u64"
+        },
+        {
+          "name": "proposal_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "force_close_vote_record",
+      "docs": [
+        "Force-close a VoteRecord regardless of proposal status.",
+        "Used to clean up orphaned vote records after force_close_proposal.",
+        "Rent returned to original voter. Protocol authority only."
+      ],
+      "discriminator": [
+        18,
+        75,
+        56,
+        115,
+        103,
+        1,
+        76,
+        1
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "protocol_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "proposal",
+          "docs": [
+            "The proposal this vote record belongs to.",
+            "Can be in any state (Active, Passed, Failed, etc.)",
+            "Validated as a program-owned account via constraint."
+          ]
+        },
+        {
+          "name": "voter",
+          "writable": true
+        },
+        {
+          "name": "vote_record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  111,
+                  116,
+                  101,
+                  95,
+                  114,
+                  101,
+                  99,
+                  111,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal"
+              },
+              {
+                "kind": "account",
+                "path": "vote_record.genesis_nft_mint",
+                "account": "VoteRecord"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "initialize_collection",
       "docs": [
         "Initialize the protocol-wide Genesis NFT collection.",
@@ -4061,6 +4276,7 @@
         },
         {
           "name": "sovereign",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -4246,6 +4462,12 @@
           "name": "new_creator_fee_share_bps",
           "type": {
             "option": "u16"
+          }
+        },
+        {
+          "name": "new_discussion_period",
+          "type": {
+            "option": "i64"
           }
         }
       ]
@@ -5273,19 +5495,6 @@
       ]
     },
     {
-      "name": "TransferHookExecuted",
-      "discriminator": [
-        187,
-        164,
-        179,
-        224,
-        22,
-        91,
-        19,
-        0
-      ]
-    },
-    {
       "name": "UnwindClaimed",
       "discriminator": [
         27,
@@ -5438,256 +5647,261 @@
     },
     {
       "code": 6022,
+      "name": "VotingNotStarted",
+      "msg": "Discussion period has not ended — voting has not started yet"
+    },
+    {
+      "code": 6023,
       "name": "ProposalNotActive",
       "msg": "Proposal is not active"
     },
     {
-      "code": 6023,
+      "code": 6024,
       "name": "NoVotingPower",
       "msg": "No voting power"
     },
     {
-      "code": 6024,
+      "code": 6025,
       "name": "ActiveProposalExists",
       "msg": "Active proposal already exists"
     },
     {
-      "code": 6025,
+      "code": 6026,
       "name": "ProposalNotFinalized",
       "msg": "Proposal is not yet finalized — vote record cannot be closed"
     },
     {
-      "code": 6026,
+      "code": 6027,
       "name": "ActivityCheckAlreadyPending",
       "msg": "Activity check already pending"
     },
     {
-      "code": 6027,
+      "code": 6028,
       "name": "NoActivityCheckPending",
       "msg": "No activity check pending"
     },
     {
-      "code": 6028,
+      "code": 6029,
       "name": "ActivityCheckPeriodNotElapsed",
       "msg": "Activity check period has not elapsed"
     },
     {
-      "code": 6029,
+      "code": 6030,
       "name": "InvalidMint",
       "msg": "Invalid mint - does not match sovereign's token_mint"
     },
     {
-      "code": 6030,
+      "code": 6031,
       "name": "InvalidTreasury",
       "msg": "Invalid treasury address - cannot be zero"
     },
     {
-      "code": 6031,
+      "code": 6032,
       "name": "InvalidBondTarget",
       "msg": "Invalid bond target - must be at least 50 SOL"
     },
     {
-      "code": 6032,
+      "code": 6033,
       "name": "InvalidBondDuration",
       "msg": "Invalid bond duration - must be 7-30 days"
     },
     {
-      "code": 6033,
+      "code": 6034,
       "name": "InvalidAmount",
       "msg": "Invalid amount"
     },
     {
-      "code": 6034,
+      "code": 6035,
       "name": "BondTargetMet",
       "msg": "Bond target already met"
     },
     {
-      "code": 6035,
+      "code": 6036,
       "name": "Unauthorized",
       "msg": "Unauthorized"
     },
     {
-      "code": 6036,
+      "code": 6037,
       "name": "FeeTooHigh",
       "msg": "Fee too high"
     },
     {
-      "code": 6037,
+      "code": 6038,
       "name": "SellFeeExceedsMax",
       "msg": "Sell fee exceeds maximum (3%)"
     },
     {
-      "code": 6038,
+      "code": 6039,
       "name": "FeeControlRenounced",
       "msg": "Fee control has been renounced"
     },
     {
-      "code": 6039,
+      "code": 6040,
       "name": "MissingTokenName",
       "msg": "Token Launcher: Missing token name"
     },
     {
-      "code": 6040,
+      "code": 6041,
       "name": "MissingTokenSymbol",
       "msg": "Token Launcher: Missing token symbol"
     },
     {
-      "code": 6041,
+      "code": 6042,
       "name": "MissingTokenSupply",
       "msg": "Token Launcher: Missing token supply"
     },
     {
-      "code": 6042,
+      "code": 6043,
       "name": "InvalidTokenName",
       "msg": "Token Launcher: Invalid token name (1-32 chars)"
     },
     {
-      "code": 6043,
+      "code": 6044,
       "name": "InvalidTokenSymbol",
       "msg": "Token Launcher: Invalid token symbol (1-10 chars)"
     },
     {
-      "code": 6044,
+      "code": 6045,
       "name": "InvalidTokenSupply",
       "msg": "Token Launcher: Invalid token supply (must be > 0)"
     },
     {
-      "code": 6045,
+      "code": 6046,
       "name": "InvalidMetadataUri",
       "msg": "Token Launcher: Invalid metadata URI (1-200 chars)"
     },
     {
-      "code": 6046,
+      "code": 6047,
       "name": "InvalidSovereignType",
       "msg": "Invalid sovereign type for this operation"
     },
     {
-      "code": 6047,
+      "code": 6048,
       "name": "TokenAlreadyCreated",
       "msg": "Token has already been created for this sovereign"
     },
     {
-      "code": 6048,
+      "code": 6049,
       "name": "MissingExistingMint",
       "msg": "BYO Token: Missing existing mint address"
     },
     {
-      "code": 6049,
+      "code": 6050,
       "name": "MissingDepositAmount",
       "msg": "BYO Token: Missing deposit amount"
     },
     {
-      "code": 6050,
+      "code": 6051,
       "name": "InsufficientTokenDeposit",
       "msg": "BYO Token: Insufficient token deposit (below minimum % required)"
     },
     {
-      "code": 6051,
+      "code": 6052,
       "name": "BYOMintAuthorityNotRenounced",
       "msg": "BYO Token: Mint authority must be renounced (set to None) before creating a BYO sovereign"
     },
     {
-      "code": 6052,
+      "code": 6053,
       "name": "BYOFreezeAuthorityNotRenounced",
       "msg": "BYO Token: Freeze authority must be renounced (set to None) before creating a BYO sovereign"
     },
     {
-      "code": 6053,
+      "code": 6054,
       "name": "BYOSupplyMismatch",
       "msg": "BYO Token: Live mint supply does not match snapshot taken at create_sovereign — possible inflation or burn since creation"
     },
     {
-      "code": 6054,
+      "code": 6055,
       "name": "VaultAmountMismatch",
       "msg": "Token vault balance does not match expected deposit amount — possible external injection or token loss"
     },
     {
-      "code": 6055,
+      "code": 6056,
       "name": "AlreadyClaimed",
       "msg": "Already claimed"
     },
     {
-      "code": 6056,
+      "code": 6057,
       "name": "NothingToClaim",
       "msg": "Nothing to claim"
     },
     {
-      "code": 6057,
+      "code": 6058,
       "name": "NotCreator",
       "msg": "Caller is not the creator"
     },
     {
-      "code": 6058,
+      "code": 6059,
       "name": "Overflow",
       "msg": "Arithmetic overflow"
     },
     {
-      "code": 6059,
+      "code": 6060,
       "name": "DivisionByZero",
       "msg": "Division by zero"
     },
     {
-      "code": 6060,
+      "code": 6061,
       "name": "NoDeposits",
       "msg": "No deposits in the sovereign"
     },
     {
-      "code": 6061,
+      "code": 6062,
       "name": "ProtocolPaused",
       "msg": "Protocol is currently paused"
     },
     {
-      "code": 6062,
+      "code": 6063,
       "name": "ActivityCheckCooldownNotElapsed",
       "msg": "Activity check cooldown has not elapsed (7 days required)"
     },
     {
-      "code": 6063,
+      "code": 6064,
       "name": "AlreadyHalted",
       "msg": "Sovereign is already halted"
     },
     {
-      "code": 6064,
+      "code": 6065,
       "name": "NoRedemptionPool",
       "msg": "No surplus GOR available for token redemption"
     },
     {
-      "code": 6065,
+      "code": 6066,
       "name": "NoCirculatingTokens",
       "msg": "No circulating tokens to redeem against"
     },
     {
-      "code": 6066,
+      "code": 6067,
       "name": "RedemptionWindowExpired",
       "msg": "Token redemption window has expired"
     },
     {
-      "code": 6067,
+      "code": 6068,
       "name": "RedemptionWindowNotExpired",
       "msg": "Token redemption window has not expired yet"
     },
     {
-      "code": 6068,
+      "code": 6069,
       "name": "InsufficientAccounts",
       "msg": "Insufficient remaining accounts provided"
     },
     {
-      "code": 6069,
+      "code": 6070,
       "name": "NoPendingAuthorityTransfer",
       "msg": "No pending authority transfer"
     },
     {
-      "code": 6070,
+      "code": 6071,
       "name": "InvalidTokenProgram",
       "msg": "Invalid token program - must be SPL Token or Token-2022"
     },
     {
-      "code": 6071,
+      "code": 6072,
       "name": "SwapFeeOutOfRange",
       "msg": "Swap fee must be between 100 and 300 bps (1% - 3%)"
     },
     {
-      "code": 6072,
+      "code": 6073,
       "name": "AlreadyInitialized",
       "msg": "Already initialized"
     }
@@ -6546,6 +6760,13 @@
             "type": "i64"
           },
           {
+            "name": "voting_starts_at",
+            "docs": [
+              "Voting period start timestamp (after discussion/grace period)"
+            ],
+            "type": "i64"
+          },
+          {
             "name": "timelock_ends_at",
             "docs": [
               "Timelock end timestamp (when execution is allowed)"
@@ -6595,6 +6816,10 @@
           },
           {
             "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "voting_starts_at",
             "type": "i64"
           },
           {
@@ -6879,6 +7104,15 @@
               "Default: 5100 (51%)"
             ],
             "type": "u16"
+          },
+          {
+            "name": "discussion_period",
+            "docs": [
+              "Discussion/grace period before voting opens (in seconds)",
+              "Gives creators time to address concerns before votes can be cast.",
+              "Default: 3 days (259_200)"
+            ],
+            "type": "i64"
           },
           {
             "name": "keeper",
@@ -7792,42 +8026,6 @@
           {
             "name": "gor_received",
             "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "TransferHookExecuted",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "sovereign_id",
-            "type": "u64"
-          },
-          {
-            "name": "mint",
-            "type": "pubkey"
-          },
-          {
-            "name": "source",
-            "type": "pubkey"
-          },
-          {
-            "name": "destination",
-            "type": "pubkey"
-          },
-          {
-            "name": "amount",
-            "type": "u64"
-          },
-          {
-            "name": "fee_amount",
-            "type": "u64"
-          },
-          {
-            "name": "is_sell",
-            "type": "bool"
           }
         ]
       }

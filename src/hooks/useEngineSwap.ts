@@ -51,6 +51,7 @@ export interface PoolState {
   swapFeeBps: number;
   binFeeShareBps: number;
   isPaused: boolean;
+  lastPrice?: string;      // Most recent execution price (×1e9 precision)
 }
 
 // ============================================================
@@ -108,39 +109,36 @@ export function computeBuyQuote(
 }
 
 // ============================================================
-// V3 Sell Quote — locked-rate bin settlement (approximated)
+// V3 Sell Quote — locked-rate bin settlement
 // ============================================================
+
+/** Bin snapshot from the backend pool tracker (optional for accurate quotes) */
+export interface SellQuoteBin {
+  index: number;
+  tokens: string;         // lamports string
+  gorLocked: string;      // lamports string
+  status: number;         // 0=Empty, 1=Partial, 2=Filled
+  feeCredit: string;      // lamports string
+  originalCapacity: string;
+}
 
 /**
  * Compute a sell quote: Tokens → GOR.
- * V3: Sells use locked flat rates from bins. On-chain, each bin has
- * its own average purchase rate. Without bin data on the frontend,
- * we approximate using the aggregate average locked rate:
  *
- *   payout ≈ tokens_in × (gor_reserve - initial_gor_reserve) / total_tokens_sold
+ * V3 sells walk bins starting from activeBin downward. Each bin pays at
+ * its locked rate: (gorLocked + feeCredit) / tokensSoldInBin.
  *
- * WHY minimumOut = 0 for V3 sells:
+ * When bin data is available (from backend pool snapshot), we simulate
+ * the on-chain compute_sell exactly and can set a proper minimumOut.
  *
- * The aggregate average OVERESTIMATES because gorReserve includes
- * accumulated bin fees that inflate (gorReserve - initialGorReserve)
- * above the actual sum of gor_locked in bins.  The gap grows with
- * trading volume and varies unpredictably, making any fixed discount
- * unreliable.
- *
- * V3 sells are NOT subject to AMM curve slippage — each bin pays at
- * its fixed locked rate. The only "slippage" scenario is someone
- * frontrunning your sell, but adjacent bin rates differ by < 0.03%.
- * The on-chain solvency floor (gor_reserve >= initial_gor_reserve)
- * already prevents catastrophic drain.
- *
- * We still display estimatedOut for the user's reference, but do not
- * enforce it as a hard on-chain minimum.
+ * Without bin data, we fall back to using the pool's lastPrice (most
+ * recent execution price) as an approximation of the current bin rate.
  */
-
 export function computeSellQuote(
   pool: PoolState,
   tokenInput: bigint,
-  _slippageBps: number,
+  slippageBps: number,
+  bins?: SellQuoteBin[],
 ): EngineQuote | null {
   if (tokenInput <= 0n || pool.isPaused) return null;
 
@@ -150,6 +148,8 @@ export function computeSellQuote(
   const gorReserve = BigInt(pool.gorReserve);
   const initialGorReserve = BigInt(pool.initialGorReserve);
   const tokenReserve = BigInt(pool.tokenReserve);
+  const binCapacity = BigInt(pool.binCapacity);
+  const activeBin = pool.activeBin;
 
   // Available GOR above solvency floor
   const availableGor = gorReserve > initialGorReserve ? gorReserve - initialGorReserve : 0n;
@@ -158,28 +158,87 @@ export function computeSellQuote(
   // Can't sell more tokens than are outstanding
   const actualTokensIn = tokenInput < totalTokensSold ? tokenInput : totalTokensSold;
 
-  // Approximate payout using aggregate average locked rate
-  let totalGorPayout = availableGor * actualTokensIn / totalTokensSold;
+  let totalGorPayout = 0n;
 
-  // Clamp to available (shouldn't exceed, but safety)
+  if (bins && bins.length > 0) {
+    // ── Accurate path: walk bins like the on-chain compute_sell ──
+    let tokensRemaining = actualTokensIn;
+    let g = gorReserve;
+
+    // Build a map for quick lookup by index
+    const binMap = new Map<number, SellQuoteBin>();
+    for (const b of bins) binMap.set(b.index, b);
+
+    let sellIdx = activeBin;
+    while (tokensRemaining > 0n && sellIdx >= 0) {
+      const bin = binMap.get(sellIdx);
+      if (!bin) { sellIdx--; continue; }
+
+      const binCap = BigInt(bin.originalCapacity) || binCapacity;
+      const binTokens = BigInt(bin.tokens);
+      const gorLocked = BigInt(bin.gorLocked);
+      const feeCredit = BigInt(bin.feeCredit);
+      const tokensSoldInBin = binCap - binTokens;
+
+      if (tokensSoldInBin <= 0n || gorLocked <= 0n) {
+        sellIdx--;
+        continue;
+      }
+
+      const tokensToReturn = tokensRemaining < tokensSoldInBin ? tokensRemaining : tokensSoldInBin;
+
+      // Boosted payout: (gorLocked + feeCredit) × tokensToReturn / tokensSoldInBin
+      const totalPot = gorLocked + feeCredit;
+      let payout = totalPot * tokensToReturn / tokensSoldInBin;
+
+      // Solvency clamp
+      const available = g - initialGorReserve;
+      if (available <= 0n) break;
+      if (payout > available) payout = available;
+      if (payout === 0n) break;
+
+      // Adjust tokens proportionally if clamped
+      const actualTokens = payout < (totalPot * tokensToReturn / tokensSoldInBin)
+        ? tokensToReturn * payout / (totalPot * tokensToReturn / tokensSoldInBin)
+        : tokensToReturn;
+      if (actualTokens === 0n) break;
+
+      totalGorPayout += payout;
+      tokensRemaining -= actualTokens;
+      g -= payout;
+      sellIdx--;
+    }
+  } else {
+    // ── Fallback: use lastPrice as bin rate approximation ──
+    // lastPrice is the most recent swap execution price (×1e9 precision),
+    // which closely tracks the active bin's locked rate.
+    const lastPrice = BigInt(pool.lastPrice || '0');
+    if (lastPrice > 0n) {
+      totalGorPayout = actualTokensIn * lastPrice / PRICE_PRECISION;
+    } else {
+      // Ultimate fallback: aggregate average (inaccurate but non-zero)
+      totalGorPayout = availableGor * actualTokensIn / totalTokensSold;
+    }
+  }
+
+  // Clamp to available
   if (totalGorPayout > availableGor) {
     totalGorPayout = availableGor;
   }
 
-  const tokensSold = actualTokensIn;
-  if (tokensSold === 0n || totalGorPayout === 0n) return null;
+  if (totalGorPayout === 0n) return null;
 
   // Fee deducted from payout
   const fee = totalGorPayout * BigInt(pool.swapFeeBps) / 10000n;
   const netPayout = totalGorPayout - fee;
 
-  // V3 sells: minimumOut = 0 — aggregate estimate is unreliable
-  // (gorReserve includes accumulated fees that inflate the estimate).
-  // Locked-rate bins have no AMM slippage; solvency floor is the guard.
-  const minimumOut = 0n;
+  // With bin data we can set a real minimumOut; without it, use 0
+  const minimumOut = bins && bins.length > 0
+    ? netPayout * BigInt(10000 - slippageBps) / 10000n
+    : 0n;
 
-  const executionPrice = tokensSold > 0n
-    ? totalGorPayout * PRICE_PRECISION / tokensSold
+  const executionPrice = actualTokensIn > 0n
+    ? totalGorPayout * PRICE_PRECISION / actualTokensIn
     : 0n;
 
   const currentTierPrice = tokenReserve > 0n

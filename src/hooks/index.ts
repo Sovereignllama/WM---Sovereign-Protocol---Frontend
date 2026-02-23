@@ -49,3 +49,5 @@ export {
 
 // Backend API hooks
 export { useProtocolStats } from './useProtocolStats';
+export { usePoolSnapshot, usePoolBins, useAllPoolSnapshots } from './usePoolSnapshot';
+export type { PoolSnapshot, PoolBinsResponse, BinSnapshot } from './usePoolSnapshot';

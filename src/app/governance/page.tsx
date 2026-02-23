@@ -8,7 +8,7 @@ import { CreatorPositionCard } from '@/components/CreatorPositionCard';
 import Link from 'next/link';
 
 const ACTIVE_STATUSES = ['Recovery', 'Active', 'Unwinding'];
-const ARCHIVED_STATUSES = ['Unwound', 'EmergencyUnlocked'];
+const ARCHIVED_STATUSES = ['Unwound', 'Halted'];
 
 type Filter = 'active' | 'archived' | 'all';
 
@@ -89,7 +89,7 @@ export default function GovernancePage() {
             You don't have any sovereign deposits or created pools. Deposit into a sovereign to participate in governance.
           </p>
           <Link
-            href="/sovereign"
+            href="/sovereigns"
             className="inline-block px-6 py-2 rounded-lg text-sm font-bold bg-[var(--money-green)] text-black hover:opacity-90"
           >
             Browse Sovereigns

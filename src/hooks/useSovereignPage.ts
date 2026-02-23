@@ -14,7 +14,7 @@ import {
 /**
  * Fetch sovereign page data (public)
  */
-export function useSovereignPage(sovereignId: number | undefined) {
+export function useSovereignPage(sovereignId: string | number | undefined) {
   return useQuery({
     queryKey: ['sovereignPage', sovereignId],
     queryFn: () => fetchSovereignPage(sovereignId!),
@@ -27,7 +27,7 @@ export function useSovereignPage(sovereignId: number | undefined) {
  * Hook to sign a message with the connected wallet.
  * Returns a function that produces { wallet, timestamp, signature }.
  */
-export function useSignPageAuth(sovereignId: number | undefined) {
+export function useSignPageAuth(sovereignId: string | number | undefined) {
   const { publicKey, signMessage } = useWallet();
 
   return useCallback(async () => {

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { SovereignList } from '@/components/SovereignList';
 import { SovereignDisplayData, SovereignStatus } from '@/types/sovereign';
 import { PublicKey } from '@solana/web3.js';
-import { useSovereigns, useProtocolState } from '@/hooks';
+import { useSovereigns, useProtocolState, useAllPoolSnapshots } from '@/hooks';
 
 type CategoryType = 'Bonding' | 'Recovery' | 'Active' | 'Unwind' | 'Archived';
 type PageSize = 5 | 10 | 20;
@@ -55,6 +55,7 @@ export default function SovereignsPage() {
   // Fetch real data from on-chain
   const { data: sovereignsData, isLoading: sovereignsLoading, error: sovereignsError } = useSovereigns();
   const { data: protocolState, isLoading: protocolLoading } = useProtocolState();
+  const { data: poolSnapshots } = useAllPoolSnapshots();
 
   // When switching categories, reset sort to first option for that category & reset page
   const handleCategoryChange = useCallback((cat: CategoryType) => {
@@ -67,7 +68,16 @@ export default function SovereignsPage() {
   const sovereigns: SovereignDisplayData[] = useMemo(() => {
     if (!sovereignsData) return [];
     
-    return sovereignsData.map((s: any) => ({
+    return sovereignsData.map((s: any) => {
+      // Use pool snapshot recovery data (engine tracks actual recovery progress)
+      const snap = poolSnapshots?.[Number(s.sovereignId)];
+      const snapshotRecoveryTarget = snap ? Number(snap.recoveryTarget) : 0;
+      const snapshotTotalRecovered = snap ? Number(snap.totalRecovered) : 0;
+      const recoveryProgress = snapshotRecoveryTarget > 0
+        ? (snapshotTotalRecovered / snapshotRecoveryTarget) * 100
+        : (s.recoveryProgress ?? 0);
+
+      return {
       sovereignId: BigInt(s.sovereignId),
       publicKey: new PublicKey(s.publicKey),
       name: s.name || `Sovereign #${s.sovereignId}`,
@@ -86,7 +96,7 @@ export default function SovereignsPage() {
       totalDeposited: BigInt(s.totalDeposited),
       depositorCount: s.depositorCount,
       sellFeeBps: s.sellFeeBps,
-      swapFeeBps: s.swapFeeBps ?? 30,
+      swapFeeBps: s.swapFeeBps ?? 0,
       creationFeeEscrowed: BigInt(0),
       creatorEscrow: BigInt(0),
       creatorMaxBuyBps: 100,
@@ -94,7 +104,7 @@ export default function SovereignsPage() {
       totalSolFeesDistributed: BigInt(s.totalRecovered || 0),
       totalTokenFeesCollected: BigInt(0),
       recoveryTarget: BigInt(s.recoveryTarget),
-      recoveryComplete: s.recoveryComplete,
+      recoveryComplete: snap ? snap.recoveryComplete : s.recoveryComplete,
       unwindSolBalance: BigInt(0),
       unwindTokenBalance: BigInt(0),
       activityCheckInitiated: s.activityCheckInitiated ?? false,
@@ -103,13 +113,14 @@ export default function SovereignsPage() {
       autoUnwindPeriod: 90 * 24 * 60 * 60,
       metadataUri: s.metadataUri || undefined,
       bondProgress: s.bondingProgress,
-      recoveryProgress: s.recoveryProgress,
+      recoveryProgress,
       bondTargetSol: s.bondTargetGor,
       totalDepositedSol: s.totalDepositedGor,
       totalFeesCollectedGor: s.totalFeesCollectedGor ?? 0,
       recoveryTargetSol: s.recoveryTargetGor,
-    }));
-  }, [sovereignsData]);
+      };
+    });
+  }, [sovereignsData, poolSnapshots]);
 
   // Count by category
   const counts: Record<CategoryType, number> = useMemo(() => ({
@@ -117,7 +128,7 @@ export default function SovereignsPage() {
     Recovery: sovereigns.filter(s => s.status === 'Recovery').length,
     Active: sovereigns.filter(s => s.status === 'Active').length,
     Unwind: sovereigns.filter(s => s.activityCheckInitiated || s.status === 'Unwinding').length,
-    Archived: sovereigns.filter(s => s.status === 'Unwound' || s.status === 'EmergencyUnlocked').length,
+    Archived: sovereigns.filter(s => s.status === 'Unwound' || s.status === 'Halted').length,
   }), [sovereigns]);
 
   const isLoading = sovereignsLoading || protocolLoading;
@@ -245,6 +256,7 @@ export default function SovereignsPage() {
             pageSize={pageSize}
             currentPage={currentPage}
             onPageChange={setCurrentPage}
+            poolSnapshots={poolSnapshots}
             emptyMessage={sovereigns.length === 0 
               ? 'No sovereigns created yet. Be the first to launch!' 
               : searchQuery

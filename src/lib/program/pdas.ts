@@ -201,6 +201,19 @@ export function getVoteRecordPDA(
 }
 
 /**
+ * Derive the Genesis Collection Mint PDA (global, one per protocol)
+ */
+export function getCollectionMintPDA(
+  programId?: PublicKey
+): [PublicKey, number] {
+  const pid = programId || getProgramId();
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from(PDA_SEEDS.GENESIS_COLLECTION)],
+    pid
+  );
+}
+
+/**
  * Derive a Genesis NFT Mint PDA for a depositor
  * @param sovereign - The sovereign's pubkey
  * @param depositor - The depositor's wallet pubkey

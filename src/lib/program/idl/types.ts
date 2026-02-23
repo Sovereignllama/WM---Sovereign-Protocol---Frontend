@@ -27,11 +27,21 @@ export type ProtocolStateAccount = {
   minDeposit: BN;
   autoUnwindPeriod: BN;
   minFeeGrowthThreshold: BN;
-  feeThresholdRenounced: boolean;
+  padFeeThresholdRenounced: number;
   paused: boolean;
   sovereignCount: BN;
   totalFeesCollected: BN;
   bump: number;
+  votingPeriod: BN;
+  observationPeriod: BN;
+  governanceQuorumBps: number;
+  governancePassThresholdBps: number;
+  discussionPeriod: BN;
+  keeper: PublicKey;
+  pendingAuthority: PublicKey;
+  defaultSwapFeeBps: number;
+  collectionMint: PublicKey;
+  creatorFeeShareBps: number;
 };
 
 export type SovereignStateAccount = {
@@ -97,11 +107,13 @@ export type DepositRecordAccount = {
   sovereign: PublicKey;
   depositor: PublicKey;
   amount: BN;
-  sharesBps: number;
+  positionBps: number;
   genesisNftMint: PublicKey;
-  feesClaimed: BN;
+  /** Deprecated padding — fee vault was never funded */
+  _padFeesClaimed: Uint8Array;
   nftMint: PublicKey | null;
-  votingPowerBps: number;
+  /** Deprecated padding — superseded by positionBps */
+  _padVotingPowerBps: Uint8Array;
   nftMinted: boolean;
   unwindClaimed: boolean;
   refundClaimed: boolean;
@@ -160,6 +172,7 @@ export type ProposalAccount = {
   quorumBps: number;
   passThresholdBps: number;
   votingEndsAt: BN;
+  votingStartsAt: BN;
   timelockEndsAt: BN;
   createdAt: BN;
   executedAt: BN;
@@ -193,7 +206,7 @@ export type SovereignStatus =
   | { unwinding: {} }
   | { unwound: {} }
   | { failed: {} }
-  | { emergencyUnlocked: {} }
+  | { halted: {} }
   | { retired: {} };
 
 export type SovereignType = 

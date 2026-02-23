@@ -59,7 +59,7 @@ export interface SovereignPageInput {
 /**
  * Fetch sovereign page data (public, no auth)
  */
-export async function fetchSovereignPage(sovereignId: number): Promise<SovereignPageData | null> {
+export async function fetchSovereignPage(sovereignId: string | number): Promise<SovereignPageData | null> {
   const res = await fetch(`${API_URL}/api/sovereign-pages/${sovereignId}`);
   if (!res.ok) throw new Error('Failed to fetch sovereign page');
   const json = await res.json();

@@ -7,6 +7,7 @@ import { Footer } from '@/components/Footer';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { config } from '@/lib/config';
+import { BetaDisclaimer } from '@/components/BetaDisclaimer';
 
 export const metadata: Metadata = {
   title: config.appName,
@@ -50,6 +51,7 @@ export default function RootLayout({
               pauseOnHover
               theme="dark"
             />
+            <BetaDisclaimer />
           </WalletProvider>
         </QueryProvider>
       </body>

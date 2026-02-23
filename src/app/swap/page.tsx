@@ -6,6 +6,7 @@ import { useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { useSovereigns, useSovereign, useEnginePool } from '@/hooks/useSovereign';
 import { useEngineSwap, computeBuyQuote, computeSellQuote, EngineQuote } from '@/hooks/useEngineSwap';
+import { usePoolBins } from '@/hooks/usePoolSnapshot';
 import { useTokenImage } from '@/hooks/useTokenImage';
 import { TokenPickerModal, TradableToken } from '@/components/TokenPickerModal';
 import { config, LAMPORTS_PER_GOR } from '@/lib/config';
@@ -77,6 +78,10 @@ export default function SwapPage() {
 
   // Engine pool data
   const { data: enginePool, isLoading: poolLoading } = useEnginePool(selectedSovereignId || undefined);
+
+  // Bin data from backend pool tracker (for accurate sell quotes)
+  const sovereignIdNum = sovereign?.sovereignId ? parseInt(sovereign.sovereignId, 10) : undefined;
+  const { data: poolBinsData } = usePoolBins(sovereignIdNum);
 
   // Wallet token balances
   const [tokenBalances, setTokenBalances] = useState<Record<string, number>>({});
@@ -174,8 +179,8 @@ export default function SwapPage() {
     if (!enginePool || !rawAmount) return null;
     return direction === 'buy'
       ? computeBuyQuote(enginePool, rawAmount, slippageBps)
-      : computeSellQuote(enginePool, rawAmount, slippageBps);
-  }, [enginePool, rawAmount, direction, slippageBps]);
+      : computeSellQuote(enginePool, rawAmount, slippageBps, poolBinsData?.bins);
+  }, [enginePool, rawAmount, direction, slippageBps, poolBinsData]);
 
   // Toggle direction
   const toggleDirection = useCallback(() => {

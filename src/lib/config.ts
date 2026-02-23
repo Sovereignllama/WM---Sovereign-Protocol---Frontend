@@ -2,8 +2,9 @@
 export const config = {
   rpcUrl: process.env.NEXT_PUBLIC_GORBAGANA_RPC_URL || 'https://rpc.trashscan.io',
   network: process.env.NEXT_PUBLIC_NETWORK || 'mainnet-beta',
-  programId: process.env.NEXT_PUBLIC_PROGRAM_ID || '',
+  programId: process.env.NEXT_PUBLIC_PROGRAM_ID || '2LPPAG7UhVop1RiRBh8oZtjzMoJ9St9WV4nY7JwmoNbA',
   engineProgramId: process.env.NEXT_PUBLIC_ENGINE_PROGRAM_ID || 'Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt',
+  poolPriceWorkerUrl: process.env.NEXT_PUBLIC_POOL_PRICE_WORKER_URL || 'https://waste-management-pool-price-tracker.onrender.com',
   appName: process.env.NEXT_PUBLIC_APP_NAME || 'Sovereign Protocol',
   appUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
   explorerUrl: process.env.NEXT_PUBLIC_EXPLORER_URL || 'https://trashscan.io',
@@ -46,36 +47,4 @@ export const PROTOCOL_CONSTANTS = {
 // Lamports to GOR conversion
 export const LAMPORTS_PER_GOR = 1_000_000_000;
 
-/**
- * SAMM AMM Config mapping: swap fee BPS → AmmConfig pubkey on Trashbin.
- * 
- * Each AmmConfig is a pre-deployed account on SAMM that defines the swap fee rate,
- * tick spacing, and pool creation fee for that tier.
- * 
- * TODO: Replace placeholder addresses with actual Trashbin SAMM AmmConfig pubkeys
- * once they are known. Query with: getProgramAccounts(SAMM_PROGRAM_ID) filtering
- * for the ammConfig discriminator.
- */
-export const AMM_FEE_TIERS: { bps: number; label: string; address: string }[] = [
-  { bps: 20,  label: '0.2%',  address: '91nMHS1bpAqcMwkAJdfBEXvAhRUQdVpi4tpVwQkYHXnB' },
-  { bps: 50,  label: '0.5%',  address: '14jJBJ8D2P7Vwxmy3ZWADMktcutDrTPzZ3cwSzzBu4nW' },
-  { bps: 100, label: '1%',    address: '5Faie8JPMMTdpgeVByZg4za1pfbvWLsndWhqPtsEibf3' },
-  { bps: 200, label: '2%',    address: 'FQ6KT4TVcAx6znm3dW8gmnfvxEeiGszLv82rn2G1BRs8' },
-];
 
-/**
- * Get the AMM config address for a given swap fee BPS.
- * Falls back to nearest available tier if exact match not found.
- */
-export function getAmmConfigForFee(swapFeeBps: number): { bps: number; address: string } | null {
-  // Exact match first
-  const exact = AMM_FEE_TIERS.find(t => t.bps === swapFeeBps);
-  if (exact && exact.address) return exact;
-  
-  // Find nearest tier that has a valid address
-  const validTiers = AMM_FEE_TIERS.filter(t => t.address);
-  if (validTiers.length === 0) return null;
-  
-  validTiers.sort((a, b) => Math.abs(a.bps - swapFeeBps) - Math.abs(b.bps - swapFeeBps));
-  return validTiers[0];
-}
