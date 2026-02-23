@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { SovereignDisplayData, SovereignStatus } from '@/types/sovereign';
 import { SovereignCard } from './SovereignCard';
+import { useNftCounts } from '@/hooks/useNfts';
 import type { PoolSnapshot } from '@/hooks';
 
 type CategoryType = 'Bonding' | 'Recovery' | 'Active' | 'Unwind' | 'Archived';
@@ -43,6 +44,8 @@ export function SovereignList({
   emptyMessage,
   poolSnapshots,
 }: SovereignListProps) {
+
+  const { data: nftCounts } = useNftCounts();
 
   const filteredSovereigns = useMemo(() => {
     // 1. Category filter
@@ -142,6 +145,7 @@ export function SovereignList({
             key={sovereign.sovereignId.toString()}
             sovereign={sovereign}
             priceChange24h={poolSnapshots?.[Number(sovereign.sovereignId)]?.priceChange24h}
+            nftCount={nftCounts?.[sovereign.publicKey.toString()]}
           />
         ))}
       </div>

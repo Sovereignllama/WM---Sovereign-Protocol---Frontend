@@ -7,9 +7,10 @@ import { useTokenMetadata } from '@/hooks/useTokenMetadata';
 interface SovereignCardProps {
   sovereign: SovereignDisplayData;
   priceChange24h?: number;
+  nftCount?: number;
 }
 
-export function SovereignCard({ sovereign, priceChange24h }: SovereignCardProps) {
+export function SovereignCard({ sovereign, priceChange24h, nftCount }: SovereignCardProps) {
   const { data: metadata } = useTokenMetadata(sovereign.metadataUri);
   const imageUrl = metadata?.image;
   const description = metadata?.description;
@@ -116,8 +117,8 @@ export function SovereignCard({ sovereign, priceChange24h }: SovereignCardProps)
                   </span>
                 </div>
                 <div>
-                  <span className="text-[var(--muted)]">LPs: </span>
-                  <span className="text-white font-bold">{sovereign.depositorCount}</span>
+                  <span className="text-[var(--muted)]">NFTs: </span>
+                  <span className="text-white font-bold">{nftCount ?? sovereign.depositorCount}</span>
                 </div>
               </div>
               <div className="text-[10px] text-[var(--faint)] mt-1">
@@ -143,7 +144,7 @@ export function SovereignCard({ sovereign, priceChange24h }: SovereignCardProps)
                 </div>
               </div>
               <div className="text-[10px] text-[var(--faint)] mt-1">
-                {sovereign.depositorCount} LPs
+                {nftCount ?? sovereign.depositorCount} NFTs
               </div>
             </>
           )}
@@ -158,8 +159,8 @@ export function SovereignCard({ sovereign, priceChange24h }: SovereignCardProps)
                   </span>
                 </div>
                 <div>
-                  <span className="text-[var(--muted)]">LPs: </span>
-                  <span className="text-white font-bold">{sovereign.depositorCount}</span>
+                  <span className="text-[var(--muted)]">NFTs: </span>
+                  <span className="text-white font-bold">{nftCount ?? sovereign.depositorCount}</span>
                 </div>
               </div>
             </>
@@ -185,8 +186,8 @@ export function SovereignCard({ sovereign, priceChange24h }: SovereignCardProps)
                   </span>
                 </div>
                 <div>
-                  <span className="text-[var(--muted)]">LPs: </span>
-                  <span className="text-white font-bold">{sovereign.depositorCount}</span>
+                  <span className="text-[var(--muted)]">NFTs: </span>
+                  <span className="text-white font-bold">{nftCount ?? sovereign.depositorCount}</span>
                 </div>
               </div>
               <div className="text-[10px] text-[var(--faint)] mt-1">90-day inactivity period</div>
@@ -197,8 +198,8 @@ export function SovereignCard({ sovereign, priceChange24h }: SovereignCardProps)
           {!['Bonding', 'Recovery', 'Active', 'Unwinding', 'Unwound'].includes(sovereign.status) && !sovereign.activityCheckInitiated && (
             <div className="flex items-center justify-between text-[11px]">
               <div>
-                <span className="text-[var(--muted)]">LPs: </span>
-                <span className="text-white font-bold">{sovereign.depositorCount}</span>
+                <span className="text-[var(--muted)]">NFTs: </span>
+                <span className="text-white font-bold">{nftCount ?? sovereign.depositorCount}</span>
               </div>
               <div className="text-[10px] text-[var(--faint)]">
                 {sovereign.totalDepositedSol?.toFixed(2) || '0'} GOR

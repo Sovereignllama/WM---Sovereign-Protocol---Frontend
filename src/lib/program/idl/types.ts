@@ -42,6 +42,8 @@ export type ProtocolStateAccount = {
   defaultSwapFeeBps: number;
   collectionMint: PublicKey;
   creatorFeeShareBps: number;
+  nftRoyaltyBps: number;
+  nftRoyaltyWallet: PublicKey;
 };
 
 export type SovereignStateAccount = {
@@ -196,6 +198,15 @@ export type CreationFeeEscrowAccount = {
   bump: number;
 };
 
+export type NftListingAccount = {
+  seller: PublicKey;
+  nftMint: PublicKey;
+  sovereign: PublicKey;
+  price: BN;
+  listedAt: BN;
+  bump: number;
+};
+
 // Enum types
 export type SovereignStatus = 
   | { bonding: {} }
@@ -333,6 +344,52 @@ export type FeesClaimedEvent = {
   recoveryTarget: BN;
 };
 
+export type NftRoyaltyConfigUpdatedEvent = {
+  oldRoyaltyBps: number;
+  newRoyaltyBps: number;
+  oldRoyaltyWallet: PublicKey;
+  newRoyaltyWallet: PublicKey;
+  updatedBy: PublicKey;
+};
+
+export type NftListedEvent = {
+  sovereignId: BN;
+  nftMint: PublicKey;
+  seller: PublicKey;
+  price: BN;
+  listedAt: BN;
+};
+
+export type NftDelistedEvent = {
+  sovereignId: BN;
+  nftMint: PublicKey;
+  seller: PublicKey;
+};
+
+export type NftSoldEvent = {
+  sovereignId: BN;
+  nftMint: PublicKey;
+  seller: PublicKey;
+  buyer: PublicKey;
+  price: BN;
+  royaltyAmount: BN;
+  sellerProceeds: BN;
+  royaltyWallet: PublicKey;
+};
+
+export type NftTransferredEvent = {
+  sovereignId: BN;
+  nftMint: PublicKey;
+  from: PublicKey;
+  to: PublicKey;
+};
+
+export type NftFrozenEvent = {
+  sovereignId: BN;
+  nftMint: PublicKey;
+  holder: PublicKey;
+};
+
 // Error codes
 export const SovereignLiquidityErrors = {
   InvalidState: 6000,
@@ -438,6 +495,15 @@ export const SovereignLiquidityErrors = {
   ActivityCheckCooldownNotElapsed: 6100,
   MissingSAMMAccounts: 6101,
   VotingPowerOverflow: 6102,
+  NftAlreadyListed: 6074,
+  NftNotListed: 6075,
+  ListingPriceTooLow: 6076,
+  NftRoyaltyTooHigh: 6077,
+  InvalidRoyaltyWallet: 6078,
+  BuyerIsSeller: 6079,
+  NotNftOwner: 6080,
+  NftIsListed: 6081,
+  InvalidNftBalance: 6082,
 } as const;
 
 export type SovereignLiquidityErrorCode = typeof SovereignLiquidityErrors[keyof typeof SovereignLiquidityErrors];

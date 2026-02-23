@@ -1,15 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useSovereign, useDepositRecord, useEnginePool, useProtocolState } from '@/hooks/useSovereign';
-import { useDeposit, useWithdraw, useFinalizeEnginePool, useMintGenesisNft } from '@/hooks/useTransactions';
+import { useDeposit, useWithdraw, useFinalizeEnginePool, useMintGenesisNft, useListNft } from '@/hooks/useTransactions';
 import { useProposals } from '@/hooks/useGovernance';
 import { usePoolSnapshot } from '@/hooks/usePoolSnapshot';
 import { useTokenImage } from '@/hooks/useTokenImage';
+import { useSovereignNfts } from '@/hooks/useNfts';
 import { StatusBadge } from '@/components/StatusBadge';
 import { SovereignPageDisplay } from '@/components/SovereignPageDisplay';
+import { NftListingModal } from '@/components/NftListingModal';
+import { NftMarketplaceCard, type NftListing } from '@/components/NftMarketplaceCard';
 import { useSovereignPage } from '@/hooks/useSovereignPage';
 import { LAMPORTS_PER_GOR, config } from '@/lib/config';
 import { formatDistanceToNow, format } from 'date-fns';
@@ -27,6 +30,7 @@ export default function SovereignDetailPage() {
   const withdraw = useWithdraw();
   const finalizeEnginePool = useFinalizeEnginePool();
   const mintGenesisNft = useMintGenesisNft();
+  const listNft = useListNft();
   const { data: imageUrl } = useTokenImage(sovereign?.metadataUri);
   const { data: sovereignPage } = useSovereignPage(sovereignId);
   const { data: enginePool } = useEnginePool(sovereignId);
@@ -39,6 +43,26 @@ export default function SovereignDetailPage() {
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw'>('deposit');
   const [windDownExpanded, setWindDownExpanded] = useState(false);
+  const [listingModalOpen, setListingModalOpen] = useState(false);
+
+  // Fetch all NFTs for this sovereign (marketplace)
+  const { data: sovereignNfts } = useSovereignNfts(sovereign?.publicKey);
+
+  // Map backend NFT data to marketplace format
+  // (must be called before early returns to maintain hook order)
+  const marketplaceNfts: NftListing[] = useMemo(() => {
+    if (!sovereignNfts) return [];
+    return sovereignNfts.map((nft) => ({
+      mint: nft.mint,
+      owner: nft.owner,
+      sovereign: nft.sovereign,
+      sharesBps: nft.sharesBps,
+      depositAmount: nft.depositAmount,
+      name: nft.name,
+      symbol: nft.symbol,
+      mintedAt: nft.mintedAt,
+    }));
+  }, [sovereignNfts]);
 
   if (isLoading) {
     return (
@@ -60,7 +84,7 @@ export default function SovereignDetailPage() {
           <p className="text-[var(--muted)] mb-4">
             Sovereign #{sovereignId} does not exist or could not be loaded.
           </p>
-          <Link href="/" className="btn-money">
+          <Link href="/sovereigns" className="btn-money">
             Back to All Sovereigns
           </Link>
         </div>
@@ -88,16 +112,23 @@ export default function SovereignDetailPage() {
   // Spread: prefer backend pool snapshot (uses real bin data for accurate sell price).
   // Client-side fallback uses lastPrice (most recent execution price) as a proxy
   // for the active bin's sell rate, vs CPAMM spot as the buy price.
+  // Positive = buy spread (buy costs more than sell returns).
+  // Negative = sell premium (seller gets more than CPAMM spot — happens during sell runs).
   let spreadPct: number | null = null;
   if (poolSnapshot && poolSnapshot.spreadPct != null) {
-    spreadPct = Math.max(0, poolSnapshot.spreadPct);
+    spreadPct = poolSnapshot.spreadPct;
   } else if (enginePool) {
     const buySpot = enginePool.spotPrice / 1e9; // gorReserve / tokenReserve
     const lastExecPrice = Number(enginePool.lastPrice) / 1e9; // last swap execution price
     if (buySpot > 0 && lastExecPrice > 0) {
-      spreadPct = Math.max(0, ((buySpot - lastExecPrice) / buySpot) * 100);
+      spreadPct = ((buySpot - lastExecPrice) / buySpot) * 100;
     }
   }
+
+  // Pool age in seconds (for annual return calculation)
+  const poolAgeSeconds = sovereign.finalizedAt
+    ? (Date.now() - new Date(sovereign.finalizedAt).getTime()) / 1000
+    : 0;
 
   const handleDeposit = async () => {
     if (!depositAmount || !connected) return;
@@ -151,7 +182,7 @@ export default function SovereignDetailPage() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-6">
       {/* Back button */}
-      <Link href="/" className="text-[var(--muted)] hover:text-white text-sm mb-4 inline-block">
+      <Link href="/sovereigns" className="text-[var(--muted)] hover:text-white text-sm mb-4 inline-block">
         &larr; All Sovereigns
       </Link>
 
@@ -334,8 +365,12 @@ export default function SovereignDetailPage() {
                 </div>
                 <div>
                   <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mb-0.5">Spread</div>
-                  <div className="text-sm font-bold text-white">
-                    {spreadPct != null ? `${spreadPct.toFixed(1)}%` : '—'}
+                  <div className={`text-sm font-bold ${spreadPct != null && spreadPct < 0 ? 'text-[var(--profit)]' : 'text-white'}`}>
+                    {spreadPct != null
+                      ? spreadPct < 0
+                        ? `${Math.abs(spreadPct).toFixed(1)}% (sell premium)`
+                        : `${spreadPct.toFixed(1)}%`
+                      : '—'}
                   </div>
                 </div>
                 {isPostRecovery && enginePool && (
@@ -433,7 +468,12 @@ export default function SovereignDetailPage() {
                 <div className="flex items-center gap-2">
                   <span className="text-[var(--muted)]">$overeign NFT</span>
                   {depositRecord.nftMinted ? (
-                    <span className="text-[var(--money-green)] font-bold">Minted ✓</span>
+                    <button
+                      onClick={() => setListingModalOpen(true)}
+                      className="text-[var(--money-green)] font-bold hover:underline cursor-pointer"
+                    >
+                      List for Sale
+                    </button>
                   ) : (sovereign.status === 'Recovery' || sovereign.status === 'Active') ? (
                     <button
                       onClick={handleMintGenesisNft}
@@ -571,6 +611,23 @@ export default function SovereignDetailPage() {
         </div>
       </div>
 
+      {/* ── NFT Marketplace (below info strip, above creator content) ── */}
+      {isPostRecovery && marketplaceNfts.length > 0 && enginePool && (
+        <div className="mb-6">
+          <NftMarketplaceCard
+            nfts={marketplaceNfts}
+            lpFeesAccumulatedGor={Number(enginePool.lpFeesAccumulated) / LAMPORTS_PER_GOR}
+            totalFeesCollectedGor={enginePool.totalFeesCollectedGor}
+            gorReserveGor={enginePool.gorReserveGor}
+            initialGorReserveGor={enginePool.initialGorReserveGor}
+            poolAgeSeconds={poolAgeSeconds}
+            recoveryComplete={enginePool.recoveryComplete}
+            tokenSymbol={sovereign.tokenSymbol || sovereign.name}
+            connectedWallet={publicKey?.toBase58()}
+          />
+        </div>
+      )}
+
       {/* ── Creator Content Area (full width) ── */}
       <div className="w-full">
         {sovereignPage ? (
@@ -585,6 +642,37 @@ export default function SovereignDetailPage() {
           </div>
         )}
       </div>
+
+      {/* ── NFT Listing Modal ── */}
+      {depositRecord && depositRecord.nftMinted && enginePool && (
+        <NftListingModal
+          open={listingModalOpen}
+          onClose={() => setListingModalOpen(false)}
+          onList={async (priceGor) => {
+            try {
+              const priceLamports = BigInt(Math.round(priceGor * LAMPORTS_PER_GOR));
+              const nftMintAddr = depositRecord.nftMint || depositRecord.genesisNftMint;
+              await listNft.mutateAsync({
+                sovereignId,
+                nftMint: nftMintAddr,
+                priceLamports,
+              });
+              setListingModalOpen(false);
+            } catch (err) {
+              console.error('Failed to list NFT:', err);
+            }
+          }}
+          depositAmountGor={depositRecord.amountGor}
+          sharesPercent={depositRecord.sharesPercent}
+          lpFeesAccumulatedGor={Number(enginePool.lpFeesAccumulated) / LAMPORTS_PER_GOR}
+          totalFeesCollectedGor={enginePool.totalFeesCollectedGor}
+          recoveryComplete={enginePool.recoveryComplete}
+          poolAgeSeconds={poolAgeSeconds}
+          gorReserveGor={enginePool.gorReserveGor}
+          tokenSymbol={sovereign.tokenSymbol || sovereign.name}
+          nftMint={depositRecord.nftMint || depositRecord.genesisNftMint}
+        />
+      )}
     </div>
   );
 }

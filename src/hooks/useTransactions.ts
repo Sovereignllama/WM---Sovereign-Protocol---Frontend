@@ -26,6 +26,10 @@ import {
   buildMintGenesisNftTx,
   buildUpdateSellFeeTx,
   buildRenounceSellFeeTx,
+  buildListNftTx,
+  buildBuyNftTx,
+  buildDelistNftTx,
+  buildTransferNftTx,
   CreateSovereignFrontendParams,
   fetchDepositRecord,
 } from '@/lib/program/client';
@@ -1093,6 +1097,251 @@ export function useSwapSell() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+    },
+  });
+}
+
+// ============================================================
+// NFT Marketplace Hooks
+// ============================================================
+
+/**
+ * Hook to list a Genesis NFT for sale on the marketplace.
+ */
+export function useListNft() {
+  const program = useProgram();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sovereignId,
+      nftMint,
+      priceLamports,
+    }: {
+      sovereignId: string | number;
+      nftMint: string;
+      priceLamports: bigint;
+    }): Promise<TransactionResult> => {
+      if (!program || !publicKey) {
+        throw new Error('Wallet not connected');
+      }
+
+      const nftMintPk = new PublicKey(nftMint);
+      const tx = await buildListNftTx(
+        program,
+        publicKey,
+        BigInt(sovereignId),
+        nftMintPk,
+        priceLamports
+      );
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+      queryClient.invalidateQueries({ queryKey: ['sovereignNfts'] });
+    },
+  });
+}
+
+/**
+ * Hook to buy a listed Genesis NFT from the marketplace.
+ */
+export function useBuyNft() {
+  const program = useProgram();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sovereignId,
+      nftMint,
+      seller,
+      royaltyWallet,
+    }: {
+      sovereignId: string | number;
+      nftMint: string;
+      seller: string;
+      royaltyWallet: string;
+    }): Promise<TransactionResult> => {
+      if (!program || !publicKey) {
+        throw new Error('Wallet not connected');
+      }
+
+      const tx = await buildBuyNftTx(
+        program,
+        publicKey,
+        BigInt(sovereignId),
+        new PublicKey(nftMint),
+        new PublicKey(seller),
+        new PublicKey(royaltyWallet)
+      );
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+      queryClient.invalidateQueries({ queryKey: ['sovereignNfts'] });
+      if (publicKey) {
+        queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.depositRecord(
+            variables.sovereignId.toString(),
+            publicKey.toBase58()
+          ),
+        });
+      }
+    },
+  });
+}
+
+/**
+ * Hook to delist (remove listing) a Genesis NFT from the marketplace.
+ */
+export function useDelistNft() {
+  const program = useProgram();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sovereignId,
+      nftMint,
+      seller,
+    }: {
+      sovereignId: string | number;
+      nftMint: string;
+      seller: string;
+    }): Promise<TransactionResult> => {
+      if (!program || !publicKey) {
+        throw new Error('Wallet not connected');
+      }
+
+      const tx = await buildDelistNftTx(
+        program,
+        publicKey,
+        BigInt(sovereignId),
+        new PublicKey(nftMint),
+        new PublicKey(seller)
+      );
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+      queryClient.invalidateQueries({ queryKey: ['sovereignNfts'] });
+    },
+  });
+}
+
+/**
+ * Hook to transfer a Genesis NFT to another wallet (free, no royalty).
+ * NFT must NOT be listed.
+ */
+export function useTransferNft() {
+  const program = useProgram();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sovereignId,
+      nftMint,
+      recipient,
+    }: {
+      sovereignId: string | number;
+      nftMint: string;
+      recipient: string;
+    }): Promise<TransactionResult> => {
+      if (!program || !publicKey) {
+        throw new Error('Wallet not connected');
+      }
+
+      const tx = await buildTransferNftTx(
+        program,
+        publicKey,
+        new PublicKey(recipient),
+        BigInt(sovereignId),
+        new PublicKey(nftMint)
+      );
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+      queryClient.invalidateQueries({ queryKey: ['sovereignNfts'] });
+      if (publicKey) {
+        queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.depositRecord(
+            variables.sovereignId.toString(),
+            publicKey.toBase58()
+          ),
+        });
+      }
     },
   });
 }

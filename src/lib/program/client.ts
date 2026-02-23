@@ -21,6 +21,7 @@ import {
   getEngineTokenVaultPDA,
   getEngineLpClaimPDA,
   getEngineBinArrayPDA,
+  getNftListingPDA,
 } from './pdas';
 import { 
   CreateSovereignParams as OnChainCreateSovereignParams, 
@@ -1312,6 +1313,199 @@ export async function buildMintGenesisNftTx(
     .transaction();
 
   return tx;
+}
+
+// ============================================================
+// NFT Marketplace — Transaction Builders
+// ============================================================
+
+/**
+ * Build a list_nft transaction.
+ * Seller lists their Genesis NFT on the marketplace at a given price.
+ */
+export async function buildListNftTx(
+  program: SovereignLiquidityProgram,
+  seller: PublicKey,
+  sovereignId: bigint | number,
+  nftMint: PublicKey,
+  priceLamports: bigint | BN
+): Promise<Transaction> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, seller, program.programId);
+  const [nftListingPDA] = getNftListingPDA(nftMint, program.programId);
+
+  const nftTokenAccount = getAssociatedTokenAddressSync(
+    nftMint,
+    seller,
+    false,
+    TOKEN_PROGRAM_ID
+  );
+
+  const price = new BN(priceLamports.toString());
+
+  const tx = await (program.methods as any)
+    .listNft(price)
+    .accounts({
+      seller,
+      sovereign: sovereignPDA,
+      nftMint,
+      nftTokenAccount,
+      depositRecord: depositRecordPDA,
+      nftListing: nftListingPDA,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    })
+    .transaction();
+
+  return tx;
+}
+
+/**
+ * Build a buy_nft transaction.
+ * Buyer purchases a listed Genesis NFT, paying SOL (royalty enforced).
+ */
+export async function buildBuyNftTx(
+  program: SovereignLiquidityProgram,
+  buyer: PublicKey,
+  sovereignId: bigint | number,
+  nftMint: PublicKey,
+  seller: PublicKey,
+  royaltyWallet: PublicKey
+): Promise<Transaction> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [protocolStatePDA] = getProtocolStatePDA(program.programId);
+  const [sellerDepositRecordPDA] = getDepositRecordPDA(sovereignPDA, seller, program.programId);
+  const [buyerDepositRecordPDA] = getDepositRecordPDA(sovereignPDA, buyer, program.programId);
+  const [nftListingPDA] = getNftListingPDA(nftMint, program.programId);
+
+  const sellerNftTokenAccount = getAssociatedTokenAddressSync(
+    nftMint,
+    seller,
+    false,
+    TOKEN_PROGRAM_ID
+  );
+  const buyerNftTokenAccount = getAssociatedTokenAddressSync(
+    nftMint,
+    buyer,
+    false,
+    TOKEN_PROGRAM_ID
+  );
+
+  const tx = await (program.methods as any)
+    .buyNft()
+    .accounts({
+      buyer,
+      seller,
+      royaltyWallet,
+      protocolState: protocolStatePDA,
+      sovereign: sovereignPDA,
+      nftMint,
+      sellerNftTokenAccount,
+      buyerNftTokenAccount,
+      sellerDepositRecord: sellerDepositRecordPDA,
+      buyerDepositRecord: buyerDepositRecordPDA,
+      nftListing: nftListingPDA,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    })
+    .transaction();
+
+  return tx;
+}
+
+/**
+ * Build a delist_nft transaction.
+ * Seller (or admin) removes their NFT listing.
+ */
+export async function buildDelistNftTx(
+  program: SovereignLiquidityProgram,
+  caller: PublicKey,
+  sovereignId: bigint | number,
+  nftMint: PublicKey,
+  seller: PublicKey
+): Promise<Transaction> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [protocolStatePDA] = getProtocolStatePDA(program.programId);
+  const [nftListingPDA] = getNftListingPDA(nftMint, program.programId);
+
+  const tx = await (program.methods as any)
+    .delistNft()
+    .accounts({
+      caller,
+      protocolState: protocolStatePDA,
+      sovereign: sovereignPDA,
+      seller,
+      nftMint,
+      nftListing: nftListingPDA,
+      systemProgram: SystemProgram.programId,
+    })
+    .transaction();
+
+  return tx;
+}
+
+/**
+ * Build a transfer_nft transaction.
+ * Free peer-to-peer transfer (no royalty). NFT must not be listed.
+ */
+export async function buildTransferNftTx(
+  program: SovereignLiquidityProgram,
+  sender: PublicKey,
+  recipient: PublicKey,
+  sovereignId: bigint | number,
+  nftMint: PublicKey
+): Promise<Transaction> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [senderDepositRecordPDA] = getDepositRecordPDA(sovereignPDA, sender, program.programId);
+  const [recipientDepositRecordPDA] = getDepositRecordPDA(sovereignPDA, recipient, program.programId);
+
+  const senderNftTokenAccount = getAssociatedTokenAddressSync(
+    nftMint,
+    sender,
+    false,
+    TOKEN_PROGRAM_ID
+  );
+  const recipientNftTokenAccount = getAssociatedTokenAddressSync(
+    nftMint,
+    recipient,
+    false,
+    TOKEN_PROGRAM_ID
+  );
+
+  const tx = await (program.methods as any)
+    .transferNft()
+    .accounts({
+      sender,
+      recipient,
+      sovereign: sovereignPDA,
+      nftMint,
+      senderNftTokenAccount,
+      recipientNftTokenAccount,
+      senderDepositRecord: senderDepositRecordPDA,
+      recipientDepositRecord: recipientDepositRecordPDA,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    })
+    .transaction();
+
+  return tx;
+}
+
+/**
+ * Fetch an NftListing account. Returns null if the listing doesn't exist.
+ */
+export async function fetchNftListing(
+  program: SovereignLiquidityProgram,
+  nftMint: PublicKey
+) {
+  const [nftListingPDA] = getNftListingPDA(nftMint, program.programId);
+  try {
+    return await (program.account as any).nftListing.fetch(nftListingPDA);
+  } catch {
+    return null;
+  }
 }
 
 /**

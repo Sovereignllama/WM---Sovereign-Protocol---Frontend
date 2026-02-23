@@ -266,6 +266,26 @@ export function getExtraAccountMetasPDA(
 }
 
 // ============================================================
+// NFT Marketplace PDAs
+// ============================================================
+
+/**
+ * Derive the NftListing PDA for a Genesis NFT mint.
+ * Seeds: ["nft_listing", nft_mint]
+ * @param nftMint - The Genesis NFT mint pubkey
+ */
+export function getNftListingPDA(
+  nftMint: PublicKey,
+  programId?: PublicKey
+): [PublicKey, number] {
+  const pid = programId || getProgramId();
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from(PDA_SEEDS.NFT_LISTING), nftMint.toBuffer()],
+    pid
+  );
+}
+
+// ============================================================
 // Engine Pool PDAs
 // ============================================================
 

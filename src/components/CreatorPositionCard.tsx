@@ -139,7 +139,7 @@ export function CreatorPositionCard({ position }: Props) {
             <span>·</span>
             <span>Sell: {(position.sellFeeBps / 100).toFixed(1)}%</span>
             <span>·</span>
-            <span>{position.depositorCount} LPs</span>
+            <span>{position.depositorCount} NFTs</span>
             <span>·</span>
             <span>{position.totalFeesCollectedGor.toLocaleString(undefined, { maximumFractionDigits: 2 })} GOR fees</span>
           </div>

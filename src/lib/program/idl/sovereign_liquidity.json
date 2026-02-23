@@ -172,6 +172,342 @@
       "args": []
     },
     {
+      "name": "buy_nft",
+      "docs": [
+        "Buy a listed Genesis NFT. Enforces royalty payment to protocol wallet.",
+        "Atomically: pay SOL → thaw → transfer → re-freeze → update ownership."
+      ],
+      "discriminator": [
+        96,
+        0,
+        28,
+        190,
+        49,
+        107,
+        83,
+        222
+      ],
+      "accounts": [
+        {
+          "name": "buyer",
+          "docs": [
+            "Buyer paying for the NFT"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "seller",
+          "writable": true
+        },
+        {
+          "name": "royalty_wallet",
+          "writable": true
+        },
+        {
+          "name": "protocol_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "sovereign",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign.sovereign_id",
+                "account": "SovereignState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "nft_mint",
+          "docs": [
+            "The NFT being bought"
+          ]
+        },
+        {
+          "name": "seller_nft_token_account",
+          "docs": [
+            "Seller's NFT token account (holds the NFT, currently frozen)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "seller"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "nft_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "buyer_nft_token_account",
+          "docs": [
+            "Buyer's NFT token account (will receive the NFT)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "buyer"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "nft_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "seller_deposit_record",
+          "docs": [
+            "Seller's deposit record — closed after data is copied to buyer's new record.",
+            "Rent refunded to seller."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  95,
+                  114,
+                  101,
+                  99,
+                  111,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              },
+              {
+                "kind": "account",
+                "path": "seller"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buyer_deposit_record",
+          "docs": [
+            "Buyer's new deposit record — init'd with buyer's key in PDA seed.",
+            "All position data copied from seller's record.",
+            "NOTE: Fails if buyer already has a deposit record for this sovereign",
+            "(one position per wallet per sovereign). Use a different wallet."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  95,
+                  114,
+                  101,
+                  99,
+                  111,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "nft_listing",
+          "docs": [
+            "The listing being purchased — closed after sale (rent → seller)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  102,
+                  116,
+                  95,
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "nft_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "claim_creator_unwind",
       "docs": [
         "Creator reclaims tokens and surplus GOR after unwind.",
@@ -1255,6 +1591,133 @@
           }
         }
       ]
+    },
+    {
+      "name": "delist_nft",
+      "docs": [
+        "Remove an NFT listing. Callable by seller or protocol authority."
+      ],
+      "discriminator": [
+        91,
+        249,
+        165,
+        185,
+        22,
+        7,
+        119,
+        176
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Caller — seller or protocol authority"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "sovereign",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign.sovereign_id",
+                "account": "SovereignState"
+              }
+            ]
+          },
+          "relations": [
+            "nft_listing"
+          ]
+        },
+        {
+          "name": "seller",
+          "writable": true
+        },
+        {
+          "name": "nft_mint",
+          "docs": [
+            "The NFT mint (for PDA derivation)"
+          ]
+        },
+        {
+          "name": "nft_listing",
+          "docs": [
+            "The listing being removed"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  102,
+                  116,
+                  95,
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "nft_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
     },
     {
       "name": "deposit",
@@ -2747,6 +3210,195 @@
       "args": []
     },
     {
+      "name": "freeze_genesis_nft",
+      "docs": [
+        "Admin freeze — retroactively freeze an already-minted Genesis NFT.",
+        "Use for NFTs minted before freeze-at-mint was added."
+      ],
+      "discriminator": [
+        164,
+        254,
+        188,
+        57,
+        30,
+        21,
+        118,
+        163
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Protocol authority"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "sovereign",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign.sovereign_id",
+                "account": "SovereignState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "nft_mint",
+          "docs": [
+            "The NFT mint to freeze"
+          ]
+        },
+        {
+          "name": "nft_token_account",
+          "docs": [
+            "The holder's token account (must hold the NFT)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "holder"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "nft_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "holder"
+        },
+        {
+          "name": "deposit_record",
+          "docs": [
+            "Deposit record — validates this NFT belongs to this sovereign"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  95,
+                  114,
+                  101,
+                  99,
+                  111,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              },
+              {
+                "kind": "account",
+                "path": "holder"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "initialize_collection",
       "docs": [
         "Initialize the protocol-wide Genesis NFT collection.",
@@ -3014,6 +3666,206 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "list_nft",
+      "docs": [
+        "List a Genesis NFT for sale on the protocol marketplace.",
+        "NFT stays frozen in seller's wallet. Price in SOL (lamports)."
+      ],
+      "discriminator": [
+        88,
+        221,
+        93,
+        166,
+        63,
+        220,
+        106,
+        232
+      ],
+      "accounts": [
+        {
+          "name": "seller",
+          "docs": [
+            "NFT holder listing the NFT"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sovereign",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign.sovereign_id",
+                "account": "SovereignState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "nft_mint",
+          "docs": [
+            "The NFT mint being listed"
+          ]
+        },
+        {
+          "name": "nft_token_account",
+          "docs": [
+            "Seller's NFT token account — must hold 1 NFT (mut for thaw/approve/freeze)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "seller"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "nft_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "deposit_record",
+          "docs": [
+            "Deposit record — proves seller owns this position"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  95,
+                  114,
+                  101,
+                  99,
+                  111,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              },
+              {
+                "kind": "account",
+                "path": "seller"
+              }
+            ]
+          }
+        },
+        {
+          "name": "nft_listing",
+          "docs": [
+            "NftListing PDA — created here"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  102,
+                  116,
+                  95,
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "nft_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "price",
+          "type": "u64"
+        }
+      ]
     },
     {
       "name": "mark_bonding_failed",
@@ -3858,6 +4710,67 @@
       "args": []
     },
     {
+      "name": "set_nft_royalty_config",
+      "docs": [
+        "Set protocol-wide NFT royalty percentage and receiving wallet.",
+        "Protocol authority only. Applies to all current and future NFT sales."
+      ],
+      "discriminator": [
+        127,
+        89,
+        95,
+        8,
+        145,
+        164,
+        18,
+        64
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "new_royalty_bps",
+          "type": "u16"
+        },
+        {
+          "name": "new_royalty_wallet",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "set_protocol_paused",
       "docs": [
         "Pause/unpause protocol (emergency)"
@@ -4218,6 +5131,278 @@
             "The sovereign-engine-v3 program (needed for fee-snap CPI)"
           ],
           "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "transfer_nft",
+      "docs": [
+        "Transfer a Genesis NFT to another wallet (free, no royalty).",
+        "Goes through the program to thaw → transfer → re-freeze.",
+        "NFT must NOT be listed (delist first)."
+      ],
+      "discriminator": [
+        190,
+        28,
+        194,
+        8,
+        194,
+        218,
+        78,
+        78
+      ],
+      "accounts": [
+        {
+          "name": "sender",
+          "docs": [
+            "Current NFT holder initiating the transfer"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "recipient"
+        },
+        {
+          "name": "sovereign",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign.sovereign_id",
+                "account": "SovereignState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "nft_mint",
+          "docs": [
+            "The NFT mint being transferred"
+          ]
+        },
+        {
+          "name": "sender_nft_token_account",
+          "docs": [
+            "Sender's NFT token account (holds the NFT, frozen)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "sender"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "nft_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "recipient_nft_token_account",
+          "docs": [
+            "Recipient's NFT token account"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "recipient"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "nft_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "sender_deposit_record",
+          "docs": [
+            "Sender's deposit record — closed after data is copied to recipient's new record."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  95,
+                  114,
+                  101,
+                  99,
+                  111,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              },
+              {
+                "kind": "account",
+                "path": "sender"
+              }
+            ]
+          }
+        },
+        {
+          "name": "recipient_deposit_record",
+          "docs": [
+            "Recipient's new deposit record — init'd with recipient's key in PDA seed.",
+            "NOTE: Fails if recipient already has a deposit record for this sovereign."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  95,
+                  114,
+                  101,
+                  99,
+                  111,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              },
+              {
+                "kind": "account",
+                "path": "recipient"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": []
@@ -5090,6 +6275,19 @@
       ]
     },
     {
+      "name": "NftListing",
+      "discriminator": [
+        254,
+        39,
+        90,
+        234,
+        155,
+        58,
+        137,
+        70
+      ]
+    },
+    {
       "name": "Proposal",
       "discriminator": [
         26,
@@ -5336,6 +6534,84 @@
         54,
         114,
         18
+      ]
+    },
+    {
+      "name": "NftDelisted",
+      "discriminator": [
+        248,
+        161,
+        199,
+        108,
+        92,
+        55,
+        160,
+        180
+      ]
+    },
+    {
+      "name": "NftFrozen",
+      "discriminator": [
+        233,
+        113,
+        249,
+        164,
+        132,
+        100,
+        8,
+        103
+      ]
+    },
+    {
+      "name": "NftListed",
+      "discriminator": [
+        115,
+        235,
+        107,
+        89,
+        89,
+        231,
+        135,
+        26
+      ]
+    },
+    {
+      "name": "NftRoyaltyConfigUpdated",
+      "discriminator": [
+        36,
+        155,
+        116,
+        230,
+        190,
+        103,
+        5,
+        150
+      ]
+    },
+    {
+      "name": "NftSold",
+      "discriminator": [
+        82,
+        21,
+        49,
+        86,
+        87,
+        54,
+        132,
+        103
+      ]
+    },
+    {
+      "name": "NftTransferred",
+      "discriminator": [
+        95,
+        48,
+        137,
+        119,
+        53,
+        125,
+        158,
+        178
       ]
     },
     {
@@ -5904,6 +7180,51 @@
       "code": 6073,
       "name": "AlreadyInitialized",
       "msg": "Already initialized"
+    },
+    {
+      "code": 6074,
+      "name": "NftAlreadyListed",
+      "msg": "NFT is already listed for sale"
+    },
+    {
+      "code": 6075,
+      "name": "NftNotListed",
+      "msg": "NFT is not listed for sale"
+    },
+    {
+      "code": 6076,
+      "name": "ListingPriceTooLow",
+      "msg": "Listing price must be above minimum (0.01 SOL)"
+    },
+    {
+      "code": 6077,
+      "name": "NftRoyaltyTooHigh",
+      "msg": "NFT royalty exceeds maximum (25%)"
+    },
+    {
+      "code": 6078,
+      "name": "InvalidRoyaltyWallet",
+      "msg": "Invalid royalty wallet — cannot be system program"
+    },
+    {
+      "code": 6079,
+      "name": "BuyerIsSeller",
+      "msg": "Buyer cannot be the seller"
+    },
+    {
+      "code": 6080,
+      "name": "NotNftOwner",
+      "msg": "Caller does not own this NFT"
+    },
+    {
+      "code": 6081,
+      "name": "NftIsListed",
+      "msg": "NFT is currently listed — delist before transferring"
+    },
+    {
+      "code": 6082,
+      "name": "InvalidNftBalance",
+      "msg": "NFT token account balance is not 1"
     }
   ],
   "types": [
@@ -6670,6 +7991,221 @@
       }
     },
     {
+      "name": "NftDelisted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sovereign_id",
+            "type": "u64"
+          },
+          {
+            "name": "nft_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NftFrozen",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sovereign_id",
+            "type": "u64"
+          },
+          {
+            "name": "nft_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "holder",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NftListed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sovereign_id",
+            "type": "u64"
+          },
+          {
+            "name": "nft_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "listed_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NftListing",
+      "docs": [
+        "Tracks an active NFT listing on the protocol marketplace.",
+        "One NftListing per NFT mint (PDA seeded by nft_mint).",
+        "Created by list_nft, closed by buy_nft or delist_nft."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "seller",
+            "docs": [
+              "Seller's wallet address (current NFT holder)"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "nft_mint",
+            "docs": [
+              "The Genesis NFT mint being listed"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "sovereign",
+            "docs": [
+              "The sovereign this NFT belongs to"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "price",
+            "docs": [
+              "Asking price in lamports (SOL)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "listed_at",
+            "docs": [
+              "Timestamp when listed"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NftRoyaltyConfigUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "old_royalty_bps",
+            "type": "u16"
+          },
+          {
+            "name": "new_royalty_bps",
+            "type": "u16"
+          },
+          {
+            "name": "old_royalty_wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_royalty_wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "updated_by",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NftSold",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sovereign_id",
+            "type": "u64"
+          },
+          {
+            "name": "nft_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "buyer",
+            "type": "pubkey"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "royalty_amount",
+            "type": "u64"
+          },
+          {
+            "name": "seller_proceeds",
+            "type": "u64"
+          },
+          {
+            "name": "royalty_wallet",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NftTransferred",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sovereign_id",
+            "type": "u64"
+          },
+          {
+            "name": "nft_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "from",
+            "type": "pubkey"
+          },
+          {
+            "name": "to",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
       "name": "Proposal",
       "docs": [
         "Unwind proposal during Recovery phase",
@@ -7157,6 +8693,22 @@
               "Adjustable by protocol authority via update_protocol_fees."
             ],
             "type": "u16"
+          },
+          {
+            "name": "nft_royalty_bps",
+            "docs": [
+              "Royalty percentage on NFT sales in BPS (0–2500 = 0–25%).",
+              "Default: 500 (5%). Applied to every buy_nft transaction."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "nft_royalty_wallet",
+            "docs": [
+              "Wallet that receives NFT sale royalties.",
+              "Default: treasury. Settable by protocol authority."
+            ],
+            "type": "pubkey"
           }
         ]
       }
