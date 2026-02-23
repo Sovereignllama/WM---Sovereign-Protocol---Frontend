@@ -194,7 +194,11 @@ export default function LandingPage() {
                             return <span className="text-sm font-bold text-[var(--muted)]">—</span>;
                           })()}
                           <span className="text-[10px] text-[var(--muted)]">
-                            {(sovereign.totalFeesCollectedGor || 0).toFixed(2)} GOR fees
+                            {(() => {
+                              const snap = poolSnapshots?.[Number(sovereign.sovereignId)];
+                              const fees = snap ? Number(snap.totalFeesCollected) / LAMPORTS_PER_GOR : 0;
+                              return `${fees.toFixed(2)} GOR fees`;
+                            })()}
                           </span>
                         </>
                       ) : (
