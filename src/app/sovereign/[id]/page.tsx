@@ -88,15 +88,14 @@ export default function SovereignDetailPage() {
   // Spread: prefer backend pool snapshot (uses real bin data for accurate sell price).
   // Client-side fallback uses lastPrice (most recent execution price) as a proxy
   // for the active bin's sell rate, vs CPAMM spot as the buy price.
-  let spreadPct = 0;
-  if (poolSnapshot && poolSnapshot.spreadPct > 0) {
-    spreadPct = poolSnapshot.spreadPct;
+  let spreadPct: number | null = null;
+  if (poolSnapshot && poolSnapshot.spreadPct != null) {
+    spreadPct = Math.max(0, poolSnapshot.spreadPct);
   } else if (enginePool) {
     const buySpot = enginePool.spotPrice / 1e9; // gorReserve / tokenReserve
     const lastExecPrice = Number(enginePool.lastPrice) / 1e9; // last swap execution price
     if (buySpot > 0 && lastExecPrice > 0) {
-      spreadPct = ((buySpot - lastExecPrice) / buySpot) * 100;
-      if (spreadPct < 0) spreadPct = 0; // can happen right after a sell
+      spreadPct = Math.max(0, ((buySpot - lastExecPrice) / buySpot) * 100);
     }
   }
 
@@ -336,7 +335,7 @@ export default function SovereignDetailPage() {
                 <div>
                   <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mb-0.5">Spread</div>
                   <div className="text-sm font-bold text-white">
-                    {spreadPct > 0 ? `${spreadPct.toFixed(1)}%` : '—'}
+                    {spreadPct != null ? `${spreadPct.toFixed(1)}%` : '—'}
                   </div>
                 </div>
                 {isPostRecovery && enginePool && (
