@@ -26,9 +26,10 @@ export default function GovernancePage() {
   const [creatorFilter, setCreatorFilter] = useState<Filter>('active');
 
   const filteredPositions = useMemo(() => {
-    if (posFilter === 'all') return positions;
-    if (posFilter === 'archived') return positions.filter(p => ARCHIVED_STATUSES.includes(p.status));
-    return positions.filter(p => ACTIVE_STATUSES.includes(p.status));
+    const filtered = posFilter === 'all' ? positions
+      : posFilter === 'archived' ? positions.filter(p => ARCHIVED_STATUSES.includes(p.status))
+      : positions.filter(p => ACTIVE_STATUSES.includes(p.status));
+    return [...filtered].sort((a, b) => b.depositAmountGor - a.depositAmountGor);
   }, [positions, posFilter]);
 
   const filteredCreator = useMemo(() => {
@@ -44,13 +45,7 @@ export default function GovernancePage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="h1 text-white mb-1">Governance</h1>
-        <p className="text-[var(--muted)] text-sm">
-          Manage your $overeign positions — claim fees, vote on proposals, and manage created pools.
-        </p>
-      </div>
+      <div className="mb-8" />
 
       {/* Not connected */}
       {!connected && (
@@ -107,23 +102,21 @@ export default function GovernancePage() {
                 {filteredPositions.length}
               </span>
             </div>
-            {posArchivedCount > 0 && (
-              <div className="flex items-center gap-1">
-                {(['active', 'archived', 'all'] as Filter[]).map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setPosFilter(f)}
-                    className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all ${
-                      posFilter === f
-                        ? 'bg-[var(--money-green)]/20 text-[var(--money-green)]'
-                        : 'text-[var(--muted)] hover:text-white'
-                    }`}
-                  >
-                    {f === 'active' ? `Active (${posActiveCount})` : f === 'archived' ? `Archived (${posArchivedCount})` : `All (${positions.length})`}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="flex items-center gap-1">
+              {(['active', 'archived', 'all'] as Filter[]).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setPosFilter(f)}
+                  className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all ${
+                    posFilter === f
+                      ? 'bg-[var(--money-green)]/20 text-[var(--money-green)]'
+                      : 'text-[var(--muted)] hover:text-white'
+                  }`}
+                >
+                  {f === 'active' ? `Active (${posActiveCount})` : f === 'archived' ? `Archived (${posArchivedCount})` : `All (${positions.length})`}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="space-y-2">
             {filteredPositions.length > 0 ? filteredPositions.map((pos) => (

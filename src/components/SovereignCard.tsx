@@ -7,10 +7,10 @@ import { useTokenMetadata } from '@/hooks/useTokenMetadata';
 interface SovereignCardProps {
   sovereign: SovereignDisplayData;
   priceChange24h?: number;
-  nftCount?: number;
+  drCount?: number;
 }
 
-export function SovereignCard({ sovereign, priceChange24h, nftCount }: SovereignCardProps) {
+export function SovereignCard({ sovereign, priceChange24h, drCount }: SovereignCardProps) {
   const { data: metadata } = useTokenMetadata(sovereign.metadataUri);
   const imageUrl = metadata?.image;
   const description = metadata?.description;
@@ -29,23 +29,23 @@ export function SovereignCard({ sovereign, priceChange24h, nftCount }: Sovereign
 
   return (
     <Link href={`/sovereign/${sovereign.sovereignId}`}>
-      <div className="group relative rounded-xl bg-[var(--landfill-black)] border border-[var(--border)] hover:border-[var(--hazard-yellow)] transition-all cursor-pointer overflow-hidden">
+      <div className="group relative rounded-xl bg-[var(--landfill-black)] border border-[var(--border)] hover:border-[var(--money-green)]/30 hover:shadow-[0_0_12px_rgba(46,235,127,0.1)] transition-all cursor-pointer overflow-hidden">
         {/* Status indicator stripe */}
         <div className="absolute top-0 left-0 right-0 h-[2px]" style={{
           background: sovereign.status === 'Active' ? 'var(--money-green)'
-            : sovereign.status === 'Bonding' ? 'var(--hazard-yellow)'
+            : sovereign.status === 'Bonding' ? 'var(--money-green)'
             : sovereign.status === 'Recovery' ? 'var(--hazard-orange)'
             : sovereign.status === 'Failed' ? 'var(--loss)'
             : 'var(--border)'
         }} />
 
         {/* Image area */}
-        <div className="relative w-full aspect-square bg-[var(--dark-green-bg)] overflow-hidden">
+        <div className="relative w-full h-28 bg-[var(--dark-green-bg)] overflow-hidden">
           {imageUrl ? (
             <img
               src={imageUrl}
               alt={sovereign.tokenSymbol || sovereign.name}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
@@ -117,8 +117,8 @@ export function SovereignCard({ sovereign, priceChange24h, nftCount }: Sovereign
                   </span>
                 </div>
                 <div>
-                  <span className="text-[var(--muted)]">NFTs: </span>
-                  <span className="text-white font-bold">{nftCount ?? sovereign.depositorCount}</span>
+                  <span className="text-[var(--muted)]">DR: </span>
+                  <span className="text-white font-bold">{drCount ?? sovereign.depositorCount}</span>
                 </div>
               </div>
               <div className="text-[10px] text-[var(--faint)] mt-1">
@@ -143,8 +143,9 @@ export function SovereignCard({ sovereign, priceChange24h, nftCount }: Sovereign
                   </span>
                 </div>
               </div>
-              <div className="text-[10px] text-[var(--faint)] mt-1">
-                {nftCount ?? sovereign.depositorCount} NFTs
+              <div className="text-[10px] mt-1">
+                <span className="text-[var(--muted)]">DR: </span>
+                <span className="text-white font-bold">{drCount ?? sovereign.depositorCount}</span>
               </div>
             </>
           )}
@@ -159,8 +160,8 @@ export function SovereignCard({ sovereign, priceChange24h, nftCount }: Sovereign
                   </span>
                 </div>
                 <div>
-                  <span className="text-[var(--muted)]">NFTs: </span>
-                  <span className="text-white font-bold">{nftCount ?? sovereign.depositorCount}</span>
+                  <span className="text-[var(--muted)]">DR: </span>
+                  <span className="text-white font-bold">{drCount ?? sovereign.depositorCount}</span>
                 </div>
               </div>
             </>
@@ -186,8 +187,8 @@ export function SovereignCard({ sovereign, priceChange24h, nftCount }: Sovereign
                   </span>
                 </div>
                 <div>
-                  <span className="text-[var(--muted)]">NFTs: </span>
-                  <span className="text-white font-bold">{nftCount ?? sovereign.depositorCount}</span>
+                  <span className="text-[var(--muted)]">DR: </span>
+                  <span className="text-white font-bold">{drCount ?? sovereign.depositorCount}</span>
                 </div>
               </div>
               <div className="text-[10px] text-[var(--faint)] mt-1">90-day inactivity period</div>
@@ -198,8 +199,8 @@ export function SovereignCard({ sovereign, priceChange24h, nftCount }: Sovereign
           {!['Bonding', 'Recovery', 'Active', 'Unwinding', 'Unwound'].includes(sovereign.status) && !sovereign.activityCheckInitiated && (
             <div className="flex items-center justify-between text-[11px]">
               <div>
-                <span className="text-[var(--muted)]">NFTs: </span>
-                <span className="text-white font-bold">{nftCount ?? sovereign.depositorCount}</span>
+                <span className="text-[var(--muted)]">DR: </span>
+                <span className="text-white font-bold">{drCount ?? sovereign.depositorCount}</span>
               </div>
               <div className="text-[10px] text-[var(--faint)]">
                 {sovereign.totalDepositedSol?.toFixed(2) || '0'} GOR

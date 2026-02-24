@@ -127,7 +127,7 @@ export function SovereignListError({ error, onRetry }: { error: Error; onRetry?:
   return (
     <div className="card card-clean text-center py-12">
       <div className="text-4xl mb-4">⚠️</div>
-      <h3 className="h3 text-[var(--hazard-yellow)] mb-2">Failed to Load Sovereigns</h3>
+      <h3 className="h3 text-[var(--money-green)] mb-2">Failed to Load Sovereigns</h3>
       <p className="text-[var(--muted)] mb-4">
         {error.message || 'An error occurred while fetching data from the blockchain.'}
       </p>

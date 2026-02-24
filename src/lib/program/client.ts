@@ -13,6 +13,7 @@ import {
   getExtraAccountMetasPDA,
   getPermanentLockPDA,
   getGenesisNftMintPDA,
+  getNftPositionPDA,
   getCollectionMintPDA,
   getProposalPDA,
   getVoteRecordPDA,
@@ -167,6 +168,81 @@ export async function fetchWalletDeposits(
       },
     },
   ]);
+}
+
+/**
+ * Fetch all NftPosition accounts for a sovereign.
+ * Uses gPA with memcmp on the sovereign field (offset 8, after discriminator).
+ */
+export async function fetchNftPositionsForSovereign(
+  program: SovereignLiquidityProgram,
+  sovereign: PublicKey
+) {
+  return (program.account as any).nftPosition.all([
+    {
+      memcmp: {
+        offset: 8, // After discriminator → sovereign: Pubkey
+        bytes: sovereign.toBase58(),
+      },
+    },
+  ]);
+}
+
+/**
+ * Fetch the NftPosition accounts owned by a specific wallet for a sovereign.
+ *
+ * Strategy:
+ *  1. Fetch all NftPositions for the sovereign (gPA).
+ *  2. Get the wallet's token accounts (both Token and Token-2022).
+ *  3. Cross-reference: keep NftPositions whose nft_mint has
+ *     a token account owned by the wallet with amount > 0.
+ */
+export async function fetchMyNftPositionsOnChain(
+  program: SovereignLiquidityProgram,
+  sovereign: PublicKey,
+  wallet: PublicKey,
+): Promise<
+  Array<{
+    publicKey: PublicKey;
+    account: {
+      sovereign: PublicKey;
+      nftMint: PublicKey;
+      amount: BN;
+      positionBps: number;
+      nftNumber: BN;
+      mintedFrom: PublicKey;
+      mintedAt: BN;
+      bump: number;
+    };
+  }>
+> {
+  const connection = program.provider.connection;
+
+  // 1. All NftPositions for this sovereign
+  const allPositions = await fetchNftPositionsForSovereign(program, sovereign);
+  if (allPositions.length === 0) return [];
+
+  // 2. Get wallet's token accounts from BOTH token programs
+  //    (NFT mints may use legacy Token or Token-2022)
+  const [legacyAccounts, token2022Accounts] = await Promise.all([
+    connection.getTokenAccountsByOwner(wallet, { programId: TOKEN_PROGRAM_ID }),
+    connection.getTokenAccountsByOwner(wallet, { programId: TOKEN_2022_PROGRAM_ID }),
+  ]);
+
+  // Build a set of mints the wallet holds with balance > 0
+  const { AccountLayout } = await import('@solana/spl-token');
+  const heldMints = new Set<string>();
+  for (const { account } of [...legacyAccounts.value, ...token2022Accounts.value]) {
+    const parsed = AccountLayout.decode(account.data);
+    if (parsed.amount > 0n) {
+      heldMints.add(new PublicKey(parsed.mint).toBase58());
+    }
+  }
+
+  // 3. Filter NftPositions to those the wallet actually holds
+  return allPositions.filter((pos: any) =>
+    heldMints.has(pos.account.nftMint.toBase58())
+  );
 }
 
 // ============================================================
@@ -778,33 +854,22 @@ export async function buildSwapSellTx(
 export async function buildClaimPoolLpFeesTx(
   program: SovereignLiquidityProgram,
   holder: PublicKey,
-  originalDepositor: PublicKey,
   sovereignId: bigint | number,
-  nftMint: PublicKey,
 ): Promise<Transaction> {
   const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
-  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, originalDepositor, program.programId);
+  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, holder, program.programId);
   const [enginePoolPDA] = getEnginePoolPDA(sovereignPDA);
   const [engineGorVaultPDA] = getEngineGorVaultPDA(sovereignPDA);
-  const [lpClaimPDA] = getEngineLpClaimPDA(enginePoolPDA, originalDepositor);
-
-  // NFT token account for the holder (legacy SPL Token)
-  const nftTokenAccount = getAssociatedTokenAddressSync(
-    nftMint,
-    holder,
-    false,
-    TOKEN_PROGRAM_ID,
-  );
+  const [lpClaimPDA] = getEngineLpClaimPDA(enginePoolPDA, holder);
 
   const tx = await (program.methods as any)
     .claimPoolLpFees()
     .accounts({
       holder,
       sovereign: sovereignPDA,
-      enginePool: enginePoolPDA,
-      originalDepositor,
+      originalDepositor: holder,
       depositRecord: depositRecordPDA,
-      nftTokenAccount,
+      enginePool: enginePoolPDA,
       lpClaim: lpClaimPDA,
       engineGorVault: engineGorVaultPDA,
       engineProgram: ENGINE_PROGRAM_ID,
@@ -1246,31 +1311,49 @@ export async function buildClaimTransferFeesTx(
 }
 
 // ============================================================
-// Mint Genesis NFT
+// Mint NFT from Position (Reservoir Model)
 // ============================================================
 
 /**
- * Build a transaction to mint the Genesis NFT for a depositor.
- * Must be called after finalization (Recovery or Active state).
- * Each depositor can only mint once.
+ * Build a transaction to mint an NFT from a deposit record (reservoir model).
+ * The depositor carves out `amount` lamports from their DR into a new NFT.
+ * Each call increments sovereign.nftCounter and derives a fresh mint PDA.
+ *
+ * @param program - The Anchor program
+ * @param holder - The wallet pubkey of the depositor (signer)
+ * @param sovereignId - The sovereign's unique ID (u64)
+ * @param amount - Amount in lamports to carve into the NFT (BN)
  */
-export async function buildMintGenesisNftTx(
+export async function buildMintNftFromPositionTx(
   program: SovereignLiquidityProgram,
-  payer: PublicKey,
-  depositor: PublicKey,
-  sovereignId: bigint | number
+  holder: PublicKey,
+  sovereignId: bigint | number,
+  amount: BN
 ): Promise<Transaction> {
   const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
-  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, depositor, program.programId);
-  const [nftMintPDA] = getGenesisNftMintPDA(sovereignPDA, depositor, program.programId);
+  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, holder, program.programId);
   const [protocolStatePDA] = getProtocolStatePDA(program.programId);
   const [collectionMintPDA] = getCollectionMintPDA(program.programId);
 
-  // NFT uses legacy SPL Token (collection mint uses Token, and Metaplex CreateMetadataAccountV3
-  // is incompatible with Token-2022 ProgrammableNonFungible assets)
+  // Fetch sovereign on-chain to get current nftCounter
+  const sovereign = await (program.account as any).sovereignState.fetch(sovereignPDA);
+  const nftCounter = BigInt(sovereign.nftCounter.toString());
+
+  // Derive the NFT mint PDA from sovereign + nftCounter
+  const [nftMintPDA] = getGenesisNftMintPDA(sovereignPDA, nftCounter, program.programId);
+
+  // Derive the NftPosition PDA from the NFT mint
+  const [nftPositionPDA] = getNftPositionPDA(nftMintPDA, program.programId);
+
+  // Fetch protocol state to get treasury
+  const protocolState = await fetchProtocolState(program);
+  const treasury: PublicKey = protocolState.treasury;
+
+  // NFT uses legacy SPL Token (Metaplex CreateMetadataAccountV3 is
+  // incompatible with Token-2022 ProgrammableNonFungible assets)
   const nftTokenAccount = getAssociatedTokenAddressSync(
     nftMintPDA,
-    depositor,
+    holder,
     false,
     TOKEN_PROGRAM_ID
   );
@@ -1291,16 +1374,17 @@ export async function buildMintGenesisNftTx(
   );
 
   const tx = await (program.methods as any)
-    .mintGenesisNft()
-    .accounts({
-      payer,
+    .mintNftFromPosition(amount)
+    .accountsPartial({
+      holder,
       sovereign: sovereignPDA,
       depositRecord: depositRecordPDA,
-      depositor,
+      treasury,
+      protocolState: protocolStatePDA,
       nftMint: nftMintPDA,
       nftTokenAccount,
+      nftPosition: nftPositionPDA,
       metadataAccount,
-      protocolState: protocolStatePDA,
       collectionMint: collectionMintPDA,
       collectionMetadata,
       collectionMasterEdition,
@@ -1446,6 +1530,51 @@ export async function buildDelistNftTx(
 }
 
 /**
+ * Build a burn_nft_into_position transaction ("Merge").
+ * Burns the NFT and dissolves its NftPosition backing into the holder's DR.
+ * If the holder has no DR, one is created (init_if_needed on-chain).
+ * Free — no fee charged.
+ */
+export async function buildBurnNftIntoPositionTx(
+  program: SovereignLiquidityProgram,
+  holder: PublicKey,
+  sovereignId: bigint | number,
+  nftMint: PublicKey
+): Promise<Transaction> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, holder, program.programId);
+  const [nftPositionPDA] = getNftPositionPDA(nftMint, program.programId);
+
+  // Determine the correct token program for this mint
+  const connection = program.provider.connection;
+  const mintAccountInfo = await connection.getAccountInfo(nftMint);
+  const tokenProgramId = mintAccountInfo?.owner || TOKEN_PROGRAM_ID;
+
+  const nftTokenAccount = getAssociatedTokenAddressSync(
+    nftMint,
+    holder,
+    false,
+    tokenProgramId
+  );
+
+  const tx = await (program.methods as any)
+    .burnNftIntoPosition()
+    .accounts({
+      holder,
+      sovereign: sovereignPDA,
+      depositRecord: depositRecordPDA,
+      nftMint,
+      nftTokenAccount,
+      nftPosition: nftPositionPDA,
+      tokenProgram: tokenProgramId,
+      systemProgram: SystemProgram.programId,
+    })
+    .transaction();
+
+  return tx;
+}
+
+/**
  * Build a transfer_nft transaction.
  * Free peer-to-peer transfer (no royalty). NFT must not be listed.
  */
@@ -1556,14 +1685,14 @@ export async function fetchSovereignProposals(
 }
 
 /**
- * Fetch a vote record for a proposal + NFT mint
+ * Fetch a vote record for a proposal + voter wallet
  */
 export async function fetchVoteRecord(
   program: SovereignLiquidityProgram,
   proposalPubkey: PublicKey,
-  nftMint: PublicKey
+  voter: PublicKey
 ) {
-  const [voteRecordPDA] = getVoteRecordPDA(proposalPubkey, nftMint, program.programId);
+  const [voteRecordPDA] = getVoteRecordPDA(proposalPubkey, voter, program.programId);
   try {
     return await (program.account as any).voteRecord.fetch(voteRecordPDA);
   } catch {
@@ -1577,44 +1706,31 @@ export async function fetchVoteRecord(
 
 /**
  * Build a propose_unwind transaction.
- * The holder must own the Genesis NFT referenced in their deposit record.
+ * DR-based: holder must have position_bps > 0 in their deposit record.
+ * No NFT required.
  * 
- * @param holder - Current NFT holder (signer)
- * @param originalDepositor - The wallet that originally deposited (for PDA derivation)
+ * @param holder - Deposit record owner (signer)
  * @param sovereignId - The sovereign's numeric ID
- * @param nftMint - The Genesis NFT mint pubkey from deposit_record.nft_mint
  */
 export async function buildProposeUnwindTx(
   program: SovereignLiquidityProgram,
   holder: PublicKey,
-  originalDepositor: PublicKey,
   sovereignId: bigint | number,
-  nftMint: PublicKey
 ): Promise<{ tx: Transaction; proposalPDA: PublicKey }> {
   const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
-  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, originalDepositor, program.programId);
+  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, holder, program.programId);
 
   // Fetch sovereign to get proposal count (next proposal ID)
   const sovereign = await (program.account as any).sovereignState.fetch(sovereignPDA);
   const proposalId = BigInt(sovereign.proposalCount.toString());
   const [proposalPDA] = getProposalPDA(sovereignPDA, proposalId, program.programId);
 
-  // NFT token account for the holder (legacy SPL Token)
-  const nftTokenAccount = getAssociatedTokenAddressSync(
-    nftMint,
-    holder,
-    false,
-    TOKEN_PROGRAM_ID
-  );
-
   const tx = await (program.methods as any)
     .proposeUnwind()
     .accounts({
       holder,
       sovereign: sovereignPDA,
-      originalDepositor,
       depositRecord: depositRecordPDA,
-      nftTokenAccount,
       proposal: proposalPDA,
       systemProgram: SystemProgram.programId,
     })
@@ -1625,46 +1741,31 @@ export async function buildProposeUnwindTx(
 
 /**
  * Build a cast_vote transaction.
- * The holder must own the Genesis NFT referenced in their deposit record.
+ * DR-based: holder must have position_bps > 0. No NFT required.
  * 
- * @param holder - Current NFT holder (signer)
- * @param originalDepositor - The wallet that originally deposited
+ * @param holder - Deposit record owner (signer)
  * @param sovereignId - The sovereign's numeric ID
  * @param proposalId - The proposal ID to vote on
- * @param nftMint - The Genesis NFT mint pubkey
  * @param support - true = vote FOR unwind, false = vote AGAINST
  */
 export async function buildCastVoteTx(
   program: SovereignLiquidityProgram,
   holder: PublicKey,
-  originalDepositor: PublicKey,
   sovereignId: bigint | number,
   proposalId: bigint | number,
-  nftMint: PublicKey,
   support: boolean
 ): Promise<Transaction> {
   const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
-  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, originalDepositor, program.programId);
+  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, holder, program.programId);
   const [proposalPDA] = getProposalPDA(sovereignPDA, proposalId, program.programId);
-  const [voteRecordPDA] = getVoteRecordPDA(proposalPDA, nftMint, program.programId);
-
-  // NFT token account for the holder (legacy SPL Token)
-  const nftTokenAccount = getAssociatedTokenAddressSync(
-    nftMint,
-    holder,
-    false,
-    TOKEN_PROGRAM_ID
-  );
+  const [voteRecordPDA] = getVoteRecordPDA(proposalPDA, holder, program.programId);
 
   const tx = await (program.methods as any)
     .vote(support)
     .accounts({
       holder,
       sovereign: sovereignPDA,
-      originalDepositor,
       depositRecord: depositRecordPDA,
-      nftMint,
-      nftTokenAccount,
       proposal: proposalPDA,
       voteRecord: voteRecordPDA,
       systemProgram: SystemProgram.programId,
@@ -1707,43 +1808,28 @@ export async function buildFinalizeVoteTx(
 
 /**
  * Build a claim_unwind transaction.
- * Burns the Genesis NFT and transfers proportional GOR from sol_vault.
+ * DR-based: transfers proportional GOR from sol_vault based on deposit_record.position_bps.
+ * Merge any NFTs back into DR first to maximise claim.
  * 
- * @param holder - Current NFT holder (signer)
- * @param originalDepositor - The wallet that originally deposited
+ * @param holder - Deposit record owner (signer)
  * @param sovereignId - The sovereign's numeric ID
- * @param nftMint - The Genesis NFT mint pubkey
  */
 export async function buildClaimUnwindTx(
   program: SovereignLiquidityProgram,
   holder: PublicKey,
-  originalDepositor: PublicKey,
   sovereignId: bigint | number,
-  nftMint: PublicKey
 ): Promise<Transaction> {
   const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
-  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, originalDepositor, program.programId);
+  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, holder, program.programId);
   const [solVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
-
-  // NFT token account for the holder (legacy SPL Token)
-  const nftTokenAccount = getAssociatedTokenAddressSync(
-    nftMint,
-    holder,
-    false,
-    TOKEN_PROGRAM_ID
-  );
 
   const tx = await (program.methods as any)
     .claimUnwind()
     .accounts({
       holder,
       sovereign: sovereignPDA,
-      originalDepositor,
       depositRecord: depositRecordPDA,
-      nftMint,
-      nftTokenAccount,
       solVault: solVaultPDA,
-      tokenProgram: TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     })
     .transaction();
@@ -1785,6 +1871,11 @@ export async function fetchPendingEngineLpFees(
   try {
     pool = await (engineProgram.account as any).enginePool.fetch(enginePoolPDA);
   } catch {
+    return null;
+  }
+
+  // No claimable fees if pool is drained (unwound/paused after emergency drain)
+  if (pool.poolStatus?.unwound || pool.poolStatus?.paused) {
     return null;
   }
 

@@ -405,16 +405,9 @@ export default function MintPage() {
   const maxCreatorBuyIn = bondTargetSol / 100; // 1% of bond target
 
   return (
-    <div className="h-full">
-      <div className="max-w-2xl mx-auto px-4 py-4">
-        {/* Header */}
-        <div className="mb-4">
-          <h1 className="h1 mb-1" style={{ color: 'var(--text-light)' }}>Launch Your $overeign</h1>
-          <p className="text-[var(--muted)] text-sm">
-            Launch your projects token and crowd fundraise its liquidity.
-          </p>
-        </div>
-
+    <div className="min-h-[calc(100vh-80px)] flex items-start justify-center pt-8 px-4">
+      <div className="w-full max-w-2xl">
+        <div className="mb-12" />
         {/* Progress Steps */}
         <div className="flex items-center justify-between mb-4">
           {[1, 2, 3, 4].map((s) => (
@@ -439,44 +432,76 @@ export default function MintPage() {
 
         {/* Form Steps */}
         <div className="card card-highlight">
-          {/* Step 1: Type & Basic Info */}
+          {/* Step 1: Type Selection */}
           {step === 1 && (
-            <div className="space-y-6">
-              <div>
-                <div className="grid grid-cols-2 gap-4">
-                  <button
-                    type="button"
-                    onClick={() => updateForm({ sovereignType: 'TokenLaunch' })}
-                    className={`card text-left transition-all ${
-                      isTokenLaunch
-                        ? 'border-[var(--hazard-yellow)] glow-yellow'
-                        : 'border-[var(--border)] hover:border-[var(--muted)]'
-                    }`}
-                  >
-                    <div className="text-2xl mb-2">🚀</div>
-                    <div className="font-bold text-white mb-1">Token Launch</div>
-                    <div className="text-sm text-[var(--muted)]">
-                      Create a new token with built-in transfer fees (0-3%)
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => updateForm({ sovereignType: 'BYOToken' })}
-                    className={`card text-left transition-all ${
-                      isBYO
-                        ? 'border-[var(--hazard-yellow)] glow-yellow'
-                        : 'border-[var(--border)] hover:border-[var(--muted)]'
-                    }`}
-                  >
-                    <div className="text-2xl mb-2">🔗</div>
-                    <div className="font-bold text-white mb-1">BYO Token</div>
-                    <div className="text-sm text-[var(--muted)]">
-                      Bring your own existing SPL token (min {byoMinSupplyPct}% supply)
-                    </div>
-                  </button>
-                </div>
+            <div className="py-10">
+              <div className="flex items-center justify-center gap-12">
+                <button
+                  type="button"
+                  onClick={() => updateForm({ sovereignType: 'TokenLaunch' })}
+                  className="text-2xl font-black tracking-wide transition-all"
+                  style={{
+                    color: isTokenLaunch ? '#d4ffe6' : 'var(--muted)',
+                    textShadow: isTokenLaunch
+                      ? '0 0 20px rgba(46,235,127,0.9), 0 0 40px rgba(46,235,127,0.6), 0 0 60px rgba(46,235,127,0.3)'
+                      : 'none',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isTokenLaunch) {
+                      e.currentTarget.style.color = '#d4ffe6';
+                      e.currentTarget.style.textShadow = '0 0 20px rgba(46,235,127,0.6), 0 0 40px rgba(46,235,127,0.3)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isTokenLaunch) {
+                      e.currentTarget.style.color = 'var(--muted)';
+                      e.currentTarget.style.textShadow = 'none';
+                    }
+                  }}
+                >
+                  Token Launch
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateForm({ sovereignType: 'BYOToken' })}
+                  className="text-2xl font-black tracking-wide transition-all"
+                  style={{
+                    color: isBYO ? '#d4ffe6' : 'var(--muted)',
+                    textShadow: isBYO
+                      ? '0 0 20px rgba(46,235,127,0.9), 0 0 40px rgba(46,235,127,0.6), 0 0 60px rgba(46,235,127,0.3)'
+                      : 'none',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isBYO) {
+                      e.currentTarget.style.color = '#d4ffe6';
+                      e.currentTarget.style.textShadow = '0 0 20px rgba(46,235,127,0.6), 0 0 40px rgba(46,235,127,0.3)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isBYO) {
+                      e.currentTarget.style.color = 'var(--muted)';
+                      e.currentTarget.style.textShadow = 'none';
+                    }
+                  }}
+                >
+                  BYO Token
+                </button>
               </div>
 
+              {/* Explainer */}
+              {(isTokenLaunch || isBYO) && (
+                <p className="text-sm text-center mt-6 max-w-md mx-auto" style={{ color: 'var(--muted)' }}>
+                  {isTokenLaunch
+                    ? 'Create a brand new token.'
+                    : 'Bring your own Token.'}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Step 2: Token Configuration (Token Launch) */}
+          {step === 2 && isTokenLaunch && (
+            <div className="space-y-6">
               <div>
                 <label className="input-label">Sovereign Name</label>
                 <input
@@ -491,12 +516,7 @@ export default function MintPage() {
                   3-32 characters
                 </div>
               </div>
-            </div>
-          )}
 
-          {/* Step 2: Token Configuration (Token Launch) */}
-          {step === 2 && isTokenLaunch && (
-            <div className="space-y-6">
               <h2 className="h3 text-white mb-4">Token Configuration</h2>
               
               <div className="grid grid-cols-2 gap-4">
@@ -553,7 +573,7 @@ export default function MintPage() {
                   ) : (
                     <div 
                       onClick={() => fileInputRef.current?.click()}
-                      className="border-2 border-dashed border-[var(--border)] rounded-lg p-6 text-center cursor-pointer hover:border-[var(--hazard-yellow)] transition-colors"
+                      className="border-2 border-dashed border-[var(--border)] rounded-lg p-6 text-center cursor-pointer hover:border-[var(--money-green)]/30 hover:shadow-[0_0_8px_rgba(46,235,127,0.1)] transition-colors"
                     >
                       <div className="text-3xl mb-2">🖼️</div>
                       <p className="text-sm text-[var(--faint)]">Click to upload token image</p>
@@ -601,7 +621,7 @@ export default function MintPage() {
                 <label className="input-label">Transfer Fee ({(formData.sellFeeBps / 100).toFixed(1)}%)</label>
                 <input
                   type="range"
-                  className="w-full accent-[var(--hazard-yellow)]"
+                  className="w-full accent-[var(--money-green)]"
                   min={0}
                   max={300}
                   step={10}
@@ -628,6 +648,21 @@ export default function MintPage() {
           {/* Step 2: BYO Token Configuration */}
           {step === 2 && isBYO && (
             <div className="space-y-6">
+              <div>
+                <label className="input-label">Sovereign Name</label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="e.g., Moon Protocol"
+                  value={formData.name}
+                  onChange={(e) => updateForm({ name: e.target.value })}
+                  maxLength={32}
+                />
+                <div className="text-xs text-[var(--faint)] mt-2">
+                  3-32 characters
+                </div>
+              </div>
+
               <h2 className="h3 text-white mb-4">BYO Token Configuration</h2>
 
               <div>
@@ -673,7 +708,7 @@ export default function MintPage() {
 
                 {/* Loading state */}
                 {formData.byoMintLoading && (
-                  <p className="text-xs text-[var(--hazard-yellow)] mt-2 flex items-center gap-1">
+                  <p className="text-xs text-[var(--money-green)] mt-2 flex items-center gap-1">
                     <span className="animate-spin">⏳</span> Validating mint...
                   </p>
                 )}
@@ -704,7 +739,7 @@ export default function MintPage() {
                   return (
                     <div className="mt-1 flex items-center gap-2 text-xs">
                       <span className="text-[var(--muted)]">Market price:</span>
-                      <span className="text-[var(--hazard-yellow)] font-bold">{formatGorPrice(mp)} GOR/token</span>
+                      <span className="text-[var(--money-green)] font-bold">{formatGorPrice(mp)} GOR/token</span>
                       <span className="text-[var(--faint)]">(pool defaults to 10% below)</span>
                     </div>
                   );
@@ -759,7 +794,7 @@ export default function MintPage() {
                         <div className={`text-xs ${safe ? 'text-[var(--money-green)]' : 'text-[var(--hazard-red)]'}`}>
                           Token Safety: {safe ? '✓' : `✗ ${!formData.byoMintAuthorityRenounced ? 'Mint authority not renounced' : 'Freeze authority not renounced'}`}
                         </div>
-                        <div className={`text-xs ${meetsMin ? 'text-[var(--money-green)]' : 'text-[var(--hazard-yellow)]'}`}>
+                        <div className={`text-xs ${meetsMin ? 'text-[var(--money-green)]' : 'text-[var(--money-green)]'}`}>
                           {pct.toFixed(2)}% of total supply {meetsMin ? '✓' : `(minimum ${byoMinSupplyPct}% required)`}
                         </div>
                         <button
@@ -768,7 +803,7 @@ export default function MintPage() {
                             updateForm({ depositAmount: totalHuman.toString() });
                             autoCalcByoBondTarget(totalHuman);
                           }}
-                          className="text-xs text-[var(--hazard-yellow)] hover:underline mt-1"
+                          className="text-xs text-[var(--money-green)] hover:underline mt-1"
                         >
                           Max ({totalHuman.toLocaleString()})
                         </button>
@@ -875,7 +910,7 @@ export default function MintPage() {
                 <label className="input-label">Recovery Swap Fee ({(formData.swapFeeBps / 100).toFixed(1)}%)</label>
                 <input
                   type="range"
-                  className="w-full accent-[var(--hazard-yellow)]"
+                  className="w-full accent-[var(--money-green)]"
                   min={100}
                   max={300}
                   step={10}
@@ -915,7 +950,7 @@ export default function MintPage() {
                     <button
                       type="button"
                       onClick={() => updateForm({ creatorBuyIn: maxCreatorBuyIn.toFixed(2) })}
-                      className="px-3 py-2 text-xs font-bold text-[var(--hazard-yellow)] border border-[var(--border)] rounded-xl hover:border-[var(--hazard-yellow)] transition-colors shrink-0"
+                      className="px-3 py-2 text-xs font-bold text-[var(--money-green)] border border-[var(--border)] rounded-xl hover:border-[var(--money-green)]/40 hover:shadow-[0_0_6px_rgba(46,235,127,0.12)] transition-colors shrink-0"
                     >
                       MAX
                     </button>
@@ -1043,7 +1078,7 @@ export default function MintPage() {
                 )}
                 <div className="flex justify-between py-2">
                   <span className="text-[var(--muted)]">Creation Fee</span>
-                  <span className="text-[var(--hazard-yellow)] font-bold">{creationFeeSol.toFixed(4)} GOR</span>
+                  <span className="text-[var(--money-green)] font-bold">{creationFeeSol.toFixed(4)} GOR</span>
                 </div>
               </div>
 

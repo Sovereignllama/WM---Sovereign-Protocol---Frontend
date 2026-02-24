@@ -172,7 +172,7 @@ export default function SovereignPageEditorPage() {
 
   // ─── Render ────────────────────────────────────────────────────────
 
-  const inputClass = 'w-full px-3 py-2 rounded-lg bg-[var(--landfill-black)] border border-[var(--border)] text-[var(--text-light)] placeholder-[var(--faint)] text-sm focus:outline-none focus:border-[var(--hazard-yellow)] transition-colors';
+  const inputClass = 'w-full px-3 py-2 rounded-lg bg-[var(--landfill-black)] border border-[var(--border)] text-[var(--text-light)] placeholder-[var(--faint)] text-sm focus:outline-none focus:border-[var(--money-green)]/40 focus:shadow-[0_0_8px_rgba(46,235,127,0.12)] transition-colors';
   const labelClass = 'block text-xs font-bold text-[var(--muted)] uppercase tracking-wider mb-1.5';
 
   return (
@@ -206,7 +206,7 @@ export default function SovereignPageEditorPage() {
           <section>
             <label className={labelClass}>Cover Image</label>
             <div
-              className="relative w-full h-48 rounded-xl border border-dashed border-[var(--border)] bg-[var(--dark-green-bg)] overflow-hidden cursor-pointer hover:border-[var(--hazard-yellow)] transition-colors"
+              className="relative w-full h-48 rounded-xl border border-dashed border-[var(--border)] bg-[var(--dark-green-bg)] overflow-hidden cursor-pointer hover:border-[var(--money-green)]/30 hover:shadow-[0_0_8px_rgba(46,235,127,0.1)] transition-colors"
               onClick={() => coverInputRef.current?.click()}
             >
               {coverImage ? (
@@ -284,7 +284,7 @@ export default function SovereignPageEditorPage() {
               </div>
             ))}
             {(links.custom?.length || 0) < 3 && (
-              <button onClick={addCustomLink} className="text-[11px] text-[var(--hazard-yellow)] mt-2 hover:underline">
+              <button onClick={addCustomLink} className="text-[11px] text-[var(--money-green)] mt-2 hover:underline">
                 + Add custom link
               </button>
             )}
@@ -318,7 +318,7 @@ export default function SovereignPageEditorPage() {
               ))}
               {gallery.length < 6 && (
                 <div
-                  className="flex items-center justify-center aspect-square rounded-lg border border-dashed border-[var(--border)] cursor-pointer hover:border-[var(--hazard-yellow)] transition-colors text-[var(--faint)] text-sm"
+                  className="flex items-center justify-center aspect-square rounded-lg border border-dashed border-[var(--border)] cursor-pointer hover:border-[var(--money-green)]/30 hover:shadow-[0_0_6px_rgba(46,235,127,0.1)] transition-colors text-[var(--faint)] text-sm"
                   onClick={() => galleryInputRef.current?.click()}
                 >
                   {uploadImage.isPending ? '...' : '+'}
@@ -388,7 +388,7 @@ export default function SovereignPageEditorPage() {
               ))}
             </div>
             {roadmap.length < 8 && (
-              <button onClick={addRoadmapItem} className="text-[11px] text-[var(--hazard-yellow)] mt-2 hover:underline">
+              <button onClick={addRoadmapItem} className="text-[11px] text-[var(--money-green)] mt-2 hover:underline">
                 + Add milestone
               </button>
             )}

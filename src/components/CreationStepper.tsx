@@ -48,7 +48,7 @@ export default function CreationStepper({ progress, error, onClose }: CreationSt
               key={idx}
               className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
                 step.status === 'signing' || step.status === 'confirming'
-                  ? 'border-[var(--hazard-yellow)] bg-[rgba(242,183,5,0.06)]'
+                  ? 'border-[var(--money-green)]/30 bg-[rgba(46,235,127,0.04)] shadow-[0_0_8px_rgba(46,235,127,0.12)]'
                   : step.status === 'confirmed'
                     ? 'border-[rgba(46,235,127,0.3)] bg-[rgba(46,235,127,0.04)]'
                     : step.status === 'error'
@@ -65,7 +65,7 @@ export default function CreationStepper({ progress, error, onClose }: CreationSt
                     </svg>
                   </div>
                 ) : step.status === 'signing' || step.status === 'confirming' ? (
-                  <div className="w-8 h-8 rounded-full bg-[var(--hazard-yellow)] flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-full bg-[var(--money-green)] flex items-center justify-center">
                     <svg className="animate-spin" width="16" height="16" viewBox="0 0 16 16" fill="none">
                       <circle cx="8" cy="8" r="6" stroke="#14110A" strokeWidth="2" strokeDasharray="28" strokeDashoffset="8" strokeLinecap="round"/>
                     </svg>
@@ -90,7 +90,7 @@ export default function CreationStepper({ progress, error, onClose }: CreationSt
                     step.status === 'confirmed'
                       ? 'text-[var(--profit)]'
                       : step.status === 'signing' || step.status === 'confirming'
-                        ? 'text-[var(--hazard-yellow)]'
+                        ? 'text-[var(--money-green)]'
                         : step.status === 'error'
                           ? 'text-[var(--loss)]'
                           : 'text-[var(--muted)]'
@@ -109,7 +109,7 @@ export default function CreationStepper({ progress, error, onClose }: CreationSt
                     href={`${EXPLORER_URL}/${step.signature}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs text-[var(--hazard-yellow)] hover:underline truncate block mt-0.5"
+                    className="text-xs text-[var(--money-green)] hover:underline truncate block mt-0.5"
                   >
                     {step.signature.slice(0, 20)}...{step.signature.slice(-8)}
                   </a>
@@ -131,7 +131,7 @@ export default function CreationStepper({ progress, error, onClose }: CreationSt
           <div className="mt-5">
             <div className="w-full h-1.5 rounded-full bg-[var(--border)] overflow-hidden">
               <div
-                className="h-full rounded-full bg-[var(--hazard-yellow)] transition-all duration-500 ease-out"
+                className="h-full rounded-full bg-[var(--money-green)] transition-all duration-500 ease-out"
                 style={{
                   width: `${((progress.steps.filter(s => s.status === 'confirmed').length) / progress.totalSteps) * 100}%`,
                 }}

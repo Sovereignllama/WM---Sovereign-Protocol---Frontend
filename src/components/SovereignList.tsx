@@ -156,7 +156,7 @@ export function SovereignList({
           <button
             onClick={() => onPageChange?.(safePage - 1)}
             disabled={safePage <= 1}
-            className="px-2.5 py-1 rounded text-xs font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed bg-[var(--landfill-black)] text-[var(--muted)] border border-[var(--border)] hover:border-[var(--hazard-yellow)] hover:text-[var(--text-light)]"
+            className="px-2.5 py-1 rounded text-xs font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed bg-[var(--landfill-black)] text-[var(--muted)] border border-[var(--border)] hover:border-[var(--money-green)]/30 hover:text-[var(--text-light)] hover:shadow-[0_0_6px_rgba(46,235,127,0.1)]"
           >
             ← Prev
           </button>
@@ -183,8 +183,8 @@ export function SovereignList({
                   onClick={() => onPageChange?.(item as number)}
                   className={`w-7 h-7 rounded text-xs font-bold transition-all ${
                     safePage === item
-                      ? 'bg-[var(--hazard-yellow)] text-[var(--landfill-black)]'
-                      : 'bg-[var(--landfill-black)] text-[var(--muted)] border border-[var(--border)] hover:border-[var(--hazard-yellow)]'
+                      ? 'bg-[var(--money-green)]/15 text-[var(--money-green)] border border-[var(--money-green)]/30 shadow-[0_0_8px_rgba(46,235,127,0.15)]'
+                      : 'bg-[var(--landfill-black)] text-[var(--muted)] border border-[var(--border)] hover:border-[var(--money-green)]/30'
                   }`}
                 >
                   {item}
@@ -195,7 +195,7 @@ export function SovereignList({
           <button
             onClick={() => onPageChange?.(safePage + 1)}
             disabled={safePage >= totalPages}
-            className="px-2.5 py-1 rounded text-xs font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed bg-[var(--landfill-black)] text-[var(--muted)] border border-[var(--border)] hover:border-[var(--hazard-yellow)] hover:text-[var(--text-light)]"
+            className="px-2.5 py-1 rounded text-xs font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed bg-[var(--landfill-black)] text-[var(--muted)] border border-[var(--border)] hover:border-[var(--money-green)]/30 hover:text-[var(--text-light)] hover:shadow-[0_0_6px_rgba(46,235,127,0.1)]"
           >
             Next →
           </button>

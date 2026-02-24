@@ -73,7 +73,7 @@ function TokenRow({
             token.status === 'Active'
               ? 'bg-[var(--money-green)]/15 text-[var(--money-green)]'
               : token.status === 'Recovery'
-              ? 'bg-[var(--hazard-yellow)]/15 text-[var(--hazard-yellow)]'
+              ? 'bg-[var(--money-green)]/15 text-[var(--money-green)]'
               : 'bg-white/10 text-[var(--muted)]'
           }`}>
             {token.status}

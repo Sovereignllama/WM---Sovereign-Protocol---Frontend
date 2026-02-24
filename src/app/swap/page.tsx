@@ -263,11 +263,7 @@ export default function SwapPage() {
   return (
     <div className="min-h-[calc(100vh-80px)] flex items-start justify-center pt-8 px-4">
       <div className="w-full max-w-md">
-        {/* Header */}
-        <div className="text-center mb-6">
-          <h1 className="h1 text-2xl text-white">Swap</h1>
-          <p className="text-sm text-[var(--muted)] mt-1">Trade $overeign tokens on SLAMM</p>
-        </div>
+        <div className="mb-6" />
 
         {/* Swap Card — always visible */}
         <div className="card card-clean p-4">
@@ -514,7 +510,7 @@ export default function SwapPage() {
 
           {/* Pool paused inline */}
           {selectedSovereignId && enginePool?.isPaused && (
-            <div className="mt-3 p-2 rounded bg-[var(--hazard-yellow)]/10 border border-[var(--hazard-yellow)]/30 text-[var(--hazard-yellow)] text-xs text-center">
+            <div className="mt-3 p-2 rounded bg-[var(--money-green)]/8 border border-[var(--money-green)]/20 text-[var(--money-green)] text-xs text-center shadow-[0_0_8px_rgba(46,235,127,0.08)]">
               This pool is currently paused by the creator.
             </div>
           )}

@@ -150,8 +150,8 @@ export function NftListingModal({
 
           {/* Recovery status */}
           {!recoveryComplete && (
-            <div className="bg-[var(--hazard-yellow)]/10 border border-[var(--hazard-yellow)]/20 rounded-xl p-3">
-              <p className="text-[10px] text-[var(--hazard-yellow)]">
+            <div className="bg-[var(--money-green)]/8 border border-[var(--money-green)]/20 rounded-xl p-3">
+              <p className="text-[10px] text-[var(--money-green)]">
                 ⚠️ Recovery not yet complete — LP fees are still accumulating toward the recovery target. 
                 The buyer will inherit this position and continue earning fees.
               </p>

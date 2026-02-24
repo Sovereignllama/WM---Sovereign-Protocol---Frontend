@@ -58,8 +58,8 @@ export default function DocsPage() {
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-2">
-            <h1 className="h1" style={{ color: 'var(--text-light)' }}>Documentation</h1>
-            <a href="/docs/zh" className="text-sm text-[var(--muted)] hover:text-[var(--hazard-yellow)]">
+            <h1 className="h1" style={{ color: '#d4ffe6', textShadow: '0 0 20px rgba(46,235,127,0.6), 0 0 40px rgba(46,235,127,0.3)' }}>Documentation</h1>
+            <a href="/docs/zh" className="text-sm text-[var(--muted)] hover:text-[var(--money-green)]">
               中文 →
             </a>
           </div>
@@ -72,20 +72,20 @@ export default function DocsPage() {
         <div className="card mb-8">
           <h2 className="h3 mb-4" style={{ color: 'var(--text-light)' }}>Contents</h2>
           <ul className="space-y-2 text-[var(--muted)]">
-            <li><a href="#overview" className="hover:text-[var(--hazard-yellow)]">→ What is $overeign Protocol?</a></li>
-            <li><a href="#how-it-works" className="hover:text-[var(--hazard-yellow)]">→ How It Works</a></li>
-            <li><a href="#slamm" className="hover:text-[var(--hazard-yellow)]">→ The SLAMM Engine</a></li>
-            <li><a href="#lifecycle" className="hover:text-[var(--hazard-yellow)]">→ The $overeign Lifecycle</a></li>
-            <li><a href="#fees" className="hover:text-[var(--hazard-yellow)]">→ Current Fees & Revenues</a></li>
-            <li><a href="#governance" className="hover:text-[var(--hazard-yellow)]">→ Governance</a></li>
-            <li><a href="#dead-pool" className="hover:text-[var(--hazard-yellow)]">→ Dead Pool — Failed Project Protection</a></li>
-            <li><a href="#genesis-nft" className="hover:text-[var(--hazard-yellow)]">→ $overeign NFTs</a></li>
+            <li><a href="#overview" className="hover:text-[var(--money-green)]">→ What is $overeign Protocol?</a></li>
+            <li><a href="#how-it-works" className="hover:text-[var(--money-green)]">→ How It Works</a></li>
+            <li><a href="#slamm" className="hover:text-[var(--money-green)]">→ The SLAMM Engine</a></li>
+            <li><a href="#lifecycle" className="hover:text-[var(--money-green)]">→ The $overeign Lifecycle</a></li>
+            <li><a href="#fees" className="hover:text-[var(--money-green)]">→ Current Fees & Revenues</a></li>
+            <li><a href="#governance" className="hover:text-[var(--money-green)]">→ Governance</a></li>
+            <li><a href="#dead-pool" className="hover:text-[var(--money-green)]">→ Dead Pool — Failed Project Protection</a></li>
+            <li><a href="#genesis-nft" className="hover:text-[var(--money-green)]">→ $overeign NFTs</a></li>
           </ul>
         </div>
 
         {/* Current Protocol Fees (on-chain) */}
         <div className="card mb-8" style={{ background: 'rgba(242, 183, 5, 0.05)', borderColor: 'rgba(242, 183, 5, 0.3)' }}>
-          <h2 className="h3 mb-2" style={{ color: 'var(--hazard-yellow)' }}>Current Protocol Fees</h2>
+          <h2 className="h3 mb-2" style={{ color: 'var(--money-green)' }}>Current Protocol Fees</h2>
           <p className="text-xs text-[var(--muted)] mb-4">Live from on-chain protocol state</p>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <div className="text-center">
@@ -108,7 +108,7 @@ export default function DocsPage() {
               <div className="text-[10px] text-[var(--muted)] opacity-60">of total swap fees</div>
             </div>
             <div className="text-center">
-              <div className="text-xl font-black" style={{ color: 'var(--hazard-yellow)' }}>
+              <div className="text-xl font-black" style={{ color: 'var(--money-green)' }}>
                 {protocolLoading ? '...' : `${fees.creatorPortion}%`}
               </div>
               <div className="text-xs text-[var(--muted)] mt-1">Creator Portion</div>
@@ -131,7 +131,7 @@ export default function DocsPage() {
 
         {/* Overview */}
         <section id="overview" className="mb-10">
-          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>What is $overeign Protocol?</h2>
+          <h2 className="h2 mb-4" style={{ color: 'var(--money-green)' }}>What is $overeign Protocol?</h2>
           <div className="space-y-4 text-[var(--text-light)]">
             <p>
               <strong>$overeign Protocol</strong> is a token launchpad where everyone gets paid.
@@ -156,7 +156,7 @@ export default function DocsPage() {
 
         {/* How It Works */}
         <section id="how-it-works" className="mb-10">
-          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>How It Works</h2>
+          <h2 className="h2 mb-4" style={{ color: 'var(--money-green)' }}>How It Works</h2>
           <div className="space-y-4 text-[var(--text-light)]">
             <p>The protocol supports two launch modes:</p>
             <div className="card mb-4" style={{ background: 'rgba(46, 235, 127, 0.05)', borderColor: 'rgba(46, 235, 127, 0.2)' }}>
@@ -187,7 +187,7 @@ export default function DocsPage() {
 
         {/* SLAMM Engine */}
         <section id="slamm" className="mb-10">
-          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>The SLAMM Engine</h2>
+          <h2 className="h2 mb-4" style={{ color: 'var(--money-green)' }}>The SLAMM Engine</h2>
           <div className="space-y-4 text-[var(--text-light)]">
             <p>
               SLAMM (<strong>$overeign Liquid Automated Market Maker</strong>) is the swap engine
@@ -222,7 +222,7 @@ export default function DocsPage() {
             </div>
 
             <div className="card" style={{ background: 'rgba(242, 183, 5, 0.05)', borderColor: 'rgba(242, 183, 5, 0.2)' }}>
-              <h3 className="h3 mb-3" style={{ color: 'var(--hazard-yellow)' }}>How Selling Works</h3>
+              <h3 className="h3 mb-3" style={{ color: 'var(--money-green)' }}>How Selling Works</h3>
               <p className="text-[var(--muted)]">
                 Sells <strong>do not use the same pricing curve</strong>. Instead, each filled bin pays out
                 at its <strong>locked rate</strong> — the weighted-average price that buyers paid into that bin,
@@ -291,10 +291,10 @@ export default function DocsPage() {
 
         {/* Lifecycle */}
         <section id="lifecycle" className="mb-10">
-          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>The $overeign Lifecycle</h2>
+          <h2 className="h2 mb-4" style={{ color: 'var(--money-green)' }}>The $overeign Lifecycle</h2>
 
           <div className="space-y-6">
-            <div className="card border-l-4" style={{ borderLeftColor: 'var(--hazard-yellow)' }}>
+            <div className="card border-l-4" style={{ borderLeftColor: 'var(--money-green)' }}>
               <h3 className="h3 mb-2" style={{ color: 'var(--text-light)' }}>1. Bonding Phase</h3>
               <p className="text-[var(--muted)]">
                 The creator sets a GOR bond target (minimum set by protocol governance) and a duration (7-30 days).
@@ -307,7 +307,7 @@ export default function DocsPage() {
               <h3 className="h3 mb-2" style={{ color: 'var(--text-light)' }}>2. Recovery Phase</h3>
               <p className="text-[var(--muted)]">
                 Once bonding completes, the SLAMM engine creates the liquidity pool and trading begins.
-                Liquidity Providers receive <strong style={{ color: 'var(--hazard-yellow)' }}>$overeign NFTs</strong> representing
+                Liquidity Providers receive <strong style={{ color: 'var(--money-green)' }}>$overeign NFTs</strong> representing
                 their share. During recovery, <strong style={{ color: 'var(--profit)' }}>100% of all trading fees
                 flow to $overeign NFT holders</strong> until they've recovered their original GOR deposit.
                 The creator earns zero fees during this phase.
@@ -327,7 +327,7 @@ export default function DocsPage() {
 
         {/* Fees */}
         <section id="fees" className="mb-10">
-          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>Current Fees & Revenues</h2>
+          <h2 className="h2 mb-4" style={{ color: 'var(--money-green)' }}>Current Fees & Revenues</h2>
 
           <div className="space-y-4">
             <p className="text-[var(--text-light)]">
@@ -400,7 +400,7 @@ export default function DocsPage() {
                     <tr>
                       <td className="py-2 font-bold">Active</td>
                       <td className="py-2 text-[var(--profit)]">{fees.lpPortion}%</td>
-                      <td className="py-2 text-[var(--hazard-yellow)]">{fees.creatorPortion}%</td>
+                      <td className="py-2 text-[var(--money-green)]">{fees.creatorPortion}%</td>
                       <td className="py-2 text-[var(--profit)]">{fees.binPortion}% of swap fees</td>
                     </tr>
                   </tbody>
@@ -416,15 +416,15 @@ export default function DocsPage() {
 
         {/* Governance */}
         <section id="governance" className="mb-10">
-          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>Governance</h2>
+          <h2 className="h2 mb-4" style={{ color: 'var(--money-green)' }}>Governance</h2>
           <div className="space-y-4 text-[var(--text-light)]">
             <p>
               $overeign Protocol gives both creators and Liquidity Providers governance controls
               to manage their $overeign throughout its lifecycle:
             </p>
 
-            <div className="card border-l-4" style={{ borderLeftColor: 'var(--hazard-yellow)' }}>
-              <h3 className="h3 mb-3" style={{ color: 'var(--hazard-yellow)' }}>Creator Controls</h3>
+            <div className="card border-l-4" style={{ borderLeftColor: 'var(--money-green)' }}>
+              <h3 className="h3 mb-3" style={{ color: 'var(--money-green)' }}>Creator Controls</h3>
               <ul className="space-y-2 ml-4 text-[var(--muted)]">
                 <li>&bull; <strong>Adjust transfer fee</strong> &mdash; change the Token-2022 transfer fee on sells (0% - 3%)</li>
                 <li>&bull; <strong>Renounce transfer fee</strong> &mdash; permanently set transfer fee to 0% and remove the authority (irreversible)</li>
@@ -465,7 +465,7 @@ export default function DocsPage() {
 
         {/* Auto-Unwind */}
         <section id="dead-pool" className="mb-10">
-          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>Failed Project Protection</h2>
+          <h2 className="h2 mb-4" style={{ color: 'var(--money-green)' }}>Failed Project Protection</h2>
           <div className="space-y-4 text-[var(--text-light)]">
             <p>
               While permanently locked liquidity gives creators peace of mind, Liquidity Providers
@@ -484,7 +484,7 @@ export default function DocsPage() {
 
         {/* Genesis NFT */}
         <section id="genesis-nft" className="mb-10">
-          <h2 className="h2 mb-4" style={{ color: 'var(--hazard-yellow)' }}>$overeign NFTs</h2>
+          <h2 className="h2 mb-4" style={{ color: 'var(--money-green)' }}>$overeign NFTs</h2>
           <div className="space-y-4 text-[var(--text-light)]">
             <p>
               When bonding completes, each Liquidity Provider receives a <strong>$overeign NFT</strong> representing

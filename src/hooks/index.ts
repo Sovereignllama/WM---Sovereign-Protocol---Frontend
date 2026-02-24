@@ -32,7 +32,7 @@ export {
   useSwapBuy,
   useSwapSell,
   useExecuteEngineUnwind,
-  useMintGenesisNft,
+  useMintNftFromPosition,
   useListNft,
   useBuyNft,
   useDelistNft,

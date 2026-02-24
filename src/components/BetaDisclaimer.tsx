@@ -23,10 +23,10 @@ export function BetaDisclaimer() {
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-      <div className="max-w-lg w-full mx-4 rounded-xl border border-[var(--hazard-yellow)] bg-[var(--landfill-black)] p-6 shadow-2xl">
+      <div className="max-w-lg w-full mx-4 rounded-xl border border-[var(--money-green)]/30 bg-[var(--landfill-black)] p-6 shadow-2xl shadow-[0_0_20px_rgba(46,235,127,0.1)]">
         <div className="flex items-center gap-2 mb-4">
           <span className="text-2xl">⚠️</span>
-          <h2 className="text-xl font-bold text-[var(--hazard-yellow)]">
+          <h2 className="text-xl font-bold text-[var(--money-green)]">
             Beta Software — Use at Your Own Risk
           </h2>
         </div>
@@ -37,35 +37,35 @@ export function BetaDisclaimer() {
 
         <ol className="space-y-3 text-sm mb-6">
           <li className="flex gap-2">
-            <span className="text-[var(--hazard-yellow)] font-bold shrink-0">1.</span>
+            <span className="text-[var(--money-green)] font-bold shrink-0">1.</span>
             <span>
               <span className="text-white font-semibold">Unaudited Code</span>
               <span className="text-[var(--muted)]"> — The smart contracts have not yet undergone a formal security audit. Bugs, vulnerabilities, or unexpected behavior may exist.</span>
             </span>
           </li>
           <li className="flex gap-2">
-            <span className="text-[var(--hazard-yellow)] font-bold shrink-0">2.</span>
+            <span className="text-[var(--money-green)] font-bold shrink-0">2.</span>
             <span>
               <span className="text-white font-semibold">Loss of Funds</span>
               <span className="text-[var(--muted)]"> — You may lose some or all funds deposited into the protocol. There is no guarantee of recovery.</span>
             </span>
           </li>
           <li className="flex gap-2">
-            <span className="text-[var(--hazard-yellow)] font-bold shrink-0">3.</span>
+            <span className="text-[var(--money-green)] font-bold shrink-0">3.</span>
             <span>
               <span className="text-white font-semibold">Experimental Mechanics</span>
               <span className="text-[var(--muted)]"> — The sovereign lifecycle (bonding, recovery, active trading, governance, and unwind), the SLAMM engine, fee distribution, and governance mechanisms are experimental and may not perform as expected.</span>
             </span>
           </li>
           <li className="flex gap-2">
-            <span className="text-[var(--hazard-yellow)] font-bold shrink-0">4.</span>
+            <span className="text-[var(--money-green)] font-bold shrink-0">4.</span>
             <span>
               <span className="text-white font-semibold">No Warranty</span>
               <span className="text-[var(--muted)]"> — The protocol is provided &quot;as is&quot; with no warranties of any kind, express or implied.</span>
             </span>
           </li>
           <li className="flex gap-2">
-            <span className="text-[var(--hazard-yellow)] font-bold shrink-0">5.</span>
+            <span className="text-[var(--money-green)] font-bold shrink-0">5.</span>
             <span>
               <span className="text-white font-semibold">Not Financial Advice</span>
               <span className="text-[var(--muted)]"> — Nothing on this site constitutes financial, investment, or legal advice.</span>
@@ -79,7 +79,7 @@ export function BetaDisclaimer() {
 
         <button
           onClick={handleAccept}
-          className="w-full py-3 rounded-lg bg-[var(--hazard-yellow)] text-black font-bold text-sm hover:brightness-110 transition-all"
+          className="w-full py-3 rounded-lg bg-[var(--money-green)] text-black font-bold text-sm hover:brightness-110 transition-all"
         >
           I Understand, Continue
         </button>

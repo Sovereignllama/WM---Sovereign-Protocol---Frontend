@@ -33,7 +33,7 @@ function getEmbedUrl(url: string): string {
 
 const ROADMAP_STATUS: Record<string, { icon: string; color: string }> = {
   complete: { icon: '✅', color: 'var(--money-green)' },
-  'in-progress': { icon: '🔄', color: 'var(--hazard-yellow)' },
+  'in-progress': { icon: '🔄', color: 'var(--money-green)' },
   planned: { icon: '⏳', color: 'var(--faint)' },
 };
 
@@ -84,7 +84,7 @@ export function SovereignPageDisplay({ page }: SovereignPageDisplayProps) {
                   href={url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--landfill-black)] border border-[var(--border)] text-[var(--text-light)] text-xs font-medium hover:border-[var(--hazard-yellow)] transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--landfill-black)] border border-[var(--border)] text-[var(--text-light)] text-xs font-medium hover:border-[var(--money-green)]/30 hover:shadow-[0_0_8px_rgba(46,235,127,0.1)] transition-colors"
                 >
                   <span>{LINK_ICONS[key] || '🔗'}</span>
                   <span className="capitalize">{key}</span>
@@ -97,7 +97,7 @@ export function SovereignPageDisplay({ page }: SovereignPageDisplayProps) {
                 href={cl.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--landfill-black)] border border-[var(--border)] text-[var(--text-light)] text-xs font-medium hover:border-[var(--hazard-yellow)] transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--landfill-black)] border border-[var(--border)] text-[var(--text-light)] text-xs font-medium hover:border-[var(--money-green)]/30 hover:shadow-[0_0_8px_rgba(46,235,127,0.1)] transition-colors"
               >
                 <span>🔗</span>
                 <span>{cl.label || 'Link'}</span>

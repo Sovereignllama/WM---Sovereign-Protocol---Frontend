@@ -4,9 +4,13 @@ import { useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { GovernancePosition } from '@/hooks/useMyGovernancePositions';
 import { useProposals, useVoteRecord, useProposeUnwind, useCastVote, useFinalizeVote, useClaimUnwind } from '@/hooks/useGovernance';
-import { useClaimPoolLpFees, useEmergencyWithdraw } from '@/hooks/useTransactions';
+import { useClaimPoolLpFees, useEmergencyWithdraw, useMintNftFromPosition, useListNft, useTransferNft, useBurnNftIntoPosition } from '@/hooks/useTransactions';
 import { usePendingEngineLpFees, useEnginePool, useSovereign, useProtocolState } from '@/hooks/useSovereign';
+import { useMyNftsForSovereign } from '@/hooks/useNfts';
 import { useTokenImage } from '@/hooks/useTokenImage';
+import { MintNftModal } from '@/components/MintNftModal';
+import { NftListingModal } from '@/components/NftListingModal';
+import { MergeNftModal } from '@/components/MergeNftModal';
 import { config, LAMPORTS_PER_GOR } from '@/lib/config';
 import { formatDistanceToNow, format } from 'date-fns';
 import Link from 'next/link';
@@ -17,15 +21,20 @@ interface Props {
 
 const STATUS_DOT: Record<string, string> = {
   Active: 'bg-[var(--money-green)]',
-  Recovery: 'bg-[var(--hazard-yellow)]',
+  Recovery: 'bg-[var(--money-green)]',
   Unwinding: 'bg-orange-400',
   Unwound: 'bg-red-400',
   Halted: 'bg-red-500',
 };
 
 export function GovernancePositionCard({ position }: Props) {
-  const { connected } = useWallet();
+  const { connected, publicKey } = useWallet();
   const [expanded, setExpanded] = useState(false);
+  const [mintNftModalOpen, setMintNftModalOpen] = useState(false);
+  const [listingModalOpen, setListingModalOpen] = useState(false);
+  const [transferTarget, setTransferTarget] = useState<string | null>(null);
+  const [transferRecipient, setTransferRecipient] = useState('');
+  const [mergeNftMint, setMergeNftMint] = useState<string | null>(null);
 
   const { data: imageUrl } = useTokenImage(position.metadataUri);
   const { data: proposals } = useProposals(position.sovereignId);
@@ -33,17 +42,26 @@ export function GovernancePositionCard({ position }: Props) {
   const { data: enginePool } = useEnginePool(position.sovereignId);
   const { data: sovereign } = useSovereign(position.sovereignId);
   const { data: protocolState } = useProtocolState();
+  const { data: myNfts } = useMyNftsForSovereign(position.sovereignPDA, publicKey?.toBase58());
 
   const claimLpFees = useClaimPoolLpFees();
   const proposeUnwind = useProposeUnwind();
   const emergencyWithdraw = useEmergencyWithdraw();
+  const mintNft = useMintNftFromPosition();
+  const listNft = useListNft();
+  const transferNft = useTransferNft();
+  const burnNft = useBurnNftIntoPosition();
 
   // Derived state
   const activeProposal = proposals?.find((p: any) => p.status === 'Active');
   const passedProposal = proposals?.find((p: any) => p.status === 'Passed');
   const hasActiveOrPassed = !!activeProposal || !!passedProposal;
   const isGovernanceEligible = position.status === 'Active' || position.status === 'Recovery';
-  const canPropose = connected && position.nftMinted && isGovernanceEligible && !hasActiveOrPassed && !position.hasActiveProposal;
+
+  // Governance is DR-based — voting power and claims come from deposit_record.position_bps.
+  // NFTs are just transferable slices of DR; they don't grant governance rights directly.
+  const hasDR = position.depositAmountGor > 0;
+  const canPropose = connected && hasDR && isGovernanceEligible && !hasActiveOrPassed && !position.hasActiveProposal;
 
   const claimableLpGor = pendingLpFees?.claimableGor ?? 0;
   const totalClaimable = claimableLpGor;
@@ -56,6 +74,7 @@ export function GovernancePositionCard({ position }: Props) {
   if (position.status === 'Halted') pendingActions.push('$overeign Halted');
 
   return (
+    <>
     <div className="card card-clean overflow-hidden">
       {/* Compact header — always visible */}
       <button
@@ -82,10 +101,12 @@ export function GovernancePositionCard({ position }: Props) {
             <span className="text-[10px] text-[var(--muted)]">{position.status}</span>
           </div>
           <div className="flex items-center gap-3 text-[11px] text-[var(--muted)] mt-0.5">
-            <span>{position.depositAmountGor.toLocaleString()} GOR deposited</span>
+            <span>DR: {position.depositAmountGor.toLocaleString()} GOR</span>
             <span>·</span>
-            <span>{position.votingPowerPercent.toFixed(1)}% voting power</span>
-            {position.nftMinted && <span className="text-[var(--money-green)]">· NFT ✓</span>}
+            <span>{position.votingPowerPercent.toFixed(1)}% share</span>
+            {myNfts && myNfts.length > 0 && (
+              <span className="text-[var(--money-green)]">· {myNfts.length} NFT{myNfts.length !== 1 ? 's' : ''}</span>
+            )}
           </div>
         </div>
 
@@ -115,11 +136,11 @@ export function GovernancePositionCard({ position }: Props) {
           {/* Quick stats row */}
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-[var(--muted)]">Your Deposit</div>
+              <div className="text-[10px] uppercase tracking-wider text-[var(--muted)]">Deposit Record</div>
               <div className="text-sm font-bold text-white">{position.depositAmountGor.toLocaleString()} GOR</div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-[var(--muted)]">Voting Power</div>
+              <div className="text-[10px] uppercase tracking-wider text-[var(--muted)]">Share</div>
               <div className="text-sm font-bold text-white">{position.votingPowerPercent.toFixed(2)}%</div>
             </div>
             <div>
@@ -132,8 +153,8 @@ export function GovernancePositionCard({ position }: Props) {
 
           {/* === ACTION SECTION === */}
 
-          {/* Fee Claiming */}
-          {totalClaimable > 0.0001 && position.nftMinted && (
+          {/* Fee Claiming — hidden for Halted/Unwound (pool drained, no fees to claim) */}
+          {totalClaimable > 0.0001 && hasDR && position.status !== 'Halted' && position.status !== 'Unwound' && (
             <div className="bg-[var(--money-green)]/5 border border-[var(--money-green)]/20 rounded-xl p-3">
               <div className="flex items-center justify-between">
                 <div>
@@ -143,11 +164,8 @@ export function GovernancePositionCard({ position }: Props) {
                 <button
                   onClick={async (e) => {
                     e.stopPropagation();
-                    if (!position.nftMint || !position.depositor) return;
                     await claimLpFees.mutateAsync({
                       sovereignId: position.sovereignId,
-                      originalDepositor: position.depositor,
-                      nftMint: position.nftMint,
                     });
                   }}
                   disabled={claimLpFees.isPending}
@@ -174,9 +192,9 @@ export function GovernancePositionCard({ position }: Props) {
 
           {/* Fallback: sovereign says there's an active proposal but proposals query hasn't loaded it yet */}
           {!activeProposal && !passedProposal && position.hasActiveProposal && (
-            <div className="bg-[var(--hazard-yellow)]/5 border border-[var(--hazard-yellow)]/20 rounded-xl p-3">
+            <div className="bg-[var(--money-green)]/5 border border-[var(--money-green)]/20 rounded-xl p-3">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-[var(--hazard-yellow)]">🗳️ Active Proposal</span>
+                <span className="text-sm font-bold text-[var(--money-green)]">🗳️ Active Proposal</span>
               </div>
               <p className="text-xs text-[var(--muted)]">
                 An unwind proposal is active on this sovereign. Loading proposal details...
@@ -223,7 +241,7 @@ export function GovernancePositionCard({ position }: Props) {
                     <span className={`text-sm font-bold ${isHealthy ? 'text-[var(--money-green)]' : 'text-red-400'}`}>
                       {isHealthy ? '✅' : '📉'} Observation Performance
                     </span>
-                    <span className={`text-lg font-black ${isHealthy ? 'text-[var(--money-green)]' : performancePct >= 50 ? 'text-[var(--hazard-yellow)]' : 'text-red-400'}`}>
+                    <span className={`text-lg font-black ${isHealthy ? 'text-[var(--money-green)]' : performancePct >= 50 ? 'text-[var(--money-green)]' : 'text-red-400'}`}>
                       {performancePct.toFixed(1)}%
                     </span>
                   </div>
@@ -237,7 +255,7 @@ export function GovernancePositionCard({ position }: Props) {
                 </div>
                 <div className="w-full h-2 bg-[var(--card-bg)] rounded-full overflow-hidden mb-2">
                   <div
-                    className={`h-full rounded-full transition-all ${isHealthy ? 'bg-[var(--money-green)]' : performancePct >= 50 ? 'bg-[var(--hazard-yellow)]' : 'bg-red-400'}`}
+                    className={`h-full rounded-full transition-all ${isHealthy ? 'bg-[var(--money-green)]' : performancePct >= 50 ? 'bg-[var(--money-green)]' : 'bg-red-400'}`}
                     style={{ width: `${Math.min(performancePct, 100)}%` }}
                   />
                 </div>
@@ -255,7 +273,7 @@ export function GovernancePositionCard({ position }: Props) {
           })()}
 
           {/* Unwind claim */}
-          {position.status === 'Unwound' && !position.unwindClaimed && position.nftMinted && (
+          {position.status === 'Unwound' && !position.unwindClaimed && (
             <UnwindClaimPanel position={position} />
           )}
 
@@ -264,7 +282,155 @@ export function GovernancePositionCard({ position }: Props) {
             <EmergencyWithdrawPanel position={position} emergencyWithdraw={emergencyWithdraw} />
           )}
 
-          {/* Propose Unwind */}
+          {/* ── NFT Management Section ── */}
+          {isGovernanceEligible && (
+            <div className="bg-white/[0.03] rounded-xl p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] uppercase tracking-wider text-[var(--muted)]">$overeign NFTs</div>
+                {/* Mint button — show if DR has balance */}
+                {position.depositAmountGor > 0 && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setMintNftModalOpen(true); }}
+                    className="text-[var(--money-green)] text-xs font-bold hover:underline"
+                  >
+                    + Mint NFT
+                  </button>
+                )}
+              </div>
+
+              {/* User's NFTs */}
+              {myNfts && myNfts.length > 0 ? (
+                <div className="space-y-2">
+                  {myNfts.map((nft) => {
+                    const nftGor = Number(nft.depositAmount) / LAMPORTS_PER_GOR;
+                    const nftSharePct = nft.sharesBps / 100;
+                    const isTransferring = transferTarget === nft.mint;
+
+                    return (
+                      <div key={nft.mint} className="bg-[var(--landfill-black)] rounded-lg p-2.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-white">
+                              {nftGor.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR
+                            </span>
+                            <span className="text-[10px] text-[var(--faint)]">
+                              ({nftSharePct.toFixed(2)}%)
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setListingModalOpen(true);
+                              }}
+                              className="px-2 py-0.5 rounded text-[10px] font-medium bg-[var(--money-green)]/10 text-[var(--money-green)] hover:bg-[var(--money-green)]/20 transition-colors"
+                            >
+                              List
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTransferTarget(isTransferring ? null : nft.mint);
+                                setTransferRecipient('');
+                              }}
+                              className="px-2 py-0.5 rounded text-[10px] font-medium bg-white/5 text-[var(--muted)] hover:text-white transition-colors"
+                            >
+                              {isTransferring ? 'Cancel' : 'Transfer'}
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMergeNftMint(nft.mint);
+                              }}
+                              disabled={burnNft.isPending}
+                              className="px-2 py-0.5 rounded text-[10px] font-medium bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 transition-colors disabled:opacity-40"
+                            >
+                              Merge
+                            </button>
+                          </div>
+                        </div>
+                        {/* Inline transfer input */}
+                        {isTransferring && (
+                          <div className="flex gap-1.5 mt-2">
+                            <input
+                              type="text"
+                              value={transferRecipient}
+                              onChange={(e) => setTransferRecipient(e.target.value)}
+                              placeholder="Recipient wallet address"
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex-1 bg-[var(--card-bg)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-[10px] text-white placeholder:text-[var(--faint)] focus:outline-none focus:border-[var(--money-green)]"
+                            />
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (!transferRecipient) return;
+                                try {
+                                  await transferNft.mutateAsync({
+                                    sovereignId: position.sovereignId,
+                                    nftMint: nft.mint,
+                                    recipient: transferRecipient,
+                                  });
+                                  setTransferTarget(null);
+                                  setTransferRecipient('');
+                                } catch (err) {
+                                  console.error('Transfer failed:', err);
+                                }
+                              }}
+                              disabled={!transferRecipient || transferNft.isPending}
+                              className="px-3 py-1.5 rounded-lg text-[10px] font-bold bg-[var(--money-green)] text-black disabled:opacity-40"
+                            >
+                              {transferNft.isPending ? '...' : 'Send'}
+                            </button>
+                          </div>
+                        )}
+                        <div className="text-[9px] text-[var(--faint)] mt-1 truncate">
+                          {nft.mint}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-[var(--muted)]">
+                  No NFTs minted.
+                </p>
+              )}
+
+              {/* Mint / transfer errors */}
+              {mintNft.error && (
+                <p className="text-red-400 text-[10px]">{(mintNft.error as Error).message}</p>
+              )}
+              {transferNft.error && (
+                <p className="text-red-400 text-[10px]">{(transferNft.error as Error).message}</p>
+              )}
+            </div>
+          )}
+
+          {/* Past proposals */}
+          {proposals && proposals.length > 0 && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-2">
+                Proposal History ({proposals.length})
+              </div>
+              <div className="space-y-1">
+                {proposals.map((p: any) => (
+                  <div key={p.proposalId} className="flex items-center justify-between px-2 py-1.5 rounded bg-white/[0.02] text-xs">
+                    <span className="text-white">#{p.proposalId}</span>
+                    <span className={
+                      p.status === 'Active' ? 'text-[var(--money-green)]' :
+                      p.status === 'Passed' ? 'text-[var(--money-green)]' :
+                      p.status === 'Executed' ? 'text-[var(--slime)]' :
+                      p.status === 'Failed' ? 'text-red-400' : 'text-[var(--muted)]'
+                    }>{p.status}</span>
+                    <span className="text-[var(--muted)]">{p.voterCount} voter{p.voterCount !== 1 ? 's' : ''}</span>
+                    <span className="text-[var(--muted)]">{format(p.createdAt, 'MMM d, yyyy')}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Propose Unwind — bottom of card so it doesn't dominate the view */}
           {canPropose && !proposeUnwind.isSuccess && (
             <div className="flex items-center justify-between bg-white/[0.03] rounded-xl p-3">
               <div>
@@ -275,11 +441,8 @@ export function GovernancePositionCard({ position }: Props) {
               </div>
               <button
                 onClick={async () => {
-                  if (!position.nftMint || !position.depositor) return;
                   await proposeUnwind.mutateAsync({
                     sovereignId: position.sovereignId,
-                    originalDepositor: position.depositor,
-                    nftMint: position.nftMint,
                   });
                 }}
                 disabled={proposeUnwind.isPending}
@@ -302,45 +465,6 @@ export function GovernancePositionCard({ position }: Props) {
             </div>
           )}
 
-          {/* NFT not minted warning */}
-          {!position.nftMinted && (
-            <div className="bg-[var(--hazard-yellow)]/10 border border-[var(--hazard-yellow)]/20 rounded-xl p-3">
-              <p className="text-xs text-[var(--hazard-yellow)]">
-                Mint your $overeign NFT to participate in governance and claim fees.
-              </p>
-              <Link
-                href={`/sovereign/${position.sovereignId}`}
-                className="text-[var(--money-green)] text-xs hover:underline mt-1 inline-block"
-              >
-                Go to sovereign page to mint →
-              </Link>
-            </div>
-          )}
-
-          {/* Past proposals */}
-          {proposals && proposals.length > 0 && (
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-2">
-                Proposal History ({proposals.length})
-              </div>
-              <div className="space-y-1">
-                {proposals.map((p: any) => (
-                  <div key={p.proposalId} className="flex items-center justify-between px-2 py-1.5 rounded bg-white/[0.02] text-xs">
-                    <span className="text-white">#{p.proposalId}</span>
-                    <span className={
-                      p.status === 'Active' ? 'text-[var(--hazard-yellow)]' :
-                      p.status === 'Passed' ? 'text-[var(--money-green)]' :
-                      p.status === 'Executed' ? 'text-[var(--slime)]' :
-                      p.status === 'Failed' ? 'text-red-400' : 'text-[var(--muted)]'
-                    }>{p.status}</span>
-                    <span className="text-[var(--muted)]">{p.voterCount} voter{p.voterCount !== 1 ? 's' : ''}</span>
-                    <span className="text-[var(--muted)]">{format(p.createdAt, 'MMM d, yyyy')}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Link to detail page */}
           <div className="text-center pt-1">
             <Link
@@ -353,6 +477,93 @@ export function GovernancePositionCard({ position }: Props) {
         </div>
       )}
     </div>
+
+    {/* ── Modals (rendered outside the card to avoid overflow-hidden clipping) ── */}
+
+    {/* Mint NFT Modal */}
+    {protocolState && (
+      <MintNftModal
+        open={mintNftModalOpen}
+        onClose={() => setMintNftModalOpen(false)}
+        onMint={async (amountLamports) => {
+          try {
+            await mintNft.mutateAsync({
+              sovereignId: position.sovereignId,
+              amountLamports: amountLamports.toString(),
+            });
+            setMintNftModalOpen(false);
+          } catch (err) {
+            console.error('Mint NFT failed:', err);
+          }
+        }}
+        isMinting={mintNft.isPending}
+        error={mintNft.error ? (mintNft.error as Error).message : null}
+        depositAmountGor={position.depositAmountGor}
+        depositAmountLamports={BigInt(position.depositAmountLamports)}
+        sharesPercent={position.sharesPercent}
+        mintFeeBps={protocolState.nftMintFeeBps ?? 500}
+        minNftBacking={BigInt(protocolState.minNftBacking?.toString() ?? '50000000')}
+        tokenSymbol={position.tokenSymbol || position.name}
+      />
+    )}
+
+    {/* NFT Listing Modal */}
+    {myNfts && myNfts.length > 0 && enginePool && (
+      <NftListingModal
+        open={listingModalOpen}
+        onClose={() => setListingModalOpen(false)}
+        onList={async (priceGor) => {
+          try {
+            const priceLamports = BigInt(Math.round(priceGor * LAMPORTS_PER_GOR));
+            const nftMintAddr = myNfts[0].mint;
+            await listNft.mutateAsync({
+              sovereignId: position.sovereignId,
+              nftMint: nftMintAddr,
+              priceLamports,
+            });
+            setListingModalOpen(false);
+          } catch (err) {
+            console.error('Failed to list NFT:', err);
+          }
+        }}
+        depositAmountGor={Number(myNfts[0].depositAmount) / LAMPORTS_PER_GOR}
+        sharesPercent={myNfts[0].sharesBps / 100}
+        lpFeesAccumulatedGor={Number(enginePool.lpFeesAccumulated ?? 0) / LAMPORTS_PER_GOR}
+        totalFeesCollectedGor={enginePool.totalFeesCollectedGor ?? 0}
+        recoveryComplete={enginePool.recoveryComplete ?? false}
+        poolAgeSeconds={position.finalizedAt ? Math.floor((Date.now() - position.finalizedAt.getTime()) / 1000) : 0}
+        gorReserveGor={enginePool.gorReserveGor ?? 0}
+        tokenSymbol={position.tokenSymbol || position.name}
+        nftMint={myNfts[0].mint}
+      />
+    )}
+
+    {/* Merge NFT Modal */}
+    {mergeNftMint && myNfts && (() => {
+      const nft = myNfts.find(n => n.mint === mergeNftMint);
+      if (!nft) return null;
+      return (
+        <MergeNftModal
+          open={true}
+          onClose={() => setMergeNftMint(null)}
+          onMerge={() => {
+            burnNft.mutate(
+              { sovereignId: position.sovereignId, nftMint: mergeNftMint },
+              { onSuccess: () => setMergeNftMint(null) },
+            );
+          }}
+          isMerging={burnNft.isPending}
+          error={burnNft.error ? (burnNft.error as Error).message : null}
+          depositAmount={nft.depositAmount}
+          sharesBps={nft.sharesBps}
+          currentDrGor={position.depositAmountGor}
+          currentDrSharesPct={position.sharesPercent}
+          tokenSymbol={position.tokenSymbol || position.name}
+          nftMint={mergeNftMint}
+        />
+      );
+    })()}
+    </>
   );
 }
 
@@ -370,7 +581,7 @@ function ActiveProposalPanel({ proposal, position }: { proposal: any; position: 
   const votingEnded = proposal.votingEndsAt < now;
   const inDiscussion = proposal.votingStartsAt && !votingStarted && !votingEnded;
   const hasVoted = !!voteRecord;
-  const canVote = position.nftMinted && !hasVoted && votingStarted && !votingEnded;
+  const canVote = !hasVoted && votingStarted && !votingEnded;
   const canFinalize = votingEnded;
 
   const quorumPct = (proposal.totalVotedBps / proposal.quorumBps) * 100;
@@ -382,10 +593,10 @@ function ActiveProposalPanel({ proposal, position }: { proposal: any; position: 
     : '0';
 
   return (
-    <div className="bg-[var(--hazard-yellow)]/5 border border-[var(--hazard-yellow)]/20 rounded-xl p-3">
+    <div className="bg-[var(--money-green)]/5 border border-[var(--money-green)]/20 rounded-xl p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-[var(--hazard-yellow)]">🗳️ Proposal #{proposal.proposalId}</span>
+          <span className="text-sm font-bold text-[var(--money-green)]">🗳️ Proposal #{proposal.proposalId}</span>
           {inDiscussion && (
             <span className="text-[10px] text-[var(--hazard-orange)]">
               discussion period — voting opens {formatDistanceToNow(proposal.votingStartsAt, { addSuffix: true })}
@@ -397,7 +608,7 @@ function ActiveProposalPanel({ proposal, position }: { proposal: any; position: 
             </span>
           )}
           {votingEnded && (
-            <span className="text-[10px] text-[var(--hazard-yellow)]">voting ended — awaiting finalization</span>
+            <span className="text-[10px] text-[var(--money-green)]">voting ended — awaiting finalization</span>
           )}
         </div>
       </div>
@@ -423,7 +634,7 @@ function ActiveProposalPanel({ proposal, position }: { proposal: any; position: 
               className="h-full rounded-full"
               style={{
                 width: `${Math.min(quorumPct, 100)}%`,
-                backgroundColor: quorumPct >= 100 ? 'var(--money-green)' : 'var(--hazard-yellow)',
+                backgroundColor: quorumPct >= 100 ? 'var(--money-green)' : 'var(--money-green)',
               }}
             />
           </div>
@@ -456,12 +667,9 @@ function ActiveProposalPanel({ proposal, position }: { proposal: any; position: 
           <>
             <button
               onClick={async () => {
-                if (!position.nftMint || !position.depositor) return;
                 await castVote.mutateAsync({
                   sovereignId: position.sovereignId,
                   proposalId: proposal.proposalId,
-                  originalDepositor: position.depositor,
-                  nftMint: position.nftMint,
                   support: true,
                 });
               }}
@@ -472,12 +680,9 @@ function ActiveProposalPanel({ proposal, position }: { proposal: any; position: 
             </button>
             <button
               onClick={async () => {
-                if (!position.nftMint || !position.depositor) return;
                 await castVote.mutateAsync({
                   sovereignId: position.sovereignId,
                   proposalId: proposal.proposalId,
-                  originalDepositor: position.depositor,
-                  nftMint: position.nftMint,
                   support: false,
                 });
               }}
@@ -526,16 +731,14 @@ function UnwindClaimPanel({ position }: { position: GovernancePosition }) {
         <div>
           <div className="text-sm font-bold text-[var(--money-green)]">Claim Unwind Proceeds</div>
           <p className="text-[10px] text-[var(--muted)]">
-            Sovereign has been unwound. Claim your proportional GOR share (burns your NFT).
+            Sovereign has been unwound. Claim your proportional GOR share based on your deposit record.
+            Merge any NFTs back into your DR first to maximise your claim.
           </p>
         </div>
         <button
           onClick={async () => {
-            if (!position.nftMint || !position.depositor) return;
             await claimUnwind.mutateAsync({
               sovereignId: position.sovereignId,
-              originalDepositor: position.depositor,
-              nftMint: position.nftMint,
             });
           }}
           disabled={claimUnwind.isPending}
@@ -588,7 +791,7 @@ function EmergencyWithdrawPanel({
               GOR
             </span>
             {unwindGor === 0 && (
-              <span className="text-[var(--hazard-yellow)] ml-2">
+              <span className="text-[var(--money-green)] ml-2">
                 (LP not yet removed — awaiting admin action)
               </span>
             )}

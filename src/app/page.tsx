@@ -125,11 +125,15 @@ export default function LandingPage() {
 
         {/* Hero */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl md:text-5xl font-black mb-3" style={{ color: 'var(--text-light)' }}>
-            $overeign Protocol
-          </h1>
-          <p className="text-[var(--muted)] text-lg max-w-2xl mx-auto mb-6">
-            Vibe the Dream. Liquidify the Token. Become $overeign.
+          <div className="h-10 md:h-14" aria-hidden="true" />
+          <p
+            className="text-lg max-w-2xl mx-auto mb-6"
+            style={{
+              color: '#8fbfa8',
+              textShadow: '0 0 12px rgba(46,235,127,0.15)',
+            }}
+          >
+            Vibe the Dream. Liquidify the Token. Become <span style={{ color: 'var(--money-green)', textShadow: '0 0 8px rgba(46,235,127,0.7), 0 0 20px rgba(46,235,127,0.4)' }}>$</span>overeign.
           </p>
           <div className="flex items-center justify-center gap-4">
             <Link href="/mint" className="btn btn-primary btn-lg">
@@ -144,8 +148,8 @@ export default function LandingPage() {
         {/* Trending Sovereigns Ticker */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="h2 text-white">Trending $overeigns</h2>
-            <Link href="/sovereigns" className="text-sm text-[var(--hazard-yellow)] hover:underline">
+            <h2 className="h2" style={{ color: '#d4ffe6', textShadow: '0 0 20px rgba(46,235,127,0.6), 0 0 40px rgba(46,235,127,0.3)' }}>Trending $overeigns</h2>
+            <Link href="/sovereigns" className="text-sm text-[var(--money-green)] hover:underline">
               View all →
             </Link>
           </div>
@@ -203,7 +207,7 @@ export default function LandingPage() {
                         </>
                       ) : (
                         <>
-                          <span className="text-sm font-bold" style={{ color: 'var(--hazard-yellow)' }}>
+                          <span className="text-sm font-bold" style={{ color: 'var(--money-green)' }}>
                             {sovereign.totalDepositedSol.toFixed(2)} GOR
                           </span>
                           <span className="text-[10px] text-[var(--muted)]">
@@ -213,7 +217,7 @@ export default function LandingPage() {
                       )}
                       <span className={`text-xs font-semibold ${
                         sovereign.status === 'Active' ? 'text-[var(--profit)]' :
-                        sovereign.status === 'Recovery' ? 'text-[var(--hazard-yellow)]' :
+                        sovereign.status === 'Recovery' ? 'text-[var(--money-green)]' :
                         sovereign.status === 'Bonding' ? 'text-[var(--slime)]' :
                         'text-[var(--muted)]'
                       }`}>
@@ -239,10 +243,10 @@ export default function LandingPage() {
 
         {/* Protocol Stats Counters */}
         <div className="mb-8">
-          <h2 className="h2 text-white mb-4 text-center">Protocol Stats</h2>
+          <h2 className="h2 mb-4 text-center" style={{ color: '#d4ffe6', textShadow: '0 0 20px rgba(46,235,127,0.6), 0 0 40px rgba(46,235,127,0.3)' }}>Protocol Stats</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="card card-clean text-center py-6">
-              <div className="text-3xl md:text-4xl font-black mb-1" style={{ color: 'var(--hazard-yellow)' }}>
+              <div className="text-3xl md:text-4xl font-black mb-1" style={{ color: 'var(--money-green)' }}>
                 {isLoading ? '...' : stats.totalSovereigns}
               </div>
               <div className="text-[var(--muted)] text-sm font-medium uppercase tracking-wider">
@@ -270,7 +274,7 @@ export default function LandingPage() {
 
         {/* How It Works */}
         <div className="card card-clean mb-8">
-          <h2 className="h2 text-white mb-6 text-center">How It Works</h2>
+          <h2 className="h2 mb-6 text-center" style={{ color: '#d4ffe6', textShadow: '0 0 20px rgba(46,235,127,0.6), 0 0 40px rgba(46,235,127,0.3)' }}>How It Works</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="text-center">
               <div className="text-3xl mb-3">🚀</div>
@@ -298,7 +302,7 @@ export default function LandingPage() {
 
         {/* Read Docs CTA */}
         <div className="text-center mb-8">
-          <Link href="/docs" className="text-[var(--hazard-yellow)] hover:underline font-bold">
+          <Link href="/docs" className="text-[var(--money-green)] hover:underline font-bold">
             Read our docs to learn more →
           </Link>
         </div>

@@ -16,7 +16,7 @@ interface Props {
 
 const STATUS_DOT: Record<string, string> = {
   Active: 'bg-[var(--money-green)]',
-  Recovery: 'bg-[var(--hazard-yellow)]',
+  Recovery: 'bg-[var(--money-green)]',
   Unwinding: 'bg-orange-400',
   Unwound: 'bg-red-400',
   Halted: 'bg-red-500',
@@ -227,7 +227,7 @@ export function CreatorPositionCard({ position }: Props) {
                     </span>
                   )}
                   {votingEnded && (
-                    <span className="text-[10px] text-[var(--hazard-yellow)]">voting ended — awaiting finalization</span>
+                    <span className="text-[10px] text-[var(--money-green)]">voting ended — awaiting finalization</span>
                   )}
                 </div>
                 {inDiscussion ? (
@@ -294,7 +294,7 @@ export function CreatorPositionCard({ position }: Props) {
                     <span className={`text-sm font-bold ${isHealthy ? 'text-[var(--money-green)]' : 'text-red-400'}`}>
                       {isHealthy ? '✅' : '📉'} Observation Performance
                     </span>
-                    <span className={`text-lg font-black ${isHealthy ? 'text-[var(--money-green)]' : performancePct >= 50 ? 'text-[var(--hazard-yellow)]' : 'text-red-400'}`}>
+                    <span className={`text-lg font-black ${isHealthy ? 'text-[var(--money-green)]' : performancePct >= 50 ? 'text-[var(--money-green)]' : 'text-red-400'}`}>
                       {performancePct.toFixed(1)}%
                     </span>
                   </div>
@@ -308,7 +308,7 @@ export function CreatorPositionCard({ position }: Props) {
                 </div>
                 <div className="w-full h-2 bg-[var(--card-bg)] rounded-full overflow-hidden mb-2">
                   <div
-                    className={`h-full rounded-full transition-all ${isHealthy ? 'bg-[var(--money-green)]' : performancePct >= 50 ? 'bg-[var(--hazard-yellow)]' : 'bg-red-400'}`}
+                    className={`h-full rounded-full transition-all ${isHealthy ? 'bg-[var(--money-green)]' : performancePct >= 50 ? 'bg-[var(--money-green)]' : 'bg-red-400'}`}
                     style={{ width: `${Math.min(performancePct, 100)}%` }}
                   />
                 </div>
@@ -335,7 +335,7 @@ export function CreatorPositionCard({ position }: Props) {
                     {pendingGorFees.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR
                   </div>
                   {!enginePool?.recoveryComplete && (
-                    <div className="text-[10px] text-[var(--hazard-yellow)]">
+                    <div className="text-[10px] text-[var(--money-green)]">
                       🔒 Locked until recovery completes
                     </div>
                   )}
@@ -465,7 +465,7 @@ export function CreatorPositionCard({ position }: Props) {
                   <span className="text-white font-bold">{Math.min(progress, 100).toFixed(1)}%</span>
                 </div>
                 <div className="w-full h-1.5 bg-[var(--card-bg)] rounded-full overflow-hidden">
-                  <div className="h-full rounded-full bg-[var(--hazard-yellow)]" style={{ width: `${Math.min(progress, 100)}%` }} />
+                  <div className="h-full rounded-full bg-[var(--money-green)]" style={{ width: `${Math.min(progress, 100)}%` }} />
                 </div>
               </div>
             );

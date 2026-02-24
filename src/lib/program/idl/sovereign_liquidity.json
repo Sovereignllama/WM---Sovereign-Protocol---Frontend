@@ -1,5 +1,5 @@
 {
-  "address": "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
+  "address": "2LPPAG7UhVop1RiRBh8oZtjzMoJ9St9WV4nY7JwmoNbA",
   "metadata": {
     "name": "sovereign_liquidity",
     "version": "1.0.0-beta.1",
@@ -749,7 +749,7 @@
         {
           "name": "holder",
           "docs": [
-            "Current NFT holder (bearer of the Genesis NFT position)"
+            "DR owner (must be the original depositor)"
           ],
           "writable": true,
           "signer": true
@@ -782,12 +782,16 @@
           }
         },
         {
-          "name": "original_depositor"
+          "name": "original_depositor",
+          "docs": [
+            "and engine CPI depositor key. Must equal holder (only DR owner can claim)."
+          ]
         },
         {
           "name": "deposit_record",
           "docs": [
-            "The investor's deposit record (proves a valid deposit position)"
+            "The investor's deposit record — LP fees are proportional to DR amount.",
+            "No NFT required; minting NFTs reduces DR, reducing fee share."
           ],
           "pda": {
             "seeds": [
@@ -820,12 +824,6 @@
               }
             ]
           }
-        },
-        {
-          "name": "nft_token_account",
-          "docs": [
-            "Genesis NFT token account — proves the holder possesses the position NFT."
-          ]
         },
         {
           "name": "engine_pool",
@@ -1121,6 +1119,7 @@
         "Close a sovereign and all its vaults permanently.",
         "Sweeps remaining SOL to treasury, burns tokens, recovers rent.",
         "Works with old/outdated account layouts (raw byte parsing).",
+        "Pass remaining_accounts to close DRs, NftPositions, NftListings in batches.",
         "Protocol authority only. Sovereign must be Retired."
       ],
       "discriminator": [
@@ -1141,9 +1140,6 @@
         },
         {
           "name": "protocol_state",
-          "docs": [
-            "Cannot use Account<> because old ProtocolState may be undersized."
-          ],
           "pda": {
             "seeds": [
               {
@@ -2863,6 +2859,237 @@
       "args": []
     },
     {
+      "name": "expire_listing",
+      "docs": [
+        "Expire a stale NFT listing. Permissionless crank.",
+        "Returns NFT to seller when listing has passed its expires_at timestamp",
+        "OR when the sovereign enters a terminal state (Unwound/Halted/Failed).",
+        "Closes the escrow ATA and listing PDA, returning all rent to the seller."
+      ],
+      "discriminator": [
+        206,
+        60,
+        47,
+        146,
+        232,
+        175,
+        14,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Anyone can crank this — no signer requirement beyond paying tx fee"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sovereign",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign.sovereign_id",
+                "account": "SovereignState"
+              }
+            ]
+          },
+          "relations": [
+            "nft_listing"
+          ]
+        },
+        {
+          "name": "seller",
+          "writable": true
+        },
+        {
+          "name": "nft_mint",
+          "docs": [
+            "The NFT mint"
+          ]
+        },
+        {
+          "name": "escrow_nft_account",
+          "docs": [
+            "Escrow holding the listed NFT"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "sovereign"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "nft_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "seller_nft_account",
+          "docs": [
+            "Seller's ATA — NFT returned here (init_if_needed, payer = caller)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "seller"
+              },
+              {
+                "kind": "account",
+                "path": "token_program"
+              },
+              {
+                "kind": "account",
+                "path": "nft_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "nft_listing",
+          "docs": [
+            "Listing being expired — closed, rent to seller"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  102,
+                  116,
+                  95,
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "nft_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "finalize_engine_pool",
       "docs": [
         "Finalize sovereign: Create engine pool via CPI to sovereign-engine program.",
@@ -3175,7 +3402,8 @@
       "docs": [
         "Force-close a broken or stuck proposal account.",
         "Clears the sovereign's has_active_proposal flag and returns rent.",
-        "Protocol authority only."
+        "Protocol authority only.",
+        "NOTE: Rent is returned to protocol authority (not original proposer)."
       ],
       "discriminator": [
         122,
@@ -3658,7 +3886,8 @@
       "name": "list_nft",
       "docs": [
         "List a Genesis NFT for sale on the protocol marketplace (escrow-based).",
-        "NFT transferred to sovereign PDA escrow. Price in SOL (lamports)."
+        "NFT transferred to sovereign PDA escrow. Price in SOL (lamports).",
+        "Optionally set an expiry timestamp (expires_at = 0 means no expiry)."
       ],
       "discriminator": [
         88,
@@ -3909,6 +4138,12 @@
         {
           "name": "price",
           "type": "u64"
+        },
+        {
+          "name": "expires_at",
+          "type": {
+            "option": "i64"
+          }
         }
       ]
     },
@@ -3968,7 +4203,7 @@
       "docs": [
         "Mint an NFT from a deposit record (reservoir model).",
         "Carves `amount` of SOL backing and mints a freely-tradeable Genesis NFT.",
-        "Charges a protocol mint fee in SOL from the minter's wallet."
+        "Fee is charged on top of `amount` from the minter's wallet."
       ],
       "discriminator": [
         131,
@@ -4668,6 +4903,126 @@
       "args": []
     },
     {
+      "name": "renounce_mint_authority",
+      "docs": [
+        "Creator permanently renounces the sovereign's mint authority (TokenLaunch only).",
+        "Optional — locks the token supply irreversibly.  Cannot be called twice."
+      ],
+      "discriminator": [
+        201,
+        193,
+        156,
+        2,
+        218,
+        222,
+        152,
+        186
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "docs": [
+            "Sovereign creator must sign to renounce mint authority."
+          ],
+          "signer": true
+        },
+        {
+          "name": "sovereign",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign.sovereign_id",
+                "account": "SovereignState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint",
+          "docs": [
+            "Token mint — must match sovereign.token_mint."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program_2022",
+          "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "renounce_protocol_authority",
+      "docs": [
+        "Permanently renounce all protocol authority — IRREVERSIBLE.",
+        "Sets authority and pending_authority to Pubkey::default().",
+        "After this, all authority-gated instructions will reject any signer."
+      ],
+      "discriminator": [
+        60,
+        175,
+        36,
+        67,
+        151,
+        90,
+        255,
+        241
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Current protocol authority — must sign to renounce."
+          ],
+          "signer": true
+        },
+        {
+          "name": "protocol_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "renounce_sell_fee",
       "docs": [
         "Permanently renounce sell fee control (sets to 0%, irreversible)",
@@ -5209,6 +5564,111 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "transfer_sovereign_control",
+      "docs": [
+        "Transfer or renounce the sovereign's mint authority (TokenLaunch only).",
+        "Protocol authority only. Callable in Active, Recovery, or Halted state.",
+        "destination = Creator → transfers MintTokens authority to the creator's wallet.",
+        "destination = Renounce → burns MintTokens authority to None (permanent lock)."
+      ],
+      "discriminator": [
+        130,
+        183,
+        90,
+        188,
+        0,
+        238,
+        132,
+        75
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Protocol authority must sign."
+          ],
+          "signer": true
+        },
+        {
+          "name": "protocol_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "sovereign",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign.sovereign_id",
+                "account": "SovereignState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint",
+          "docs": [
+            "Token mint — must match sovereign.token_mint."
+          ],
+          "writable": true
+        },
+        {
+          "name": "creator"
+        },
+        {
+          "name": "token_program_2022",
+          "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        }
+      ],
+      "args": [
+        {
+          "name": "destination",
+          "type": {
+            "defined": {
+              "name": "TransferDestination"
+            }
+          }
+        }
+      ]
     },
     {
       "name": "update_engine_fees",
@@ -6338,6 +6798,19 @@
       ]
     },
     {
+      "name": "MintAuthorityRenounced",
+      "discriminator": [
+        8,
+        138,
+        155,
+        175,
+        25,
+        179,
+        37,
+        50
+      ]
+    },
+    {
       "name": "NftBurnedIntoPosition",
       "discriminator": [
         70,
@@ -6374,6 +6847,19 @@
         231,
         135,
         26
+      ]
+    },
+    {
+      "name": "NftListingExpired",
+      "discriminator": [
+        190,
+        72,
+        75,
+        111,
+        230,
+        129,
+        9,
+        133
       ]
     },
     {
@@ -6442,6 +6928,19 @@
       ]
     },
     {
+      "name": "ProtocolAuthorityRenounced",
+      "discriminator": [
+        217,
+        183,
+        172,
+        7,
+        43,
+        50,
+        90,
+        120
+      ]
+    },
+    {
       "name": "ProtocolFeesUpdated",
       "discriminator": [
         190,
@@ -6504,6 +7003,19 @@
         43,
         160,
         218
+      ]
+    },
+    {
+      "name": "SovereignControlTransferred",
+      "discriminator": [
+        212,
+        140,
+        107,
+        121,
+        119,
+        71,
+        127,
+        18
       ]
     },
     {
@@ -7046,6 +7558,31 @@
       "code": 6086,
       "name": "NftPositionSovereignMismatch",
       "msg": "NftPosition sovereign does not match"
+    },
+    {
+      "code": 6087,
+      "name": "SovereignMismatch",
+      "msg": "Sovereign account does not match the listing"
+    },
+    {
+      "code": 6088,
+      "name": "ListingNotExpired",
+      "msg": "Listing has not expired and sovereign is not in a terminal state"
+    },
+    {
+      "code": 6089,
+      "name": "SellFeeUpdateCooldownNotElapsed",
+      "msg": "Sell fee was updated too recently — 7-day cooldown required between updates"
+    },
+    {
+      "code": 6090,
+      "name": "MintAuthorityAlreadyRenounced",
+      "msg": "Mint authority has already been renounced for this sovereign"
+    },
+    {
+      "code": 6091,
+      "name": "InvalidTransferDestination",
+      "msg": "Invalid transfer destination"
     }
   ],
   "types": [
@@ -7812,6 +8349,30 @@
       }
     },
     {
+      "name": "MintAuthorityRenounced",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sovereign_id",
+            "type": "u64"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "renounced_by",
+            "type": "pubkey"
+          },
+          {
+            "name": "renounced_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "NftBurnedIntoPosition",
       "type": {
         "kind": "struct",
@@ -7883,6 +8444,10 @@
           {
             "name": "listed_at",
             "type": "i64"
+          },
+          {
+            "name": "expires_at",
+            "type": "i64"
           }
         ]
       }
@@ -7933,11 +8498,46 @@
             "type": "i64"
           },
           {
+            "name": "expires_at",
+            "docs": [
+              "Expiry timestamp (0 = no expiry; unix timestamp otherwise)"
+            ],
+            "type": "i64"
+          },
+          {
             "name": "bump",
             "docs": [
               "PDA bump seed"
             ],
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NftListingExpired",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sovereign_id",
+            "type": "u64"
+          },
+          {
+            "name": "nft_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "expired_at",
+            "type": "i64"
+          },
+          {
+            "name": "was_sovereign_terminal",
+            "type": "bool"
           }
         ]
       }
@@ -8340,6 +8940,22 @@
       }
     },
     {
+      "name": "ProtocolAuthorityRenounced",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "renounced_by",
+            "type": "pubkey"
+          },
+          {
+            "name": "renounced_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "ProtocolFeesUpdated",
       "type": {
         "kind": "struct",
@@ -8619,6 +9235,20 @@
               "Adjustable by protocol authority."
             ],
             "type": "u64"
+          },
+          {
+            "name": "_pad_nft_royalty_wallet",
+            "docs": [
+              "Padding: absorbs remaining 24 bytes from old `nft_royalty_wallet: Pubkey` (32 bytes)",
+              "which was replaced by `min_nft_backing: u64` (8 bytes). 32 - 8 = 24 bytes.",
+              "DO NOT REMOVE — required for on-chain account layout compatibility."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                24
+              ]
+            }
           }
         ]
       }
@@ -8690,6 +9320,34 @@
           },
           {
             "name": "closed_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SovereignControlTransferred",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sovereign_id",
+            "type": "u64"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "destination",
+            "type": "pubkey"
+          },
+          {
+            "name": "transferred_by",
+            "type": "pubkey"
+          },
+          {
+            "name": "transferred_at",
             "type": "i64"
           }
         ]
@@ -9378,6 +10036,33 @@
               "Incremented on each mint_nft_from_position call."
             ],
             "type": "u64"
+          },
+          {
+            "name": "mint_authority_renounced",
+            "docs": [
+              "True after renounce_mint_authority (H-2) or transfer_sovereign_to_creator (H-1)",
+              "has been called.  Prevents double-renouncement."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "mint_authority_destination",
+            "docs": [
+              "Destination of the mint authority after transfer_sovereign_to_creator.",
+              "Some(creator) if transferred to creator, Some(Pubkey::default()) if burned to None.",
+              "None if the authority has never been transferred."
+            ],
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "last_sell_fee_update",
+            "docs": [
+              "Unix timestamp of the last successful update_sell_fee call.",
+              "0 means never updated — the first update is always allowed."
+            ],
+            "type": "i64"
           }
         ]
       }
@@ -9496,6 +10181,23 @@
           {
             "name": "gor_received",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TransferDestination",
+      "docs": [
+        "Destination for the mint authority after transfer."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Creator"
+          },
+          {
+            "name": "Renounce"
           }
         ]
       }

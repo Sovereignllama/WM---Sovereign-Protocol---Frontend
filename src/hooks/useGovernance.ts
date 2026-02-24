@@ -14,7 +14,6 @@ import {
   fetchSovereignProposals,
   fetchSovereignById,
   fetchVoteRecord,
-  fetchDepositRecord,
   buildProposeUnwindTx,
   buildCastVoteTx,
   buildFinalizeVoteTx,
@@ -22,9 +21,7 @@ import {
 } from '@/lib/program/client';
 import {
   getSovereignPDA,
-  getDepositRecordPDA,
   getProposalPDA,
-  getGenesisNftMintPDA,
 } from '@/lib/program/pdas';
 import { config } from '@/lib/config';
 import { ProposalAccount, VoteRecordAccount, ProposalStatus } from '@/lib/program/idl/types';
@@ -194,14 +191,8 @@ export function useVoteRecord(
       const [sovereignPDA] = getSovereignPDA(BigInt(sovereignId), new PublicKey(config.programId));
       const [proposalPDA] = getProposalPDA(sovereignPDA, BigInt(proposalId), new PublicKey(config.programId));
 
-      // First, get this wallet's deposit record to find their NFT mint
-      const depositRecord = await fetchDepositRecord(program, sovereignPDA, publicKey);
-      if (!depositRecord || !depositRecord.nftMinted) return null;
-
-      const nftMint = depositRecord.nftMint as PublicKey;
-      if (!nftMint) return null;
-
-      const record = await fetchVoteRecord(program, proposalPDA, nftMint);
+      // Vote record is keyed by [proposal, holder_wallet]
+      const record = await fetchVoteRecord(program, proposalPDA, publicKey);
       if (!record) return null;
 
       return {
@@ -244,21 +235,15 @@ export function useProposeUnwind() {
   return useMutation({
     mutationFn: async ({
       sovereignId,
-      originalDepositor,
-      nftMint,
     }: {
       sovereignId: string | number;
-      originalDepositor: string;
-      nftMint: string;
     }): Promise<TransactionResult & { proposalPDA: string }> => {
       if (!program || !publicKey) throw new Error('Wallet not connected');
 
       const { tx, proposalPDA } = await buildProposeUnwindTx(
         program,
         publicKey,
-        new PublicKey(originalDepositor),
         BigInt(sovereignId),
-        new PublicKey(nftMint)
       );
 
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
@@ -297,14 +282,10 @@ export function useCastVote() {
     mutationFn: async ({
       sovereignId,
       proposalId,
-      originalDepositor,
-      nftMint,
       support,
     }: {
       sovereignId: string | number;
       proposalId: string | number;
-      originalDepositor: string;
-      nftMint: string;
       support: boolean;
     }): Promise<TransactionResult> => {
       if (!program || !publicKey) throw new Error('Wallet not connected');
@@ -312,10 +293,8 @@ export function useCastVote() {
       const tx = await buildCastVoteTx(
         program,
         publicKey,
-        new PublicKey(originalDepositor),
         BigInt(sovereignId),
         BigInt(proposalId),
-        new PublicKey(nftMint),
         support
       );
 
@@ -405,21 +384,15 @@ export function useClaimUnwind() {
   return useMutation({
     mutationFn: async ({
       sovereignId,
-      originalDepositor,
-      nftMint,
     }: {
       sovereignId: string | number;
-      originalDepositor: string;
-      nftMint: string;
     }): Promise<TransactionResult> => {
       if (!program || !publicKey) throw new Error('Wallet not connected');
 
       const tx = await buildClaimUnwindTx(
         program,
         publicKey,
-        new PublicKey(originalDepositor),
         BigInt(sovereignId),
-        new PublicKey(nftMint)
       );
 
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');

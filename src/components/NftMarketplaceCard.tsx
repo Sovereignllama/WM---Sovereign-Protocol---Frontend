@@ -119,7 +119,7 @@ export function NftMarketplaceCard({
           </p>
         </div>
         {!recoveryComplete && (
-          <span className="text-[10px] bg-[var(--hazard-yellow)]/10 text-[var(--hazard-yellow)] px-2 py-0.5 rounded-full">
+          <span className="text-[10px] bg-[var(--money-green)]/10 text-[var(--money-green)] px-2 py-0.5 rounded-full">
             Recovery
           </span>
         )}

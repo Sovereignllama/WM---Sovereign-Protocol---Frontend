@@ -24,6 +24,7 @@ export interface GovernancePosition {
   hasActiveProposal: boolean;
   // Deposit info
   depositAmountGor: number;
+  depositAmountLamports: string;
   sharesPercent: number;
   votingPowerPercent: number;
   nftMinted: boolean;
@@ -74,14 +75,28 @@ export function useMyGovernancePositions() {
     }
 
     return deposits
-      .filter((d: any) => Number(d.amount) > 0 && sovMap.has(d.sovereign))
+      .filter((d: any) => sovMap.has(d.sovereign))
       .filter((d: any) => {
-        // Exclude creator's own deposit — they manage via Creator Dashboard
         const s = sovMap.get(d.sovereign)!;
+        // Keep zero-amount deposits for archived states (Halted/Unwound)
+        // so they appear in the archive tab after emergency_withdraw
+        if (Number(d.amount) === 0) {
+          return ['Halted', 'Unwound'].includes(s.status);
+        }
+        // Exclude creator's own deposit — they manage via Creator Dashboard
         return s.creator !== publicKey.toBase58();
       })
       .map((d: any) => {
         const s = sovMap.get(d.sovereign)!;
+        // position_bps is only set on-chain at NFT mint time.
+        // Before that it's 0, so compute from deposit/total as fallback.
+        const onChainPct = d.sharesPercent ?? 0;
+        const computedPct = s.totalDepositedGor > 0
+          ? (d.amountGor / s.totalDepositedGor) * 100
+          : 0;
+        const sharesPercent = onChainPct > 0 ? onChainPct : computedPct;
+        const votingPowerPercent = sharesPercent;
+
         return {
           sovereignId: s.sovereignId,
           sovereignPDA: s.publicKey,
@@ -101,8 +116,9 @@ export function useMyGovernancePositions() {
           unwindSolBalanceGor: s.unwindSolBalanceGor ?? 0,
           hasActiveProposal: s.hasActiveProposal ?? false,
           depositAmountGor: d.amountGor,
-          sharesPercent: d.sharesPercent,
-          votingPowerPercent: d.votingPowerPercent,
+          depositAmountLamports: d.amount,
+          sharesPercent,
+          votingPowerPercent,
           nftMinted: d.nftMinted,
           nftMint: d.nftMint,
           depositor: d.depositor,

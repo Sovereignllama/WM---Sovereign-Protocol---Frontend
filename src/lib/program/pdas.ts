@@ -186,7 +186,7 @@ export function getProposalPDA(
  */
 export function getVoteRecordPDA(
   proposal: PublicKey,
-  nftMint: PublicKey,
+  voter: PublicKey,
   programId?: PublicKey
 ): [PublicKey, number] {
   const pid = programId || getProgramId();
@@ -194,7 +194,7 @@ export function getVoteRecordPDA(
     [
       Buffer.from(PDA_SEEDS.VOTE_RECORD),
       proposal.toBuffer(),
-      nftMint.toBuffer(),
+      voter.toBuffer(),
     ],
     pid
   );
@@ -214,22 +214,40 @@ export function getCollectionMintPDA(
 }
 
 /**
- * Derive a Genesis NFT Mint PDA for a depositor
+ * Derive a Genesis NFT Mint PDA for a sovereign + nft counter.
+ * New reservoir model: each NFT is keyed by [genesis_nft_mint, sovereign, nft_counter_le_bytes].
  * @param sovereign - The sovereign's pubkey
- * @param depositor - The depositor's wallet pubkey
+ * @param nftCounter - The sovereign's current nftCounter (u64)
  */
 export function getGenesisNftMintPDA(
   sovereign: PublicKey,
-  depositor: PublicKey,
+  nftCounter: bigint | number,
   programId?: PublicKey
 ): [PublicKey, number] {
   const pid = programId || getProgramId();
+  const counterBytes = encodeBigintLE(BigInt(nftCounter));
   return PublicKey.findProgramAddressSync(
     [
       Buffer.from(PDA_SEEDS.GENESIS_NFT_MINT),
       sovereign.toBuffer(),
-      depositor.toBuffer(),
+      counterBytes,
     ],
+    pid
+  );
+}
+
+/**
+ * Derive the NftPosition PDA for a Genesis NFT mint.
+ * Seeds: ["nft_position", nft_mint]
+ * @param nftMint - The Genesis NFT mint pubkey
+ */
+export function getNftPositionPDA(
+  nftMint: PublicKey,
+  programId?: PublicKey
+): [PublicKey, number] {
+  const pid = programId || getProgramId();
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from(PDA_SEEDS.NFT_POSITION), nftMint.toBuffer()],
     pid
   );
 }

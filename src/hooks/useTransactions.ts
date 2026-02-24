@@ -23,13 +23,14 @@ import {
   buildEmergencyUnlockTx,
   buildEmergencyWithdrawTx,
   buildEmergencyWithdrawCreatorTx,
-  buildMintGenesisNftTx,
+  buildMintNftFromPositionTx,
   buildUpdateSellFeeTx,
   buildRenounceSellFeeTx,
   buildListNftTx,
   buildBuyNftTx,
   buildDelistNftTx,
   buildTransferNftTx,
+  buildBurnNftIntoPositionTx,
   CreateSovereignFrontendParams,
   fetchDepositRecord,
 } from '@/lib/program/client';
@@ -619,10 +620,11 @@ export function useEmergencyWithdrawCreator() {
 }
 
 /**
- * Hook to mint a Genesis NFT for a depositor
- * Available after finalization (Recovery or Active state)
+ * Hook to mint an NFT from a deposit record (reservoir model).
+ * Carves `amountLamports` from the DR into a new NFT.
+ * Available after finalization (Recovery or Active state).
  */
-export function useMintGenesisNft() {
+export function useMintNftFromPosition() {
   const program = useProgram();
   const { publicKey, sendTransaction } = useWallet();
   const { connection } = useConnection();
@@ -631,18 +633,22 @@ export function useMintGenesisNft() {
   return useMutation({
     mutationFn: async ({
       sovereignId,
+      amountLamports,
     }: {
       sovereignId: string | number;
+      amountLamports: string | bigint;
     }): Promise<TransactionResult> => {
       if (!program || !publicKey) {
         throw new Error('Wallet not connected');
       }
 
-      const tx = await buildMintGenesisNftTx(
+      const amount = new BN(amountLamports.toString());
+
+      const tx = await buildMintNftFromPositionTx(
         program,
         publicKey,
-        publicKey, // depositor is the connected wallet
-        BigInt(sovereignId)
+        BigInt(sovereignId),
+        amount
       );
 
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
@@ -671,6 +677,9 @@ export function useMintGenesisNft() {
             publicKey.toBase58()
           )
         });
+        // Invalidate NFT queries so the new NFT shows up
+        queryClient.invalidateQueries({ queryKey: ['sovereignNfts'] });
+        queryClient.invalidateQueries({ queryKey: ['myNftsForSovereign'] });
       }
     },
   });
@@ -690,12 +699,8 @@ export function useClaimPoolLpFees() {
   return useMutation({
     mutationFn: async ({
       sovereignId,
-      originalDepositor,
-      nftMint,
     }: {
       sovereignId: string | number;
-      originalDepositor: string;
-      nftMint: string;
     }): Promise<TransactionResult> => {
       if (!program || !publicKey || !signTransaction) {
         throw new Error('Wallet not connected');
@@ -704,9 +709,7 @@ export function useClaimPoolLpFees() {
       const tx = await buildClaimPoolLpFeesTx(
         program,
         publicKey,
-        new PublicKey(originalDepositor),
         BigInt(sovereignId),
-        new PublicKey(nftMint),
       );
 
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
@@ -1278,6 +1281,68 @@ export function useDelistNft() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
       queryClient.invalidateQueries({ queryKey: ['sovereignNfts'] });
+    },
+  });
+}
+
+/**
+ * Hook to burn/merge an NFT back into the holder's deposit record.
+ * Burns the NFT token, closes the NftPosition, credits DR.
+ */
+export function useBurnNftIntoPosition() {
+  const program = useProgram();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sovereignId,
+      nftMint,
+    }: {
+      sovereignId: string | number;
+      nftMint: string;
+    }): Promise<TransactionResult> => {
+      if (!program || !publicKey) {
+        throw new Error('Wallet not connected');
+      }
+
+      const tx = await buildBurnNftIntoPositionTx(
+        program,
+        publicKey,
+        BigInt(sovereignId),
+        new PublicKey(nftMint)
+      );
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+      queryClient.invalidateQueries({ queryKey: ['sovereignNfts'] });
+      queryClient.invalidateQueries({ queryKey: ['myNftsForSovereign'] });
+      if (publicKey) {
+        queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.depositRecord(
+            variables.sovereignId.toString(),
+            publicKey.toBase58()
+          ),
+        });
+      }
     },
   });
 }

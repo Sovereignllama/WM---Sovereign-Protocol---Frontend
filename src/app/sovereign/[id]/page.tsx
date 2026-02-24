@@ -1,18 +1,15 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useSovereign, useDepositRecord, useEnginePool, useProtocolState } from '@/hooks/useSovereign';
-import { useDeposit, useWithdraw, useFinalizeEnginePool, useMintGenesisNft, useListNft } from '@/hooks/useTransactions';
+import { useDeposit, useWithdraw, useFinalizeEnginePool } from '@/hooks/useTransactions';
 import { useProposals } from '@/hooks/useGovernance';
 import { usePoolSnapshot } from '@/hooks/usePoolSnapshot';
 import { useTokenImage } from '@/hooks/useTokenImage';
-import { useSovereignNfts } from '@/hooks/useNfts';
 import { StatusBadge } from '@/components/StatusBadge';
 import { SovereignPageDisplay } from '@/components/SovereignPageDisplay';
-import { NftListingModal } from '@/components/NftListingModal';
-import { NftMarketplaceCard, type NftListing } from '@/components/NftMarketplaceCard';
 import { useSovereignPage } from '@/hooks/useSovereignPage';
 import { LAMPORTS_PER_GOR, config } from '@/lib/config';
 import { formatDistanceToNow, format } from 'date-fns';
@@ -29,8 +26,8 @@ export default function SovereignDetailPage() {
   const deposit = useDeposit();
   const withdraw = useWithdraw();
   const finalizeEnginePool = useFinalizeEnginePool();
-  const mintGenesisNft = useMintGenesisNft();
-  const listNft = useListNft();
+
+
   const { data: imageUrl } = useTokenImage(sovereign?.metadataUri);
   const { data: sovereignPage } = useSovereignPage(sovereignId);
   const { data: enginePool } = useEnginePool(sovereignId);
@@ -43,26 +40,12 @@ export default function SovereignDetailPage() {
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw'>('deposit');
   const [windDownExpanded, setWindDownExpanded] = useState(false);
-  const [listingModalOpen, setListingModalOpen] = useState(false);
 
-  // Fetch all NFTs for this sovereign (marketplace)
-  const { data: sovereignNfts } = useSovereignNfts(sovereign?.publicKey);
 
-  // Map backend NFT data to marketplace format
-  // (must be called before early returns to maintain hook order)
-  const marketplaceNfts: NftListing[] = useMemo(() => {
-    if (!sovereignNfts) return [];
-    return sovereignNfts.map((nft) => ({
-      mint: nft.mint,
-      owner: nft.owner,
-      sovereign: nft.sovereign,
-      sharesBps: nft.sharesBps,
-      depositAmount: nft.depositAmount,
-      name: nft.name,
-      symbol: nft.symbol,
-      mintedAt: nft.mintedAt,
-    }));
-  }, [sovereignNfts]);
+
+
+
+
 
   if (isLoading) {
     return (
@@ -80,7 +63,7 @@ export default function SovereignDetailPage() {
     return (
       <div className="max-w-4xl mx-auto px-4 py-8">
         <div className="card card-clean text-center py-12">
-          <h2 className="h2 text-white mb-2">Sovereign Not Found</h2>
+          <h2 className="h2 mb-2" style={{ color: '#d4ffe6', textShadow: '0 0 20px rgba(46,235,127,0.6), 0 0 40px rgba(46,235,127,0.3)' }}>Sovereign Not Found</h2>
           <p className="text-[var(--muted)] mb-4">
             Sovereign #{sovereignId} does not exist or could not be loaded.
           </p>
@@ -125,11 +108,6 @@ export default function SovereignDetailPage() {
     }
   }
 
-  // Pool age in seconds (for annual return calculation)
-  const poolAgeSeconds = sovereign.finalizedAt
-    ? (Date.now() - new Date(sovereign.finalizedAt).getTime()) / 1000
-    : 0;
-
   const handleDeposit = async () => {
     if (!depositAmount || !connected) return;
     try {
@@ -153,15 +131,6 @@ export default function SovereignDetailPage() {
       setWithdrawAmount('');
     } catch (err: any) {
       console.error('Withdraw failed:', err);
-    }
-  };
-
-  const handleMintGenesisNft = async () => {
-    if (!connected) return;
-    try {
-      await mintGenesisNft.mutateAsync({ sovereignId });
-    } catch (err: any) {
-      console.error('Mint $overeign NFT failed:', err);
     }
   };
 
@@ -201,7 +170,7 @@ export default function SovereignDetailPage() {
             </div>
           )}
           <div>
-            <h1 className="h1 text-white mb-1">{sovereign.name}</h1>
+            <h1 className="h1 mb-1" style={{ color: '#d4ffe6', textShadow: '0 0 20px rgba(46,235,127,0.6), 0 0 40px rgba(46,235,127,0.3)' }}>{sovereign.name}</h1>
             <div className="flex items-center gap-3 text-sm flex-wrap">
               {sovereign.tokenSymbol && (
                 <>
@@ -455,41 +424,16 @@ export default function SovereignDetailPage() {
 
             {/* Position */}
             {connected && depositRecord && !isCreator && (
-              <>
-                <div className="hidden sm:block w-px self-stretch bg-[var(--border)]" />
+              <div className="flex items-center justify-center gap-4 w-full">
                 <div className="flex gap-2">
-                  <span className="text-[var(--muted)]">Your Deposit</span>
+                  <span className="text-[var(--muted)]">DR:</span>
                   <span className="text-[var(--money-green)] font-bold">{depositRecord.amountGor.toLocaleString()} GOR</span>
                 </div>
                 <div className="flex gap-2">
-                  <span className="text-[var(--muted)]">Share</span>
+                  <span className="text-[var(--muted)]">Share:</span>
                   <span className="text-white">{depositRecord.sharesPercent.toFixed(2)}%</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[var(--muted)]">$overeign NFT</span>
-                  {depositRecord.nftMinted ? (
-                    <button
-                      onClick={() => setListingModalOpen(true)}
-                      className="text-[var(--money-green)] font-bold hover:underline cursor-pointer"
-                    >
-                      List for Sale
-                    </button>
-                  ) : (sovereign.status === 'Recovery' || sovereign.status === 'Active') ? (
-                    <button
-                      onClick={handleMintGenesisNft}
-                      disabled={mintGenesisNft.isPending}
-                      className="btn-money px-2 py-0.5 text-[10px]"
-                    >
-                      {mintGenesisNft.isPending ? 'Minting...' : 'Mint Now'}
-                    </button>
-                  ) : (
-                    <span className="text-[var(--muted)]">Not yet</span>
-                  )}
-                </div>
-                {mintGenesisNft.error && (
-                  <p className="text-red-400 text-[10px]">{(mintGenesisNft.error as Error).message}</p>
-                )}
-              </>
+              </div>
             )}
 
             {/* Inline Actions */}
@@ -611,23 +555,6 @@ export default function SovereignDetailPage() {
         </div>
       </div>
 
-      {/* ── NFT Marketplace (below info strip, above creator content) ── */}
-      {isPostRecovery && marketplaceNfts.length > 0 && enginePool && (
-        <div className="mb-6">
-          <NftMarketplaceCard
-            nfts={marketplaceNfts}
-            lpFeesAccumulatedGor={Number(enginePool.lpFeesAccumulated) / LAMPORTS_PER_GOR}
-            totalFeesCollectedGor={enginePool.totalFeesCollectedGor}
-            gorReserveGor={enginePool.gorReserveGor}
-            initialGorReserveGor={enginePool.initialGorReserveGor}
-            poolAgeSeconds={poolAgeSeconds}
-            recoveryComplete={enginePool.recoveryComplete}
-            tokenSymbol={sovereign.tokenSymbol || sovereign.name}
-            connectedWallet={publicKey?.toBase58()}
-          />
-        </div>
-      )}
-
       {/* ── Creator Content Area (full width) ── */}
       <div className="w-full">
         {sovereignPage ? (
@@ -642,37 +569,6 @@ export default function SovereignDetailPage() {
           </div>
         )}
       </div>
-
-      {/* ── NFT Listing Modal ── */}
-      {depositRecord && depositRecord.nftMinted && enginePool && (
-        <NftListingModal
-          open={listingModalOpen}
-          onClose={() => setListingModalOpen(false)}
-          onList={async (priceGor) => {
-            try {
-              const priceLamports = BigInt(Math.round(priceGor * LAMPORTS_PER_GOR));
-              const nftMintAddr = depositRecord.nftMint || depositRecord.genesisNftMint;
-              await listNft.mutateAsync({
-                sovereignId,
-                nftMint: nftMintAddr,
-                priceLamports,
-              });
-              setListingModalOpen(false);
-            } catch (err) {
-              console.error('Failed to list NFT:', err);
-            }
-          }}
-          depositAmountGor={depositRecord.amountGor}
-          sharesPercent={depositRecord.sharesPercent}
-          lpFeesAccumulatedGor={Number(enginePool.lpFeesAccumulated) / LAMPORTS_PER_GOR}
-          totalFeesCollectedGor={enginePool.totalFeesCollectedGor}
-          recoveryComplete={enginePool.recoveryComplete}
-          poolAgeSeconds={poolAgeSeconds}
-          gorReserveGor={enginePool.gorReserveGor}
-          tokenSymbol={sovereign.tokenSymbol || sovereign.name}
-          nftMint={depositRecord.nftMint || depositRecord.genesisNftMint}
-        />
-      )}
     </div>
   );
 }
@@ -828,7 +724,7 @@ function WindDownBanner({
 
   // Headline varies by status
   let headline = '⚠️ Wind-Down In Progress';
-  let headlineColor = 'text-[var(--hazard-yellow)]';
+  let headlineColor = 'text-[var(--money-green)]';
   if (sovereign.status === 'Unwound') {
     headline = '✅ Wind-Down Complete';
     headlineColor = 'text-[var(--money-green)]';
@@ -853,7 +749,7 @@ function WindDownBanner({
     <div className={`mb-6 rounded-xl border overflow-hidden ${
       sovereign.status === 'Unwound'
         ? 'border-[var(--money-green)]/30 bg-[var(--money-green)]/5'
-        : 'border-[var(--hazard-yellow)]/30 bg-[var(--hazard-yellow)]/5'
+        : 'border-[var(--money-green)]/25 bg-[var(--money-green)]/5'
     }`}>
       {/* Clickable header */}
       <button
@@ -885,7 +781,7 @@ function WindDownBanner({
                     step.status === 'completed'
                       ? 'bg-[var(--money-green)] border-[var(--money-green)] text-black'
                       : step.status === 'active'
-                      ? 'bg-[var(--hazard-yellow)]/20 border-[var(--hazard-yellow)] text-[var(--hazard-yellow)]'
+                      ? 'bg-[var(--money-green)]/15 border-[var(--money-green)] text-[var(--money-green)]'
                       : 'bg-[var(--card-bg)] border-[var(--border)] text-[var(--muted)]'
                   }`}>
                     {step.status === 'completed' ? '✓' : i + 1}
@@ -901,7 +797,7 @@ function WindDownBanner({
                 <div className={`pb-4 ${i === steps.length - 1 ? 'pb-0' : ''}`}>
                   <div className={`text-sm font-medium ${
                     step.status === 'completed' ? 'text-[var(--money-green)]'
-                      : step.status === 'active' ? 'text-[var(--hazard-yellow)]'
+                      : step.status === 'active' ? 'text-[var(--money-green)]'
                       : 'text-[var(--muted)]'
                   }`}>
                     {step.label}
@@ -909,7 +805,7 @@ function WindDownBanner({
                   <div className="text-xs text-[var(--muted)] mt-0.5">{step.description}</div>
                   {step.detail && (
                     <div className={`text-xs mt-1 ${
-                      step.status === 'active' ? 'text-[var(--hazard-yellow)]/80' : 'text-[var(--muted)]/60'
+                      step.status === 'active' ? 'text-[var(--money-green)]/80' : 'text-[var(--muted)]/60'
                     }`}>
                       {step.detail}
                     </div>
