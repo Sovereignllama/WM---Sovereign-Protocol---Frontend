@@ -81,6 +81,15 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  /* Dark dropdown options — prevents white background on <select> menus */
+  select option {
+    background: #0a1a0f;
+    color: #e0e0e0;
+  }
+  select {
+    color-scheme: dark;
+  }
 }
 
 /* Typography */

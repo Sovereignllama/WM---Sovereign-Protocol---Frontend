@@ -1415,8 +1415,8 @@ export async function buildListNftTx(
   priceLamports: bigint | BN
 ): Promise<Transaction> {
   const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
-  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, seller, program.programId);
   const [nftListingPDA] = getNftListingPDA(nftMint, program.programId);
+  const [nftPositionPDA] = getNftPositionPDA(nftMint, program.programId);
 
   const nftTokenAccount = getAssociatedTokenAddressSync(
     nftMint,
@@ -1425,18 +1425,27 @@ export async function buildListNftTx(
     TOKEN_PROGRAM_ID
   );
 
+  const escrowNftAccount = getAssociatedTokenAddressSync(
+    nftMint,
+    sovereignPDA,
+    true, // allowOwnerOffCurve — sovereign is a PDA
+    TOKEN_PROGRAM_ID
+  );
+
   const price = new BN(priceLamports.toString());
 
   const tx = await (program.methods as any)
-    .listNft(price)
-    .accounts({
+    .listNft(price, null)
+    .accountsStrict({
       seller,
       sovereign: sovereignPDA,
       nftMint,
       nftTokenAccount,
-      depositRecord: depositRecordPDA,
+      escrowNftAccount,
+      nftPosition: nftPositionPDA,
       nftListing: nftListingPDA,
       tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     })
     .transaction();
@@ -1457,18 +1466,16 @@ export async function buildBuyNftTx(
   royaltyWallet: PublicKey
 ): Promise<Transaction> {
   const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
-  const [protocolStatePDA] = getProtocolStatePDA(program.programId);
-  const [sellerDepositRecordPDA] = getDepositRecordPDA(sovereignPDA, seller, program.programId);
-  const [buyerDepositRecordPDA] = getDepositRecordPDA(sovereignPDA, buyer, program.programId);
   const [nftListingPDA] = getNftListingPDA(nftMint, program.programId);
 
-  const sellerNftTokenAccount = getAssociatedTokenAddressSync(
+  const escrowNftAccount = getAssociatedTokenAddressSync(
     nftMint,
-    seller,
-    false,
+    sovereignPDA,
+    true, // allowOwnerOffCurve — sovereign is a PDA
     TOKEN_PROGRAM_ID
   );
-  const buyerNftTokenAccount = getAssociatedTokenAddressSync(
+
+  const buyerNftAccount = getAssociatedTokenAddressSync(
     nftMint,
     buyer,
     false,
@@ -1477,17 +1484,13 @@ export async function buildBuyNftTx(
 
   const tx = await (program.methods as any)
     .buyNft()
-    .accounts({
+    .accountsStrict({
       buyer,
       seller,
-      royaltyWallet,
-      protocolState: protocolStatePDA,
       sovereign: sovereignPDA,
       nftMint,
-      sellerNftTokenAccount,
-      buyerNftTokenAccount,
-      sellerDepositRecord: sellerDepositRecordPDA,
-      buyerDepositRecord: buyerDepositRecordPDA,
+      escrowNftAccount,
+      buyerNftAccount,
       nftListing: nftListingPDA,
       tokenProgram: TOKEN_PROGRAM_ID,
       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -1513,15 +1516,33 @@ export async function buildDelistNftTx(
   const [protocolStatePDA] = getProtocolStatePDA(program.programId);
   const [nftListingPDA] = getNftListingPDA(nftMint, program.programId);
 
+  const escrowNftAccount = getAssociatedTokenAddressSync(
+    nftMint,
+    sovereignPDA,
+    true, // allowOwnerOffCurve — sovereign is a PDA
+    TOKEN_PROGRAM_ID
+  );
+
+  const sellerNftAccount = getAssociatedTokenAddressSync(
+    nftMint,
+    seller,
+    false,
+    TOKEN_PROGRAM_ID
+  );
+
   const tx = await (program.methods as any)
     .delistNft()
-    .accounts({
+    .accountsStrict({
       caller,
       protocolState: protocolStatePDA,
       sovereign: sovereignPDA,
       seller,
       nftMint,
+      escrowNftAccount,
+      sellerNftAccount,
       nftListing: nftListingPDA,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     })
     .transaction();

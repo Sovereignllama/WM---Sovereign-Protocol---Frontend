@@ -104,41 +104,44 @@ export function useMyNftsForSovereign(
   return useQuery({
     queryKey: ['myNftsForSovereign', sovereignPubkey, ownerPubkey],
     queryFn: async (): Promise<GenesisNftData[]> => {
-      // ── Primary: backend API ──
-      try {
-        const backendResult = await fetchMyNftsFromBackend(sovereignPubkey!, ownerPubkey!);
-        if (backendResult.length > 0) return backendResult;
-      } catch (err) {
-        console.warn('[useMyNftsForSovereign] Backend fetch failed, trying on-chain:', err);
+      // ── Primary: on-chain (always accurate — checks actual token ownership) ──
+      if (program) {
+        try {
+          const positions = await fetchMyNftPositionsOnChain(
+            program,
+            new PublicKey(sovereignPubkey!),
+            new PublicKey(ownerPubkey!),
+          );
+
+          if (positions.length > 0) {
+            return positions.map((pos: any) => ({
+              _id: pos.publicKey.toBase58(),
+              mint: pos.account.nftMint.toBase58(),
+              owner: ownerPubkey!,
+              sovereign: sovereignPubkey!,
+              deposit: pos.account.mintedFrom.toBase58(),
+              sharesBps: pos.account.positionBps,
+              depositAmount: pos.account.amount.toString(),
+              name: `$overeign NFT #${pos.account.nftNumber.toString()}`,
+              symbol: 'GSLP',
+              mintedAt: new Date(pos.account.mintedAt.toNumber() * 1000).toISOString(),
+              createdAt: new Date(pos.account.mintedAt.toNumber() * 1000).toISOString(),
+              updatedAt: new Date().toISOString(),
+            } as GenesisNftData));
+          }
+
+          // On-chain returned 0 — wallet genuinely has no NFTs for this sovereign
+          return [];
+        } catch (err) {
+          console.warn('[useMyNftsForSovereign] On-chain fetch failed, trying backend:', err);
+        }
       }
 
-      // ── Secondary: on-chain ──
-      if (!program) return [];
-
+      // ── Fallback: backend API (may be stale after burns) ──
       try {
-        const positions = await fetchMyNftPositionsOnChain(
-          program,
-          new PublicKey(sovereignPubkey!),
-          new PublicKey(ownerPubkey!),
-        );
-
-        // Map on-chain NftPosition → GenesisNftData shape for UI compatibility
-        return positions.map((pos: any) => ({
-          _id: pos.publicKey.toBase58(),
-          mint: pos.account.nftMint.toBase58(),
-          owner: ownerPubkey!,
-          sovereign: sovereignPubkey!,
-          deposit: pos.account.mintedFrom.toBase58(),
-          sharesBps: pos.account.positionBps,
-          depositAmount: pos.account.amount.toString(),
-          name: `$overeign NFT #${pos.account.nftNumber.toString()}`,
-          symbol: 'GSLP',
-          mintedAt: new Date(pos.account.mintedAt.toNumber() * 1000).toISOString(),
-          createdAt: new Date(pos.account.mintedAt.toNumber() * 1000).toISOString(),
-          updatedAt: new Date().toISOString(),
-        } as GenesisNftData));
+        return await fetchMyNftsFromBackend(sovereignPubkey!, ownerPubkey!);
       } catch (err) {
-        console.error('[useMyNftsForSovereign] On-chain fetch also failed:', err);
+        console.error('[useMyNftsForSovereign] Backend fetch also failed:', err);
         return [];
       }
     },

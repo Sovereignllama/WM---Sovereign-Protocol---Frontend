@@ -141,7 +141,8 @@ export default function SovereignsPage() {
 
   return (
     <div className="h-full md:overflow-y-auto">
-      <div className="max-w-6xl mx-auto px-4 py-4">
+      <div className="max-w-6xl mx-auto px-4 py-6">
+        <div className="mb-8" />
 
         {/* Top Bar: Search + Page Size + Launch */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">

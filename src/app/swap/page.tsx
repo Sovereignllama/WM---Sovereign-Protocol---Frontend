@@ -261,9 +261,9 @@ export default function SwapPage() {
   // ============================================================
 
   return (
-    <div className="min-h-[calc(100vh-80px)] flex items-start justify-center pt-8 px-4">
+    <div className="min-h-[calc(100vh-80px)] flex items-start justify-center py-6 px-4">
       <div className="w-full max-w-md">
-        <div className="mb-6" />
+        <div className="mb-8" />
 
         {/* Swap Card — always visible */}
         <div className="card card-clean p-4">

@@ -144,21 +144,6 @@ export function getCreatorTrackerPDA(
 }
 
 /**
- * Derive the Creation Fee Escrow PDA
- * @param sovereign - The sovereign's pubkey
- */
-export function getCreationFeeEscrowPDA(
-  sovereign: PublicKey,
-  programId?: PublicKey
-): [PublicKey, number] {
-  const pid = programId || getProgramId();
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from(PDA_SEEDS.CREATION_FEE_ESCROW), sovereign.toBuffer()],
-    pid
-  );
-}
-
-/**
  * Derive a Proposal PDA
  * @param sovereign - The sovereign's pubkey
  * @param proposalId - The proposal's unique ID within the sovereign

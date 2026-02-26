@@ -4909,71 +4909,6 @@ export type SovereignLiquidity = {
       "args": []
     },
     {
-      "name": "renounceMintAuthority",
-      "docs": [
-        "Creator permanently renounces the sovereign's mint authority (TokenLaunch only).",
-        "Optional — locks the token supply irreversibly.  Cannot be called twice."
-      ],
-      "discriminator": [
-        201,
-        193,
-        156,
-        2,
-        218,
-        222,
-        152,
-        186
-      ],
-      "accounts": [
-        {
-          "name": "creator",
-          "docs": [
-            "Sovereign creator must sign to renounce mint authority."
-          ],
-          "signer": true
-        },
-        {
-          "name": "sovereign",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  111,
-                  118,
-                  101,
-                  114,
-                  101,
-                  105,
-                  103,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign.sovereign_id",
-                "account": "sovereignState"
-              }
-            ]
-          }
-        },
-        {
-          "name": "tokenMint",
-          "docs": [
-            "Token mint — must match sovereign.token_mint."
-          ],
-          "writable": true
-        },
-        {
-          "name": "tokenProgram2022",
-          "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
-        }
-      ],
-      "args": []
-    },
-    {
       "name": "renounceProtocolAuthority",
       "docs": [
         "Permanently renounce all protocol authority — IRREVERSIBLE.",
@@ -5574,10 +5509,8 @@ export type SovereignLiquidity = {
     {
       "name": "transferSovereignControl",
       "docs": [
-        "Transfer or renounce the sovereign's mint authority (TokenLaunch only).",
-        "Protocol authority only. Callable in Active, Recovery, or Halted state.",
-        "destination = Creator → transfers MintTokens authority to the creator's wallet.",
-        "destination = Renounce → burns MintTokens authority to None (permanent lock)."
+        "Permanently renounce the sovereign's mint authority (TokenLaunch only).",
+        "Protocol authority only. Callable in Active, Recovery, or Halted state."
       ],
       "discriminator": [
         130,
@@ -5658,23 +5591,11 @@ export type SovereignLiquidity = {
           "writable": true
         },
         {
-          "name": "creator"
-        },
-        {
           "name": "tokenProgram2022",
           "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
         }
       ],
-      "args": [
-        {
-          "name": "destination",
-          "type": {
-            "defined": {
-              "name": "transferDestination"
-            }
-          }
-        }
-      ]
+      "args": []
     },
     {
       "name": "updateEngineFees",
@@ -7012,19 +6933,6 @@ export type SovereignLiquidity = {
       ]
     },
     {
-      "name": "sovereignControlTransferred",
-      "discriminator": [
-        212,
-        140,
-        107,
-        121,
-        119,
-        71,
-        127,
-        18
-      ]
-    },
-    {
       "name": "sovereignCreated",
       "discriminator": [
         201,
@@ -7432,163 +7340,163 @@ export type SovereignLiquidity = {
     },
     {
       "code": 6060,
+      "name": "positionBpsExceedsMax",
+      "msg": "Position BPS exceeds 10 000 (100%)"
+    },
+    {
+      "code": 6061,
       "name": "divisionByZero",
       "msg": "Division by zero"
     },
     {
-      "code": 6061,
+      "code": 6062,
       "name": "noDeposits",
       "msg": "No deposits in the sovereign"
     },
     {
-      "code": 6062,
+      "code": 6063,
       "name": "protocolPaused",
       "msg": "Protocol is currently paused"
     },
     {
-      "code": 6063,
+      "code": 6064,
       "name": "activityCheckCooldownNotElapsed",
       "msg": "Activity check cooldown has not elapsed (7 days required)"
     },
     {
-      "code": 6064,
+      "code": 6065,
       "name": "alreadyHalted",
       "msg": "Sovereign is already halted"
     },
     {
-      "code": 6065,
+      "code": 6066,
       "name": "noRedemptionPool",
       "msg": "No surplus GOR available for token redemption"
     },
     {
-      "code": 6066,
+      "code": 6067,
       "name": "noCirculatingTokens",
       "msg": "No circulating tokens to redeem against"
     },
     {
-      "code": 6067,
+      "code": 6068,
       "name": "redemptionWindowExpired",
       "msg": "Token redemption window has expired"
     },
     {
-      "code": 6068,
+      "code": 6069,
       "name": "redemptionWindowNotExpired",
       "msg": "Token redemption window has not expired yet"
     },
     {
-      "code": 6069,
+      "code": 6070,
       "name": "insufficientAccounts",
       "msg": "Insufficient remaining accounts provided"
     },
     {
-      "code": 6070,
+      "code": 6071,
       "name": "noPendingAuthorityTransfer",
       "msg": "No pending authority transfer"
     },
     {
-      "code": 6071,
+      "code": 6072,
       "name": "invalidTokenProgram",
       "msg": "Invalid token program - must be SPL Token or Token-2022"
     },
     {
-      "code": 6072,
+      "code": 6073,
       "name": "swapFeeOutOfRange",
       "msg": "Swap fee must be between 100 and 300 bps (1% - 3%)"
     },
     {
-      "code": 6073,
+      "code": 6074,
       "name": "alreadyInitialized",
       "msg": "Already initialized"
     },
     {
-      "code": 6074,
+      "code": 6075,
       "name": "nftAlreadyListed",
       "msg": "NFT is already listed for sale"
     },
     {
-      "code": 6075,
+      "code": 6076,
       "name": "nftNotListed",
       "msg": "NFT is not listed for sale"
     },
     {
-      "code": 6076,
+      "code": 6077,
       "name": "listingPriceTooLow",
       "msg": "Listing price must be above minimum (0.01 SOL)"
     },
     {
-      "code": 6077,
+      "code": 6078,
       "name": "buyerIsSeller",
       "msg": "Buyer cannot be the seller"
     },
     {
-      "code": 6078,
+      "code": 6079,
       "name": "notNftOwner",
       "msg": "Caller does not own this NFT"
     },
     {
-      "code": 6079,
+      "code": 6080,
       "name": "nftIsListed",
       "msg": "NFT is currently listed — delist before burning"
     },
     {
-      "code": 6080,
+      "code": 6081,
       "name": "invalidNftBalance",
       "msg": "NFT token account balance is not 1"
     },
     {
-      "code": 6081,
+      "code": 6082,
       "name": "insufficientPositionBalance",
       "msg": "Insufficient deposit record balance for this mint"
     },
     {
-      "code": 6082,
+      "code": 6083,
       "name": "nftBackingTooSmall",
       "msg": "NFT backing amount below minimum"
     },
     {
-      "code": 6083,
+      "code": 6084,
       "name": "voteLockActive",
       "msg": "Mint/burn/list blocked during active governance proposal"
     },
     {
-      "code": 6084,
+      "code": 6085,
       "name": "nftMintFeeTooHigh",
       "msg": "Mint fee exceeds maximum (25%)"
     },
     {
-      "code": 6085,
+      "code": 6086,
       "name": "positionBpsNotSet",
       "msg": "Position BPS must be set before minting (call after bonding completes)"
     },
     {
-      "code": 6086,
+      "code": 6087,
       "name": "nftPositionSovereignMismatch",
       "msg": "NftPosition sovereign does not match"
     },
     {
-      "code": 6087,
+      "code": 6088,
       "name": "sovereignMismatch",
       "msg": "Sovereign account does not match the listing"
     },
     {
-      "code": 6088,
+      "code": 6089,
       "name": "listingNotExpired",
       "msg": "Listing has not expired and sovereign is not in a terminal state"
     },
     {
-      "code": 6089,
+      "code": 6090,
       "name": "sellFeeUpdateCooldownNotElapsed",
       "msg": "Sell fee was updated too recently — 7-day cooldown required between updates"
     },
     {
-      "code": 6090,
+      "code": 6091,
       "name": "mintAuthorityAlreadyRenounced",
       "msg": "Mint authority has already been renounced for this sovereign"
-    },
-    {
-      "code": 6091,
-      "name": "invalidTransferDestination",
-      "msg": "Invalid transfer destination"
     }
   ],
   "types": [
@@ -8116,33 +8024,27 @@ export type SovereignLiquidity = {
             }
           },
           {
-            "name": "nftMint",
+            "name": "padNftFieldsA",
             "docs": [
-              "NFT mint address (if minted)"
-            ],
-            "type": {
-              "option": "pubkey"
-            }
-          },
-          {
-            "name": "padVotingPowerBps",
-            "docs": [
-              "DEPRECATED: was voting_power_bps — superseded by position_bps at the same memory offset.",
-              "Preserved as explicit byte padding to prevent accidental reads/writes."
+              "DEPRECATED: nft_mint (Option<Pubkey>) + _pad_voting_power_bps ([u8; 2]) + nft_minted (bool)",
+              "Removed — all NFT data is authoritative on the NftPosition PDA, not the DR.",
+              "33 + 2 + 1 = 36 bytes reclaimed as padding (split for Default trait)."
             ],
             "type": {
               "array": [
                 "u8",
-                2
+                32
               ]
             }
           },
           {
-            "name": "nftMinted",
-            "docs": [
-              "Whether NFT has been minted"
-            ],
-            "type": "bool"
+            "name": "padNftFieldsB",
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
           },
           {
             "name": "unwindClaimed",
@@ -9332,34 +9234,6 @@ export type SovereignLiquidity = {
       }
     },
     {
-      "name": "sovereignControlTransferred",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "sovereignId",
-            "type": "u64"
-          },
-          {
-            "name": "mint",
-            "type": "pubkey"
-          },
-          {
-            "name": "destination",
-            "type": "pubkey"
-          },
-          {
-            "name": "transferredBy",
-            "type": "pubkey"
-          },
-          {
-            "name": "transferredAt",
-            "type": "i64"
-          }
-        ]
-      }
-    },
-    {
       "name": "sovereignCreated",
       "type": {
         "kind": "struct",
@@ -9407,6 +9281,14 @@ export type SovereignLiquidity = {
           {
             "name": "swapFeeBps",
             "type": "u16"
+          },
+          {
+            "name": "byoMintAuthorityActive",
+            "type": "bool"
+          },
+          {
+            "name": "byoFreezeAuthorityActive",
+            "type": "bool"
           }
         ]
       }
@@ -10069,6 +9951,22 @@ export type SovereignLiquidity = {
               "0 means never updated — the first update is always allowed."
             ],
             "type": "i64"
+          },
+          {
+            "name": "byoMintAuthorityActive",
+            "docs": [
+              "Advisory: true if the BYO token's mint authority was active at creation.",
+              "Does NOT block launch — frontend shows a warning to depositors."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "byoFreezeAuthorityActive",
+            "docs": [
+              "Advisory: true if the BYO token's freeze authority was active at creation.",
+              "Does NOT block launch — frontend shows a warning to depositors."
+            ],
+            "type": "bool"
           }
         ]
       }
@@ -10187,23 +10085,6 @@ export type SovereignLiquidity = {
           {
             "name": "gorReceived",
             "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "transferDestination",
-      "docs": [
-        "Destination for the mint authority after transfer."
-      ],
-      "type": {
-        "kind": "enum",
-        "variants": [
-          {
-            "name": "creator"
-          },
-          {
-            "name": "renounce"
           }
         ]
       }

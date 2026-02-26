@@ -145,7 +145,7 @@ export function SovereignList({
             key={sovereign.sovereignId.toString()}
             sovereign={sovereign}
             priceChange24h={poolSnapshots?.[Number(sovereign.sovereignId)]?.priceChange24h}
-            nftCount={nftCounts?.[sovereign.publicKey.toString()]}
+            drCount={nftCounts?.[sovereign.publicKey.toString()]}
           />
         ))}
       </div>

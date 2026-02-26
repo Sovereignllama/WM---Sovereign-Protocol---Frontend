@@ -7,7 +7,6 @@ export const PDA_SEEDS = {
   TOKEN_VAULT: 'token_vault',
   PERMANENT_LOCK: 'permanent_lock',
   CREATOR_TRACKER: 'creator_tracker',
-  CREATION_FEE_ESCROW: 'creation_fee_escrow',
   PROPOSAL: 'proposal',
   VOTE_RECORD: 'vote_record',
   GENESIS_NFT_MINT: 'genesis_nft_mint',

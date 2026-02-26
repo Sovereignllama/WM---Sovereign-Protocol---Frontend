@@ -234,8 +234,9 @@ export default function MintPage() {
   const canProceed = (): boolean => {
     switch (step) {
       case 1:
-        return formData.name.length >= 3 && formData.name.length <= 32;
+        return formData.sovereignType === 'TokenLaunch' || formData.sovereignType === 'BYOToken';
       case 2:
+        if (formData.name.length < 3 || formData.name.length > 32) return false;
         if (isTokenLaunch) {
           return (
             formData.tokenName.length >= 1 &&
@@ -405,9 +406,9 @@ export default function MintPage() {
   const maxCreatorBuyIn = bondTargetSol / 100; // 1% of bond target
 
   return (
-    <div className="min-h-[calc(100vh-80px)] flex items-start justify-center pt-8 px-4">
+    <div className="min-h-[calc(100vh-80px)] flex items-start justify-center py-6 px-4">
       <div className="w-full max-w-2xl">
-        <div className="mb-12" />
+        <div className="mb-8" />
         {/* Progress Steps */}
         <div className="flex items-center justify-between mb-4">
           {[1, 2, 3, 4].map((s) => (
@@ -492,8 +493,8 @@ export default function MintPage() {
               {(isTokenLaunch || isBYO) && (
                 <p className="text-sm text-center mt-6 max-w-md mx-auto" style={{ color: 'var(--muted)' }}>
                   {isTokenLaunch
-                    ? 'Create a brand new token.'
-                    : 'Bring your own Token.'}
+                    ? 'Create a token.'
+                    : 'Bring a token.'}
                 </p>
               )}
             </div>
@@ -631,9 +632,6 @@ export default function MintPage() {
                 <div className="flex justify-between text-xs text-[var(--faint)] mt-1">
                   <span>0%</span>
                   <span>3%</span>
-                </div>
-                <div className="text-xs text-[var(--faint)] mt-2">
-                  Fee on each token transfer. Split between creator and LP recovery.
                 </div>
               </div>
 
@@ -788,12 +786,20 @@ export default function MintPage() {
                     const totalHuman = Number(formData.byoTokenSupply) / 10 ** formData.byoTokenDecimals;
                     const pct = totalHuman > 0 ? (deposit / totalHuman) * 100 : 0;
                     const meetsMin = pct >= byoMinSupplyPct;
-                    const safe = formData.byoMintAuthorityRenounced && formData.byoFreezeAuthorityRenounced;
+                    const mintSafe = formData.byoMintAuthorityRenounced;
+                    const freezeSafe = formData.byoFreezeAuthorityRenounced;
+                    const warnings: string[] = [];
+                    if (!mintSafe) warnings.push('Mint authority is active — supply can be inflated');
+                    if (!freezeSafe) warnings.push('Freeze authority is active — accounts can be frozen');
                     return (
                       <div className="mt-2">
-                        <div className={`text-xs ${safe ? 'text-[var(--money-green)]' : 'text-[var(--hazard-red)]'}`}>
-                          Token Safety: {safe ? '✓' : `✗ ${!formData.byoMintAuthorityRenounced ? 'Mint authority not renounced' : 'Freeze authority not renounced'}`}
-                        </div>
+                        {warnings.length > 0 ? (
+                          <div className="text-xs text-yellow-400 space-y-0.5">
+                            {warnings.map((w, i) => <div key={i}>⚠ {w}</div>)}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-[var(--money-green)]">Token Safety: ✓ Authorities renounced</div>
+                        )}
                         <div className={`text-xs ${meetsMin ? 'text-[var(--money-green)]' : 'text-[var(--money-green)]'}`}>
                           {pct.toFixed(2)}% of total supply {meetsMin ? '✓' : `(minimum ${byoMinSupplyPct}% required)`}
                         </div>
@@ -816,7 +822,6 @@ export default function MintPage() {
               <div className="alert info">
                 <p className="text-sm">
                   🔗 Your existing token will be deposited into the liquidity pool. You must hold at least {byoMinSupplyPct}% of the total supply.
-                  No transfer fee — BYO tokens use standard SPL transfers.
                 </p>
               </div>
             </div>

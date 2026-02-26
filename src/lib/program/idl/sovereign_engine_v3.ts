@@ -2410,11 +2410,19 @@ export type SovereignEngineV3 = {
             "type": "bool"
           },
           {
+            "name": "pendingBinFees",
+            "docs": [
+              "Bin fees buffered when total_eligible_weight == 0.",
+              "Flushed into the accumulator on the next swap where weight > 0."
+            ],
+            "type": "u64"
+          },
+          {
             "name": "padding",
             "type": {
               "array": [
                 "u8",
-                23
+                15
               ]
             }
           }
