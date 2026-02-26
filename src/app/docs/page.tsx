@@ -28,13 +28,13 @@ export default function DocsPage() {
 
   // Derive all fee values from on-chain state
   const fees = useMemo(() => {
-    const creationFeeBps = protocolState?.creationFeeBps ?? 50;
+    const creationFeeBps = protocolState?.creationFeeBps ?? 100;
     const unwindFeeBps = protocolState?.unwindFeeBps ?? 2000;
     const proposalFeeLamports = protocolState?.governanceUnwindFeeLamports ?? '50000000';
     // Protocol default swap fee (post-recovery), fallback 30 bps (0.30%)
     const defaultSwapBps = protocolState?.defaultSwapFeeBps || 30;
     // Engine pool fee splits (on-chain)
-    const creatorShareBps = enginePool?.creatorFeeShareBps ?? 2000;  // 20%
+    const creatorShareBps = enginePool?.creatorFeeShareBps ?? 5000;  // 50%
     const binShareBps = enginePool?.binFeeShareBps ?? 3000;          // 30%
     const lpShareBps = 10000 - creatorShareBps;                      // remainder after bin share
     // Effective percentages of total swap fees

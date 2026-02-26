@@ -1,5 +1,5 @@
 {
-  "address": "2LPPAG7UhVop1RiRBh8oZtjzMoJ9St9WV4nY7JwmoNbA",
+  "address": "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
   "metadata": {
     "name": "sovereign_liquidity",
     "version": "1.0.0-beta.1",
@@ -1415,6 +1415,35 @@
             "Validated against the hardcoded TREASURY constant."
           ],
           "writable": true
+        },
+        {
+          "name": "sol_vault",
+          "docs": [
+            "Refunded to creator on failed bond, sent to treasury on successful finalize."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
         },
         {
           "name": "token_mint",
@@ -3277,6 +3306,10 @@
             "The sovereign-engine-v3 program"
           ],
           "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt"
+        },
+        {
+          "name": "treasury",
+          "writable": true
         },
         {
           "name": "token_program"
@@ -5908,6 +5941,59 @@
       ]
     },
     {
+      "name": "update_treasury",
+      "docs": [
+        "Update protocol treasury address"
+      ],
+      "discriminator": [
+        60,
+        16,
+        243,
+        66,
+        96,
+        59,
+        254,
+        131
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "new_treasury"
+        },
+        {
+          "name": "protocol_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "vote",
       "docs": [
         "Vote on an unwind proposal"
@@ -6989,6 +7075,19 @@
         201,
         3,
         13
+      ]
+    },
+    {
+      "name": "TreasuryUpdated",
+      "discriminator": [
+        80,
+        239,
+        54,
+        168,
+        43,
+        38,
+        85,
+        145
       ]
     },
     {
@@ -10079,6 +10178,26 @@
           {
             "name": "gor_received",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TreasuryUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "old_treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "updated_by",
+            "type": "pubkey"
           }
         ]
       }

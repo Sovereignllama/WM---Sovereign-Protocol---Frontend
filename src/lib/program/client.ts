@@ -318,6 +318,7 @@ export async function buildCreateSovereignTx(
   const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
   const [creatorTrackerPDA] = getCreatorTrackerPDA(sovereignPDA, program.programId);
   const [tokenVaultPDA] = getTokenVaultPDA(sovereignPDA, program.programId);
+  const [solVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
   
   // Treasury from on-chain protocol state (already fetched above)
   const treasury: PublicKey = protocolState.treasury;
@@ -354,6 +355,7 @@ export async function buildCreateSovereignTx(
     sovereign: sovereignPDA,
     creatorTracker: creatorTrackerPDA,
     treasury,
+    solVault: solVaultPDA,
     tokenMint: params.existingMint || null,
     creatorTokenAccount: params.existingMint 
       ? getAssociatedTokenAddressSync(
@@ -581,8 +583,11 @@ export async function buildFinalizeEnginePoolTx(
   // ~890,880 lamports. Prepend a small SOL transfer to cover the gap.
   const solVaultBalance = await program.provider.connection.getBalance(solVaultPDA);
   const rentExempt = await program.provider.connection.getMinimumBalanceForRentExemption(0);
+  // Vault must cover: creation_fee_escrowed (sent to treasury first) + total_deposited + creator_escrow
+  const creationFeeEscrowed = new BN(sovereignAccount.creationFeeEscrowed?.toString() || '0');
   const totalNeeded = new BN(sovereignAccount.totalDeposited.toString())
     .add(new BN(creatorEscrow.toString()))
+    .add(creationFeeEscrowed)
     .toNumber();
   const available = solVaultBalance - rentExempt;
   const preInstructions: any[] = [prepareBinArrayIx];
@@ -619,10 +624,15 @@ export async function buildFinalizeEnginePoolTx(
     );
   }
 
+  // Fetch protocol state for treasury address
+  const protocolState = await fetchProtocolState(program);
+  const treasury: PublicKey = protocolState.treasury;
+
   const accounts: Record<string, PublicKey | null> = {
     payer,
     protocolState: protocolStatePDA,
     sovereign: sovereignPDA,
+    treasury,
     enginePool: enginePoolPDA,
     binArray: binArrayPDA,
     tokenMint,

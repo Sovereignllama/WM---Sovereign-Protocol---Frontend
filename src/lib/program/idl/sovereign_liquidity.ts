@@ -1423,6 +1423,35 @@ export type SovereignLiquidity = {
           "writable": true
         },
         {
+          "name": "solVault",
+          "docs": [
+            "Refunded to creator on failed bond, sent to treasury on successful finalize."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
           "name": "tokenMint",
           "docs": [
             "Token mint - for BYO this is the existing token (SPL Token or Token-2022)",
@@ -3283,6 +3312,10 @@ export type SovereignLiquidity = {
             "The sovereign-engine-v3 program"
           ],
           "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt"
+        },
+        {
+          "name": "treasury",
+          "writable": true
         },
         {
           "name": "tokenProgram"
@@ -5914,6 +5947,59 @@ export type SovereignLiquidity = {
       ]
     },
     {
+      "name": "updateTreasury",
+      "docs": [
+        "Update protocol treasury address"
+      ],
+      "discriminator": [
+        60,
+        16,
+        243,
+        66,
+        96,
+        59,
+        254,
+        131
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "newTreasury"
+        },
+        {
+          "name": "protocolState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "vote",
       "docs": [
         "Vote on an unwind proposal"
@@ -6995,6 +7081,19 @@ export type SovereignLiquidity = {
         201,
         3,
         13
+      ]
+    },
+    {
+      "name": "treasuryUpdated",
+      "discriminator": [
+        80,
+        239,
+        54,
+        168,
+        43,
+        38,
+        85,
+        145
       ]
     },
     {
@@ -10085,6 +10184,26 @@ export type SovereignLiquidity = {
           {
             "name": "gorReceived",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "treasuryUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "oldTreasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "newTreasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "updatedBy",
+            "type": "pubkey"
           }
         ]
       }
