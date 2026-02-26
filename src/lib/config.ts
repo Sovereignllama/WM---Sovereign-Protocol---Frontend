@@ -1,6 +1,7 @@
 // Application configuration
 export const config = {
   rpcUrl: process.env.NEXT_PUBLIC_GORBAGANA_RPC_URL || 'https://rpc.trashscan.io',
+  backupRpcUrl: process.env.NEXT_PUBLIC_BACKUP_RPC_URL || 'https://rpc.trashscan.io',
   network: process.env.NEXT_PUBLIC_NETWORK || 'mainnet-beta',
   programId: process.env.NEXT_PUBLIC_PROGRAM_ID || '2LPPAG7UhVop1RiRBh8oZtjzMoJ9St9WV4nY7JwmoNbA',
   engineProgramId: process.env.NEXT_PUBLIC_ENGINE_PROGRAM_ID || 'Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt',

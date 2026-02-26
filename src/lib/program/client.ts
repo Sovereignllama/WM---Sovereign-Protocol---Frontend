@@ -62,10 +62,35 @@ function engineFromMain(mainProgram: SovereignLiquidityProgram): SovereignEngine
 }
 
 /**
- * Get a read-only connection for fetching data
+ * Get a read-only connection for fetching data.
+ * Uses primary RPC (proxy) with trashscan as fallback.
  */
+let _connectionInstance: Connection | null = null;
+let _usingBackup = false;
+
 export function getConnection(): Connection {
-  return new Connection(config.rpcUrl, 'confirmed');
+  if (!_connectionInstance || _usingBackup) {
+    _connectionInstance = new Connection(config.rpcUrl, 'confirmed');
+    _usingBackup = false;
+  }
+  return _connectionInstance;
+}
+
+export function getBackupConnection(): Connection {
+  return new Connection(config.backupRpcUrl, 'confirmed');
+}
+
+/**
+ * Execute an RPC call with automatic fallback to backup RPC.
+ */
+export async function withFallback<T>(fn: (conn: Connection) => Promise<T>): Promise<T> {
+  try {
+    return await fn(getConnection());
+  } catch (err) {
+    console.warn('[RPC] Primary failed, falling back to backup:', (err as Error).message);
+    _usingBackup = true;
+    return await fn(getBackupConnection());
+  }
 }
 
 /**

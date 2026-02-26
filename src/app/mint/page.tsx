@@ -8,7 +8,7 @@ import { PROTOCOL_CONSTANTS, LAMPORTS_PER_GOR } from '@/lib/config';
 import { useProtocolState } from '@/hooks/useSovereign';
 import { useCreateSovereign, type CreationProgress } from '@/hooks/useTransactions';
 import { useRouter } from 'next/navigation';
-import { createTokenMetadata, isPinataConfigured } from '@/lib/upload';
+import { createTokenMetadata, createUploadAuth, isPinataConfigured } from '@/lib/upload';
 import { PublicKey } from '@solana/web3.js';
 import { getMint, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 import Link from 'next/link';
@@ -84,7 +84,7 @@ const defaultFormData: FormData = {
 
 export default function MintPage() {
   const router = useRouter();
-  const { connected } = useWallet();
+  const { connected, publicKey, signMessage } = useWallet();
   const { connection } = useConnection();
   const { data: protocolState, isLoading: protocolLoading } = useProtocolState();
   const [step, setStep] = useState<Step>(1);
@@ -308,13 +308,21 @@ export default function MintPage() {
         setIsUploadingImage(true);
         setError(null);
 
+        if (!publicKey || !signMessage) {
+          throw new Error('Wallet must support message signing for image upload.');
+        }
+
+        // Sign upload auth once for both image + metadata uploads
+        const uploadAuth = await createUploadAuth(publicKey.toBase58(), signMessage);
+
         let metadataUri: string;
         try {
           metadataUri = await createTokenMetadata(
             formData.tokenName,
             formData.tokenSymbol,
             formData.tokenImage,
-            formData.tokenDescription || undefined
+            formData.tokenDescription || undefined,
+            uploadAuth
           );
           console.log('Metadata URI:', metadataUri);
         } finally {
