@@ -12,6 +12,10 @@ import { BetaDisclaimer } from '@/components/BetaDisclaimer';
 export const metadata: Metadata = {
   title: config.appName,
   description: 'Launch tokens with recovery-first liquidity bootstrapping',
+  icons: {
+    icon: '/favicon.png',
+    apple: '/favicon.png',
+  },
   openGraph: {
     title: 'Sovereign Protocol',
     description: 'Launch tokens with recovery-first liquidity bootstrapping',

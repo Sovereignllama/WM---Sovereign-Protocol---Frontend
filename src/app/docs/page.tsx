@@ -35,7 +35,7 @@ export default function DocsPage() {
     const defaultSwapBps = protocolState?.defaultSwapFeeBps || 30;
     // Engine pool fee splits (on-chain)
     const creatorShareBps = enginePool?.creatorFeeShareBps ?? 5000;  // 50%
-    const binShareBps = enginePool?.binFeeShareBps ?? 3000;          // 30%
+    const binShareBps = enginePool?.binFeeShareBps ?? 0;             // 0% (engine default)
     const lpShareBps = 10000 - creatorShareBps;                      // remainder after bin share
     // Effective percentages of total swap fees
     const remainderPct = (10000 - binShareBps) / 100; // e.g. 70%
@@ -45,6 +45,7 @@ export default function DocsPage() {
     const nftMintFeeBps = protocolState?.nftMintFeeBps ?? 500;
     const observationPeriodSecs = Number(protocolState?.observationPeriod ?? 7_776_000);
     const observationDays = Math.round(observationPeriodSecs / 86400);
+    const volumeThresholdBps = protocolState?.minFeeGrowthThreshold ?? 125;
 
     return {
       creationFee: (creationFeeBps / 100).toFixed(2),
@@ -55,6 +56,7 @@ export default function DocsPage() {
       unwindFee: (unwindFeeBps / 100).toFixed(0),
       proposalFee: (Number(proposalFeeLamports) / LAMPORTS_PER_GOR).toFixed(2),
       nftMintFee: (nftMintFeeBps / 100).toFixed(0),
+      volumeThreshold: (volumeThresholdBps / 100).toFixed(2),
       observationDays,
     };
   }, [protocolState, enginePool]);
@@ -93,7 +95,7 @@ export default function DocsPage() {
         <div className="card mb-8" style={{ background: 'rgba(242, 183, 5, 0.05)', borderColor: 'rgba(242, 183, 5, 0.3)' }}>
           <h2 className="h3 mb-2" style={{ color: 'var(--money-green)' }}>Current Protocol Fees</h2>
           <p className="text-xs text-[var(--muted)] mb-4">Live from on-chain protocol state</p>
-          <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-4">
+          <div className="grid grid-cols-3 md:grid-cols-5 gap-4">
             <div className="text-center">
               <div className="text-xl font-black" style={{ color: 'var(--text-light)' }}>
                 {protocolLoading ? '...' : `${fees.creationFee}%`}
@@ -143,6 +145,12 @@ export default function DocsPage() {
                 {protocolLoading ? '...' : `${fees.proposalFee} GOR`}
               </div>
               <div className="text-xs text-[var(--muted)] mt-1">Proposal Fee</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black" style={{ color: 'var(--text-light)' }}>
+                {protocolLoading ? '...' : `${fees.volumeThreshold}%`}
+              </div>
+              <div className="text-xs text-[var(--muted)] mt-1">Volume Threshold</div>
             </div>
             <div className="text-center">
               <div className="text-xl font-black" style={{ color: '#00c8ff' }}>
