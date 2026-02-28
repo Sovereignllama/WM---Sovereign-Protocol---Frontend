@@ -37,7 +37,7 @@ export type ProtocolStateAccount = {
   governanceQuorumBps: number;
   governancePassThresholdBps: number;
   discussionPeriod: BN;
-  keeper: PublicKey;
+  padKeeper: number[];
   pendingAuthority: PublicKey;
   defaultSwapFeeBps: number;
   collectionMint: PublicKey;

@@ -42,6 +42,10 @@ export default function DocsPage() {
     const lpEffective = (lpShareBps / 10000) * remainderPct; // e.g. 80% of 70% = 56%
     const creatorEffective = (creatorShareBps / 10000) * remainderPct; // e.g. 20% of 70% = 14%
 
+    const nftMintFeeBps = protocolState?.nftMintFeeBps ?? 500;
+    const observationPeriodSecs = Number(protocolState?.observationPeriod ?? 7_776_000);
+    const observationDays = Math.round(observationPeriodSecs / 86400);
+
     return {
       creationFee: (creationFeeBps / 100).toFixed(2),
       activeSwapFee: (defaultSwapBps / 100).toFixed(2),
@@ -50,6 +54,8 @@ export default function DocsPage() {
       binPortion: (binShareBps / 100).toFixed(0),
       unwindFee: (unwindFeeBps / 100).toFixed(0),
       proposalFee: (Number(proposalFeeLamports) / LAMPORTS_PER_GOR).toFixed(2),
+      nftMintFee: (nftMintFeeBps / 100).toFixed(0),
+      observationDays,
     };
   }, [protocolState, enginePool]);
   return (
@@ -78,7 +84,7 @@ export default function DocsPage() {
             <li><a href="#lifecycle" className="hover:text-[var(--money-green)]">→ The $overeign Lifecycle</a></li>
             <li><a href="#fees" className="hover:text-[var(--money-green)]">→ Current Fees & Revenues</a></li>
             <li><a href="#governance" className="hover:text-[var(--money-green)]">→ Governance</a></li>
-            <li><a href="#dead-pool" className="hover:text-[var(--money-green)]">→ Dead Pool — Failed Project Protection</a></li>
+            <li><a href="#lp-recovery" className="hover:text-[var(--money-green)]">→ LP Recovery</a></li>
             <li><a href="#genesis-nft" className="hover:text-[var(--money-green)]">→ $overeign NFTs</a></li>
           </ul>
         </div>
@@ -87,7 +93,7 @@ export default function DocsPage() {
         <div className="card mb-8" style={{ background: 'rgba(242, 183, 5, 0.05)', borderColor: 'rgba(242, 183, 5, 0.3)' }}>
           <h2 className="h3 mb-2" style={{ color: 'var(--money-green)' }}>Current Protocol Fees</h2>
           <p className="text-xs text-[var(--muted)] mb-4">Live from on-chain protocol state</p>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-4">
             <div className="text-center">
               <div className="text-xl font-black" style={{ color: 'var(--text-light)' }}>
                 {protocolLoading ? '...' : `${fees.creationFee}%`}
@@ -125,6 +131,24 @@ export default function DocsPage() {
                 {protocolLoading ? '...' : `${fees.unwindFee}%`}
               </div>
               <div className="text-xs text-[var(--muted)] mt-1">Unwind Fee</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black" style={{ color: 'var(--text-light)' }}>
+                {protocolLoading ? '...' : `${fees.nftMintFee}%`}
+              </div>
+              <div className="text-xs text-[var(--muted)] mt-1">NFT Mint Fee</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black" style={{ color: 'var(--hazard-orange)' }}>
+                {protocolLoading ? '...' : `${fees.proposalFee} GOR`}
+              </div>
+              <div className="text-xs text-[var(--muted)] mt-1">Proposal Fee</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-black" style={{ color: '#00c8ff' }}>
+                {protocolLoading ? '...' : `${fees.observationDays}d`}
+              </div>
+              <div className="text-xs text-[var(--muted)] mt-1">Observation Period</div>
             </div>
           </div>
         </div>
@@ -297,7 +321,7 @@ export default function DocsPage() {
             <div className="card border-l-4" style={{ borderLeftColor: 'var(--money-green)' }}>
               <h3 className="h3 mb-2" style={{ color: 'var(--text-light)' }}>1. Bonding Phase</h3>
               <p className="text-[var(--muted)]">
-                The creator sets a GOR bond target (minimum set by protocol governance) and a duration (7-30 days).
+                The creator sets a GOR bond target (minimum set by protocol governance) and a duration (7 or 14 days).
                 Liquidity Providers deposit GOR to fund the liquidity pool. If the target is met, the $overeign
                 proceeds to finalization. If not, all depositors get a full refund — no risk.
               </p>
@@ -307,10 +331,9 @@ export default function DocsPage() {
               <h3 className="h3 mb-2" style={{ color: 'var(--text-light)' }}>2. Recovery Phase</h3>
               <p className="text-[var(--muted)]">
                 Once bonding completes, the SLAMM engine creates the liquidity pool and trading begins.
-                Liquidity Providers receive <strong style={{ color: 'var(--money-green)' }}>$overeign NFTs</strong> representing
-                their share. During recovery, <strong style={{ color: 'var(--profit)' }}>100% of all trading fees
-                flow to $overeign NFT holders</strong> until they've recovered their original GOR deposit.
-                The creator earns zero fees during this phase.
+                During recovery, <strong style={{ color: 'var(--profit)' }}>100% of all trading fees
+                flow to Liquidity Providers</strong> proportional to their deposit until they&apos;ve recovered their
+                original GOR. The creator earns zero fees during this phase.
               </p>
             </div>
 
@@ -362,17 +385,22 @@ export default function DocsPage() {
                   <tr className="border-b border-[var(--border)]">
                     <td className="py-3 font-bold">Creation Fee</td>
                     <td className="py-3">{fees.creationFee}% (up to 10%)</td>
-                    <td className="py-3 text-[var(--muted)]">Of bond target — paid to protocol treasury at creation (non-refundable)</td>
+                    <td className="py-3 text-[var(--muted)]">Of bond target — minimum 50 GOR goes to protocol treasury immediately; remainder is escrowed and fully refunded if bonding fails</td>
                   </tr>
                   <tr className="border-b border-[var(--border)]">
                     <td className="py-3 font-bold">Governance Unwind Fee</td>
                     <td className="py-3">{fees.proposalFee} GOR</td>
                     <td className="py-3 text-[var(--muted)]">Fee to create an unwind proposal (available during Recovery or Active phase)</td>
                   </tr>
-                  <tr>
+                  <tr className="border-b border-[var(--border)]">
                     <td className="py-3 font-bold">Unwind Fee</td>
                     <td className="py-3">5% - 20%</td>
                     <td className="py-3 text-[var(--muted)]">Taken from GOR returned during governance unwind</td>
+                  </tr>
+                  <tr>
+                    <td className="py-3 font-bold">NFT Mint Fee</td>
+                    <td className="py-3">{fees.nftMintFee}% (max 25%)</td>
+                    <td className="py-3 text-[var(--muted)]">Charged from the holder&apos;s wallet when minting a $overeign NFT from a deposit position — paid to the protocol treasury</td>
                   </tr>
                 </tbody>
               </table>
@@ -433,12 +461,12 @@ export default function DocsPage() {
             </div>
 
             <div className="card border-l-4" style={{ borderLeftColor: 'var(--profit)' }}>
-              <h3 className="h3 mb-3" style={{ color: 'var(--profit)' }}>Liquidity Provider Controls (via $overeign NFT)</h3>
+              <h3 className="h3 mb-3" style={{ color: 'var(--profit)' }}>Liquidity Provider Controls (via Deposit Position)</h3>
               <ul className="space-y-2 ml-4 text-[var(--muted)]">
                 <li>&bull; <strong>Claim fees</strong> &mdash; claim your proportional share of accumulated trading fees on-chain</li>
-                <li>&bull; <strong>Vote on proposals</strong> &mdash; each $overeign NFT carries one vote, weighted by deposit amount</li>
-                <li>&bull; <strong>Propose unwind</strong> &mdash; any NFT holder can propose an unwind vote for their $overeign</li>
-                <li>&bull; <strong>Transfer position</strong> &mdash; sell or transfer your $overeign NFT (governance rights transfer with it)</li>
+                <li>&bull; <strong>Vote on proposals</strong> &mdash; each deposit position carries voting weight proportional to your GOR contribution</li>
+                <li>&bull; <strong>Propose unwind</strong> &mdash; any Liquidity Provider with an active deposit position can propose an unwind vote</li>
+                <li>&bull; <strong>Mint $overeign NFT</strong> &mdash; convert part or all of your deposit into a tradeable NFT on the LP Marketplace</li>
               </ul>
             </div>
 
@@ -454,7 +482,7 @@ export default function DocsPage() {
 
             <div className="card mt-4" style={{ background: 'rgba(242, 183, 5, 0.1)', borderColor: 'rgba(242, 183, 5, 0.3)' }}>
               <p className="text-sm">
-                <strong>Voting rules:</strong> Only $overeign NFT holders can vote &mdash; creators cannot participate.
+                <strong>Voting rules:</strong> Only Liquidity Providers with an active deposit position can vote &mdash; creators cannot participate.
                 67% quorum required with 51% approval to pass. If the vote passes, an observation period begins
                 (default 90 days) during which trading continues. If fee growth stays below the threshold during
                 observation, the unwind can be executed.
@@ -463,43 +491,92 @@ export default function DocsPage() {
           </div>
         </section>
 
-        {/* Auto-Unwind */}
-        <section id="dead-pool" className="mb-10">
-          <h2 className="h2 mb-4" style={{ color: 'var(--money-green)' }}>Failed Project Protection</h2>
+        {/* LP Recovery */}
+        <section id="lp-recovery" className="mb-10">
+          <h2 className="h2 mb-4" style={{ color: 'var(--money-green)' }}>LP Recovery</h2>
           <div className="space-y-4 text-[var(--text-light)]">
             <p>
-              While permanently locked liquidity gives creators peace of mind, Liquidity Providers
-              need an exit path if a project fails to gain traction. $overeign Protocol solves this
-              with a novel <strong>Dead Pool</strong> mechanism:
+              Permanently locked liquidity protects token holders from rug-pulls, but Liquidity Providers
+              need an exit path if a project fails to gain traction. The protocol provides a structured
+              governance process to recover capital from underperforming $overeigns.
             </p>
-            <ul className="space-y-2 ml-4">
-              <li>• Each pool has a <strong>minimum volume threshold</strong> measured over an observation period (30-365 days, default 90)</li>
-              <li>• If trading activity falls below this threshold, the pool becomes <strong>eligible for governance unwind</strong></li>
-              <li>• Liquidity Providers can then vote to unlock the pool and recover their capital</li>
-              <li>• Creators cannot vote — only LPs who deposited GOR participate in the governance process</li>
-              <li>• This ensures LPs are never permanently stuck in dead projects while still giving active projects the stability of locked liquidity</li>
-            </ul>
+
+            <div className="space-y-3">
+              <div className="card border-l-4" style={{ borderLeftColor: 'var(--money-green)' }}>
+                <h3 className="h3 mb-1" style={{ color: 'var(--text-light)' }}>1. Propose Unwind</h3>
+                <p className="text-[var(--muted)] text-sm">
+                  Any Liquidity Provider with an active deposit position can submit an unwind proposal
+                  by paying a {fees.proposalFee} GOR proposal fee. This signals intent to recover capital
+                  and opens the process for community deliberation.
+                </p>
+              </div>
+
+              <div className="card border-l-4" style={{ borderLeftColor: 'var(--profit)' }}>
+                <h3 className="h3 mb-1" style={{ color: 'var(--text-light)' }}>2. Discussion Period (3 days)</h3>
+                <p className="text-[var(--muted)] text-sm">
+                  A grace period gives the creator time to address concerns, engage with the community,
+                  or take action before voting begins. No votes can be cast during this window.
+                </p>
+              </div>
+
+              <div className="card border-l-4" style={{ borderLeftColor: '#00c8ff' }}>
+                <h3 className="h3 mb-1" style={{ color: 'var(--text-light)' }}>3. Voting Period (7 days)</h3>
+                <p className="text-[var(--muted)] text-sm">
+                  Liquidity Providers vote for or against the unwind, weighted by their deposit position.
+                  Creators cannot vote. Requires 67% quorum and 51% approval to pass.
+                </p>
+              </div>
+
+              <div className="card border-l-4" style={{ borderLeftColor: 'var(--hazard-orange)' }}>
+                <h3 className="h3 mb-1" style={{ color: 'var(--text-light)' }}>4. Observation Period (90 days)</h3>
+                <p className="text-[var(--muted)] text-sm">
+                  If the vote passes, the protocol snapshots engine fee counters and begins a 90-day observation
+                  window. Trading continues normally. If fee growth remains below the minimum threshold during
+                  this period, the unwind remains valid.
+                </p>
+              </div>
+
+              <div className="card border-l-4" style={{ borderLeftColor: 'var(--loss)' }}>
+                <h3 className="h3 mb-1" style={{ color: 'var(--text-light)' }}>5. Execute &amp; Claim</h3>
+                <p className="text-[var(--muted)] text-sm">
+                  Once the observation period elapses, the SLAMM pool is drained and GOR is returned to the
+                  protocol vault. Each Liquidity Provider can then claim their proportional share of GOR,
+                  minus the unwind fee ({fees.unwindFee}%).
+                </p>
+              </div>
+            </div>
+
+            <div className="card mt-2" style={{ background: 'rgba(46, 235, 127, 0.05)', borderColor: 'rgba(46, 235, 127, 0.2)' }}>
+              <p className="text-sm text-[var(--muted)]">
+                This process ensures Liquidity Providers are never permanently stuck in dead projects
+                while giving active projects the stability of permanently locked liquidity. The multi-step
+                process with discussion, voting, and observation prevents abuse and gives creators every
+                opportunity to demonstrate value.
+              </p>
+            </div>
           </div>
         </section>
 
-        {/* Genesis NFT */}
+        {/* Sovereign NFTs */}
         <section id="genesis-nft" className="mb-10">
           <h2 className="h2 mb-4" style={{ color: 'var(--money-green)' }}>$overeign NFTs</h2>
           <div className="space-y-4 text-[var(--text-light)]">
             <p>
-              When bonding completes, each Liquidity Provider receives a <strong>$overeign NFT</strong> representing
-              their share of the liquidity position:
+              Liquidity Providers can mint <strong>$overeign NFTs</strong> from their deposit position at any time
+              after bonding completes. NFTs represent a transferable share of the underlying liquidity and can be
+              traded on the <strong>LP Marketplace</strong>.
             </p>
             <ul className="space-y-2 ml-4">
-              <li>• <strong>Tracks your share</strong> — proportional to your GOR deposit</li>
-              <li>• <strong>Earns fees</strong> — claim your portion of trading fees on-chain</li>
-              <li>• <strong>Transferable</strong> — sell or transfer your position</li>
-              <li>• <strong>Governance rights</strong> — vote on unwind proposals (during Recovery or Active phase)</li>
+              <li>• <strong>Mint on demand</strong> — convert part or all of your deposit into an NFT (a {fees.nftMintFee}% mint fee applies)</li>
+              <li>• <strong>Trade on the LP Marketplace</strong> — list, buy, and sell $overeign NFTs peer-to-peer</li>
+              <li>• <strong>Burn to restore position</strong> — burn your NFT back into your deposit record to reclaim governance weight and fee-earning rights</li>
+              <li>• <strong>Represents real liquidity</strong> — each NFT is backed by GOR locked in the protocol</li>
             </ul>
             <div className="card mt-4">
               <p className="text-sm text-[var(--muted)]">
-                <strong>Note:</strong> Creators do NOT receive $overeign NFTs. During recovery, their fee share
-                is locked. After recovery, creators can claim their accumulated share.
+                <strong>Important:</strong> Governance rights (voting, proposing unwinding) remain with the deposit position, not the NFT.
+                To participate in governance after minting, burn the NFT back into your deposit record to restore your voting weight.
+                Creators do NOT receive $overeign NFTs — only Liquidity Providers who deposited GOR.
               </p>
             </div>
           </div>

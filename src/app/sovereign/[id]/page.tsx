@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useSovereign, useDepositRecord, useEnginePool, useProtocolState } from '@/hooks/useSovereign';
-import { useDeposit, useWithdraw, useFinalizeEnginePool } from '@/hooks/useTransactions';
+import { useDeposit, useWithdraw, useFinalizeEnginePool, useWithdrawFailed, useWithdrawCreatorFailed } from '@/hooks/useTransactions';
 import { useProposals } from '@/hooks/useGovernance';
 import { usePoolSnapshot } from '@/hooks/usePoolSnapshot';
 import { useTokenImage } from '@/hooks/useTokenImage';
@@ -26,6 +26,8 @@ export default function SovereignDetailPage() {
   const deposit = useDeposit();
   const withdraw = useWithdraw();
   const finalizeEnginePool = useFinalizeEnginePool();
+  const withdrawFailed = useWithdrawFailed();
+  const withdrawCreatorFailed = useWithdrawCreatorFailed();
 
 
   const { data: imageUrl } = useTokenImage(sovereign?.metadataUri);
@@ -277,19 +279,19 @@ export default function SovereignDetailPage() {
             {/* Key Stats */}
             {isBondingPhase ? (
               <>
-                <div>
+                <div className="text-center">
                   <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mb-0.5">Bond Target</div>
                   <div className="text-sm font-bold text-white">{sovereign.bondTargetGor.toLocaleString()} GOR</div>
                 </div>
-                <div>
+                <div className="text-center">
                   <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mb-0.5">Deposited</div>
                   <div className="text-sm font-bold text-[var(--money-green)]">{sovereign.totalDepositedGor.toLocaleString()} GOR</div>
                 </div>
-                <div>
+                <div className="text-center">
                   <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mb-0.5">Depositors</div>
                   <div className="text-sm font-bold text-white">{sovereign.depositorCount}</div>
                 </div>
-                <div>
+                <div className="text-center">
                   <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mb-0.5">
                     {isBonding ? 'Time Left' : 'Transfer Fee'}
                   </div>
@@ -300,7 +302,7 @@ export default function SovereignDetailPage() {
               </>
             ) : (
               <>
-                <div>
+                <div className="text-center">
                   <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mb-0.5">24h Change</div>
                   <div className={`text-sm font-bold ${
                     poolSnapshot?.priceChange24h && poolSnapshot.priceChange24h > 0
@@ -314,25 +316,25 @@ export default function SovereignDetailPage() {
                       : '—'}
                   </div>
                 </div>
-                <div>
+                <div className="text-center">
                   <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mb-0.5">Price</div>
                   <div className="text-sm font-bold text-[var(--money-green)]">
                     {tokenPriceGor > 0 ? `${tokenPriceGor.toLocaleString(undefined, { maximumFractionDigits: 6 })}` : '—'}
                   </div>
                 </div>
-                <div>
+                <div className="text-center">
                   <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mb-0.5">GOR Reserve</div>
                   <div className="text-sm font-bold text-white">
                     {enginePool ? enginePool.gorReserveGor.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}
                   </div>
                 </div>
-                <div>
+                <div className="text-center">
                   <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mb-0.5">Fees Earned</div>
                   <div className="text-sm font-bold text-[var(--money-green)]">
                     {enginePool ? `${enginePool.totalFeesCollectedGor.toLocaleString(undefined, { maximumFractionDigits: 4 })}` : '—'}
                   </div>
                 </div>
-                <div>
+                <div className="text-center">
                   <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mb-0.5">Spread</div>
                   <div className={`text-sm font-bold ${spreadPct != null && spreadPct < 0 ? 'text-[var(--profit)]' : 'text-white'}`}>
                     {spreadPct != null
@@ -343,14 +345,16 @@ export default function SovereignDetailPage() {
                   </div>
                 </div>
                 {isPostRecovery && enginePool && (
-                  <div>
+                  <div className="text-center">
                     <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mb-0.5">Tokens Circulating</div>
                     <div className="text-sm font-bold text-white">
-                      {enginePool.totalTokensSoldFormatted.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      {Math.round(enginePool.totalTokensSoldFormatted).toLocaleString()}
+                      {' / '}
+                      {Math.round(enginePool.totalTokenSupplyFormatted).toLocaleString()}
                     </div>
                   </div>
                 )}
-                <div>
+                <div className="text-center">
                   <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mb-0.5">Trades</div>
                   <div className="text-sm font-bold text-white">
                     {enginePool ? enginePool.totalTrades.toLocaleString() : '—'}
@@ -360,11 +364,11 @@ export default function SovereignDetailPage() {
             )}
 
             {/* Fees */}
-            <div>
+            <div className="text-center">
               <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mb-0.5">Swap Fee</div>
               <div className="text-sm font-bold text-white">{((enginePool?.swapFeeBps ?? sovereign.swapFeeBps) / 100).toFixed(1)}%</div>
             </div>
-            <div>
+            <div className="text-center">
               <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mb-0.5">Transfer Fee</div>
               <div className="text-sm font-bold text-white">
                 {sovereign.feeControlRenounced ? '0% 🔒' : `${(sovereign.sellFeeBps / 100).toFixed(1)}% ⚙️`}
@@ -401,7 +405,7 @@ export default function SovereignDetailPage() {
           )}
 
           {/* Row 3: Details + Position + Actions (only if has content) */}
-          {(isBondingPhase || sovereign.creatorEscrowGor > 0 || (connected && depositRecord && !isCreator) || (connected && isBonding) || (connected && sovereign.status === 'Finalizing') || (connected && sovereign.status === 'Halted') || !connected) && (
+          {(isBondingPhase || sovereign.creatorEscrowGor > 0 || (connected && depositRecord && !isCreator) || (connected && isBonding) || (connected && sovereign.status === 'Finalizing') || (connected && sovereign.status === 'Halted') || (connected && sovereign.status === 'Failed') || !connected) && (
           <div className="flex flex-wrap items-start gap-x-8 gap-y-3 text-xs border-t border-[var(--border)] pt-3">
             {isBondingPhase && (
               <>
@@ -514,7 +518,15 @@ export default function SovereignDetailPage() {
             )}
 
             {connected && isBonding && bondDeadlinePassed && (
-              <span className="text-[var(--muted)] text-xs">Bonding ended. Awaiting finalization.</span>
+              <>
+                <div className="hidden sm:block w-px self-stretch bg-[var(--border)]" />
+                <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-1.5">
+                  <span className="text-xs text-red-400 font-medium">Bonding failed — deadline passed</span>
+                  <Link href="/governance" className="px-3 py-1 rounded text-xs font-bold bg-red-600 text-white hover:bg-red-700">
+                    Governance →
+                  </Link>
+                </div>
+              </>
             )}
 
             {connected && sovereign.status === 'Finalizing' && (
@@ -543,6 +555,46 @@ export default function SovereignDetailPage() {
                   <Link href="/governance" className="px-3 py-1 rounded text-xs font-bold bg-red-600 text-white hover:bg-red-700">
                     Governance →
                   </Link>
+                </div>
+              </>
+            )}
+
+            {connected && sovereign.status === 'Failed' && (
+              <>
+                <div className="hidden sm:block w-px self-stretch bg-[var(--border)]" />
+                <div className="flex flex-col gap-2 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                  <span className="text-xs text-red-400 font-bold">Bonding Failed — Reclaim your funds</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {depositRecord && depositRecord.amountGor > 0 && !isCreator && (
+                      <button
+                        onClick={async () => {
+                          await withdrawFailed.mutateAsync({ sovereignId });
+                        }}
+                        disabled={withdrawFailed.isPending}
+                        className="px-3 py-1 rounded text-xs font-bold bg-red-600 text-white hover:bg-red-700 disabled:opacity-40"
+                      >
+                        {withdrawFailed.isPending ? 'Reclaiming...' : `Reclaim ${depositRecord.amountGor.toLocaleString()} GOR`}
+                      </button>
+                    )}
+                    {isCreator && (
+                      <button
+                        onClick={async () => {
+                          await withdrawCreatorFailed.mutateAsync({ sovereignId });
+                        }}
+                        disabled={withdrawCreatorFailed.isPending}
+                        className="px-3 py-1 rounded text-xs font-bold bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-40"
+                      >
+                        {withdrawCreatorFailed.isPending ? 'Reclaiming...' : 'Reclaim Escrow & Fees'}
+                      </button>
+                    )}
+                    <Link href="/governance" className="px-3 py-1 rounded text-xs font-bold bg-[var(--card-bg)] text-[var(--muted)] hover:text-white border border-[var(--border)]">
+                      Governance →
+                    </Link>
+                  </div>
+                  {withdrawFailed.error && <span className="text-red-400 text-[10px]">{(withdrawFailed.error as Error).message}</span>}
+                  {withdrawFailed.isSuccess && <span className="text-[var(--slime)] text-[10px]">Deposit reclaimed!</span>}
+                  {withdrawCreatorFailed.error && <span className="text-red-400 text-[10px]">{(withdrawCreatorFailed.error as Error).message}</span>}
+                  {withdrawCreatorFailed.isSuccess && <span className="text-[var(--slime)] text-[10px]">Escrow & fees reclaimed!</span>}
                 </div>
               </>
             )}

@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/sovereign_liquidity.json`.
  */
 export type SovereignLiquidity = {
-  "address": "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
+  "address": "Sovo1wDfYPPJioeDmpokFehhiWTANgfGaK3qKp84hYc",
   "metadata": {
     "name": "sovereignLiquidity",
     "version": "1.0.0-beta.1",
@@ -57,6 +57,95 @@ export type SovereignLiquidity = {
                   116,
                   101
                 ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "activatePosition",
+      "docs": [
+        "Activate position_bps on a DepositRecord (permissionless).",
+        "Must be called after bonding completes before governance or claims."
+      ],
+      "discriminator": [
+        205,
+        184,
+        109,
+        67,
+        222,
+        37,
+        166,
+        206
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Anyone can crank this — permissionless"
+          ],
+          "signer": true
+        },
+        {
+          "name": "sovereign",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  111,
+                  118,
+                  101,
+                  114,
+                  101,
+                  105,
+                  103,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign.sovereign_id",
+                "account": "sovereignState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "depositRecord",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  95,
+                  114,
+                  101,
+                  99,
+                  111,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              },
+              {
+                "kind": "account",
+                "path": "deposit_record.depositor",
+                "account": "depositRecord"
               }
             ]
           }
@@ -716,8 +805,9 @@ export type SovereignLiquidity = {
         {
           "name": "tokenMint",
           "docs": [
-            "Token mint — for transfer_checked"
-          ]
+            "Token mint — for transfer_checked (mut: set_transfer_fee writes to mint)"
+          ],
+          "writable": true
         },
         {
           "name": "creatorTokenAccount",
@@ -857,7 +947,7 @@ export type SovereignLiquidity = {
           "docs": [
             "The sovereign-engine program"
           ],
-          "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt"
+          "address": "SovTXTTvFW3KDxaxBQ5jwL2wTzPQtdXBbwDr3PJgpmy"
         },
         {
           "name": "protocolState",
@@ -2259,7 +2349,7 @@ export type SovereignLiquidity = {
           "docs": [
             "The sovereign-engine-v3 program"
           ],
-          "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt"
+          "address": "SovTXTTvFW3KDxaxBQ5jwL2wTzPQtdXBbwDr3PJgpmy"
         },
         {
           "name": "tokenProgram"
@@ -2881,7 +2971,7 @@ export type SovereignLiquidity = {
           "docs": [
             "The sovereign-engine-v3 program"
           ],
-          "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt"
+          "address": "SovTXTTvFW3KDxaxBQ5jwL2wTzPQtdXBbwDr3PJgpmy"
         },
         {
           "name": "tokenProgram"
@@ -3311,7 +3401,7 @@ export type SovereignLiquidity = {
           "docs": [
             "The sovereign-engine-v3 program"
           ],
-          "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt"
+          "address": "SovTXTTvFW3KDxaxBQ5jwL2wTzPQtdXBbwDr3PJgpmy"
         },
         {
           "name": "treasury",
@@ -5534,7 +5624,7 @@ export type SovereignLiquidity = {
           "docs": [
             "The sovereign-engine-v3 program (needed for fee-snap CPI)"
           ],
-          "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt"
+          "address": "SovTXTTvFW3KDxaxBQ5jwL2wTzPQtdXBbwDr3PJgpmy"
         }
       ],
       "args": []
@@ -5721,7 +5811,7 @@ export type SovereignLiquidity = {
           "docs": [
             "The sovereign-engine-v3 program"
           ],
-          "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt"
+          "address": "SovTXTTvFW3KDxaxBQ5jwL2wTzPQtdXBbwDr3PJgpmy"
         }
       ],
       "args": [
@@ -7444,156 +7534,171 @@ export type SovereignLiquidity = {
     },
     {
       "code": 6061,
+      "name": "positionNotActivated",
+      "msg": "Position not activated — call activate_position first"
+    },
+    {
+      "code": 6062,
       "name": "divisionByZero",
       "msg": "Division by zero"
     },
     {
-      "code": 6062,
+      "code": 6063,
       "name": "noDeposits",
       "msg": "No deposits in the sovereign"
     },
     {
-      "code": 6063,
+      "code": 6064,
+      "name": "payoutTooSmall",
+      "msg": "Payout rounds to zero — increase token amount"
+    },
+    {
+      "code": 6065,
       "name": "protocolPaused",
       "msg": "Protocol is currently paused"
     },
     {
-      "code": 6064,
+      "code": 6066,
       "name": "activityCheckCooldownNotElapsed",
       "msg": "Activity check cooldown has not elapsed (7 days required)"
     },
     {
-      "code": 6065,
+      "code": 6067,
       "name": "alreadyHalted",
       "msg": "Sovereign is already halted"
     },
     {
-      "code": 6066,
+      "code": 6068,
       "name": "noRedemptionPool",
       "msg": "No surplus GOR available for token redemption"
     },
     {
-      "code": 6067,
+      "code": 6069,
       "name": "noCirculatingTokens",
       "msg": "No circulating tokens to redeem against"
     },
     {
-      "code": 6068,
+      "code": 6070,
       "name": "redemptionWindowExpired",
       "msg": "Token redemption window has expired"
     },
     {
-      "code": 6069,
+      "code": 6071,
       "name": "redemptionWindowNotExpired",
       "msg": "Token redemption window has not expired yet"
     },
     {
-      "code": 6070,
+      "code": 6072,
       "name": "insufficientAccounts",
       "msg": "Insufficient remaining accounts provided"
     },
     {
-      "code": 6071,
+      "code": 6073,
       "name": "noPendingAuthorityTransfer",
       "msg": "No pending authority transfer"
     },
     {
-      "code": 6072,
+      "code": 6074,
       "name": "invalidTokenProgram",
       "msg": "Invalid token program - must be SPL Token or Token-2022"
     },
     {
-      "code": 6073,
+      "code": 6075,
       "name": "swapFeeOutOfRange",
       "msg": "Swap fee must be between 100 and 300 bps (1% - 3%)"
     },
     {
-      "code": 6074,
+      "code": 6076,
       "name": "alreadyInitialized",
       "msg": "Already initialized"
     },
     {
-      "code": 6075,
+      "code": 6077,
       "name": "nftAlreadyListed",
       "msg": "NFT is already listed for sale"
     },
     {
-      "code": 6076,
+      "code": 6078,
       "name": "nftNotListed",
       "msg": "NFT is not listed for sale"
     },
     {
-      "code": 6077,
+      "code": 6079,
       "name": "listingPriceTooLow",
       "msg": "Listing price must be above minimum (0.01 SOL)"
     },
     {
-      "code": 6078,
+      "code": 6080,
       "name": "buyerIsSeller",
       "msg": "Buyer cannot be the seller"
     },
     {
-      "code": 6079,
+      "code": 6081,
       "name": "notNftOwner",
       "msg": "Caller does not own this NFT"
     },
     {
-      "code": 6080,
+      "code": 6082,
       "name": "nftIsListed",
       "msg": "NFT is currently listed — delist before burning"
     },
     {
-      "code": 6081,
+      "code": 6083,
       "name": "invalidNftBalance",
       "msg": "NFT token account balance is not 1"
     },
     {
-      "code": 6082,
+      "code": 6084,
       "name": "insufficientPositionBalance",
       "msg": "Insufficient deposit record balance for this mint"
     },
     {
-      "code": 6083,
+      "code": 6085,
       "name": "nftBackingTooSmall",
       "msg": "NFT backing amount below minimum"
     },
     {
-      "code": 6084,
+      "code": 6086,
       "name": "voteLockActive",
       "msg": "Mint/burn/list blocked during active governance proposal"
     },
     {
-      "code": 6085,
+      "code": 6087,
       "name": "nftMintFeeTooHigh",
       "msg": "Mint fee exceeds maximum (25%)"
     },
     {
-      "code": 6086,
+      "code": 6088,
       "name": "positionBpsNotSet",
       "msg": "Position BPS must be set before minting (call after bonding completes)"
     },
     {
-      "code": 6087,
+      "code": 6089,
       "name": "nftPositionSovereignMismatch",
       "msg": "NftPosition sovereign does not match"
     },
     {
-      "code": 6088,
+      "code": 6090,
       "name": "sovereignMismatch",
       "msg": "Sovereign account does not match the listing"
     },
     {
-      "code": 6089,
+      "code": 6091,
       "name": "listingNotExpired",
       "msg": "Listing has not expired and sovereign is not in a terminal state"
     },
     {
-      "code": 6090,
+      "code": 6092,
+      "name": "listingExpired",
+      "msg": "Listing has expired — cannot purchase"
+    },
+    {
+      "code": 6093,
       "name": "sellFeeUpdateCooldownNotElapsed",
       "msg": "Sell fee was updated too recently — 7-day cooldown required between updates"
     },
     {
-      "code": 6091,
+      "code": 6094,
       "name": "mintAuthorityAlreadyRenounced",
       "msg": "Mint authority has already been renounced for this sovereign"
     }
@@ -9182,14 +9287,16 @@ export type SovereignLiquidity = {
             "type": "i64"
           },
           {
-            "name": "keeper",
+            "name": "padKeeper",
             "docs": [
-              "Authorized keeper bot wallet for vault automation.",
-              "Can call rebalance/compound with priority over public callers.",
-              "Set by protocol authority via update_keeper instruction.",
-              "NOTE: Placed at end to be backwards-compatible with pre-keeper accounts (reads from padding)."
+              "Reserved — was keeper field, now unused. Preserves on-chain layout."
             ],
-            "type": "pubkey"
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "pendingAuthority",

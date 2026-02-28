@@ -146,7 +146,6 @@ export function SovereignListError({ error, onRetry }: { error: Error; onRetry?:
 export function NoSovereigns() {
   return (
     <div className="card card-clean text-center py-12">
-      <div className="text-4xl mb-4">👑</div>
       <h3 className="h3 text-white mb-2">No Sovereigns Yet</h3>
       <p className="text-[var(--muted)] mb-4">
         Be the first to create a sovereign and launch your token!

@@ -12,13 +12,13 @@ const ConnectWalletButton = dynamic(
 
 // Map routes to page titles for mobile header
 const pageTitles: Record<string, string> = {
-  '/': '🏠 HOME',
-  '/sovereigns': '👑 $OVEREIGNS',
-  '/mint': '🚀 LAUNCH',
-  '/governance': '🏛️ GOVERNANCE',
-  '/governance/creator': '🏛️ GOVERNANCE',
-  '/swap': '💱 SWAP',
-  '/marketplace': '🏪 LP MARKETPLACE',
+  '/': 'HOME',
+  '/sovereigns': '$OVEREIGNS',
+  '/mint': 'LAUNCH',
+  '/governance': 'GOVERNANCE',
+  '/governance/creator': 'GOVERNANCE',
+  '/swap': 'SWAP',
+  '/marketplace': 'LP MARKETPLACE',
 };
 
 export function Navbar() {

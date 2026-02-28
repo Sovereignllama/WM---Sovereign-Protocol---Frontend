@@ -174,13 +174,16 @@ export default function SwapPage() {
     }
   }, [amount]);
 
+  // Token-2022 transfer fee (sell fee) — needed for accurate quote deductions
+  const transferFeeBps = sovereign?.sellFeeBps ?? 0;
+
   // Compute quote locally from engine pool state
   const quote: EngineQuote | null = useMemo(() => {
     if (!enginePool || !rawAmount) return null;
     return direction === 'buy'
-      ? computeBuyQuote(enginePool, rawAmount, slippageBps)
-      : computeSellQuote(enginePool, rawAmount, slippageBps, poolBinsData?.bins);
-  }, [enginePool, rawAmount, direction, slippageBps, poolBinsData]);
+      ? computeBuyQuote(enginePool, rawAmount, slippageBps, transferFeeBps)
+      : computeSellQuote(enginePool, rawAmount, slippageBps, poolBinsData?.bins, transferFeeBps);
+  }, [enginePool, rawAmount, direction, slippageBps, poolBinsData, transferFeeBps]);
 
   // Toggle direction
   const toggleDirection = useCallback(() => {
@@ -214,6 +217,13 @@ export default function SwapPage() {
     if (!quote) return null;
     return formatAmount(quote.minimumOut);
   }, [quote]);
+
+  // Price impact for buys (sells use bin locked rates, not CPAMM)
+  const priceImpact = useMemo(() => {
+    if (!quote || quote.currentTierPrice === 0n || direction !== 'buy') return null;
+    const impact = Number(quote.executionPrice - quote.currentTierPrice) / Number(quote.currentTierPrice) * 100;
+    return Math.abs(impact);
+  }, [quote, direction]);
 
   // Has engine pool?
   const hasPool = !!enginePool && !enginePool.isPaused;
@@ -421,7 +431,9 @@ export default function SwapPage() {
           {quote && estimatedOutput && (
             <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-1.5 text-xs">
               <div className="flex justify-between">
-                <span className="text-[var(--muted)]">Execution Price</span>
+                <span className="text-[var(--muted)]">
+                  {direction === 'buy' ? 'Execution Price' : 'Avg. Sell Rate'}
+                </span>
                 <span className="text-white">
                   {formatPrice(quote.executionPrice)} GOR / token
                 </span>
@@ -448,10 +460,23 @@ export default function SwapPage() {
                   <span className="text-white">{slippageBps / 100}%</span>
                 </div>
               )}
-              <div className="flex justify-between">
-                <span className="text-[var(--muted)]">Spot Price</span>
-                <span className="text-white">{formatPrice(quote.currentTierPrice)} GOR</span>
-              </div>
+              {direction === 'buy' && (
+                <div className="flex justify-between">
+                  <span className="text-[var(--muted)]">Spot Price</span>
+                  <span className="text-white">{formatPrice(quote.currentTierPrice)} GOR</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Price impact warning (buys only) */}
+          {priceImpact !== null && priceImpact > 2 && (
+            <div className={`mt-2 p-2 rounded text-xs ${
+              priceImpact > 5
+                ? 'bg-red-500/10 border border-red-500/30 text-red-400'
+                : 'bg-yellow-500/10 border border-yellow-500/30 text-yellow-400'
+            }`}>
+              ⚠️ Price impact: {priceImpact.toFixed(2)}%{priceImpact > 5 ? ' — Consider a smaller trade size.' : ''}
             </div>
           )}
 

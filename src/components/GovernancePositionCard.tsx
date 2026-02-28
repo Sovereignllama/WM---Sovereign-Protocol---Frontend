@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { GovernancePosition } from '@/hooks/useMyGovernancePositions';
 import { useProposals, useVoteRecord, useProposeUnwind, useCastVote, useFinalizeVote, useClaimUnwind } from '@/hooks/useGovernance';
-import { useClaimPoolLpFees, useEmergencyWithdraw, useMintNftFromPosition, useListNft, useTransferNft, useBurnNftIntoPosition } from '@/hooks/useTransactions';
+import { useClaimPoolLpFees, useEmergencyWithdraw, useWithdrawFailed, useMarkBondingFailed, useMintNftFromPosition, useListNft, useTransferNft, useBurnNftIntoPosition } from '@/hooks/useTransactions';
 import { usePendingEngineLpFees, useEnginePool, useSovereign, useProtocolState } from '@/hooks/useSovereign';
 import { useMyNftsForSovereign } from '@/hooks/useNfts';
 import { useTokenImage } from '@/hooks/useTokenImage';
@@ -25,6 +25,9 @@ const STATUS_DOT: Record<string, string> = {
   Unwinding: 'bg-orange-400',
   Unwound: 'bg-red-400',
   Halted: 'bg-red-500',
+  Failed: 'bg-red-500',
+  Bonding: 'bg-blue-400',
+  Finalizing: 'bg-blue-400',
 };
 
 export function GovernancePositionCard({ position }: Props) {
@@ -47,6 +50,8 @@ export function GovernancePositionCard({ position }: Props) {
   const claimLpFees = useClaimPoolLpFees();
   const proposeUnwind = useProposeUnwind();
   const emergencyWithdraw = useEmergencyWithdraw();
+  const withdrawFailed = useWithdrawFailed();
+  const markBondingFailed = useMarkBondingFailed();
   const mintNft = useMintNftFromPosition();
   const listNft = useListNft();
   const transferNft = useTransferNft();
@@ -72,6 +77,8 @@ export function GovernancePositionCard({ position }: Props) {
   if (totalClaimable > 0.0001) pendingActions.push(`Claim ${totalClaimable.toFixed(4)} GOR`);
   if (position.status === 'Unwound' && !position.unwindClaimed) pendingActions.push('Claim unwind');
   if (position.status === 'Halted') pendingActions.push('$overeign Halted');
+  if (position.status === 'Failed') pendingActions.push('Bonding Failed');
+  if (position.status === 'Bonding' && sovereign?.bondDeadline && sovereign.bondDeadline < new Date()) pendingActions.push('Mark as Failed');
 
   return (
     <>
@@ -280,6 +287,36 @@ export function GovernancePositionCard({ position }: Props) {
           {/* Emergency Withdraw — shown when sovereign is Halted */}
           {position.status === 'Halted' && (
             <EmergencyWithdrawPanel position={position} emergencyWithdraw={emergencyWithdraw} />
+          )}
+
+          {/* Failed Bonding — reclaim deposited GOR (non-creator only) */}
+          {position.status === 'Failed' && publicKey && position.creator !== publicKey.toBase58() && (
+            <FailedBondingPanel position={position} withdrawFailed={withdrawFailed} />
+          )}
+
+          {/* Bonding deadline passed — mark as failed crank */}
+          {position.status === 'Bonding' && sovereign?.bondDeadline && sovereign.bondDeadline < new Date() && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3">
+              <div className="text-sm font-bold text-red-400 mb-2">Bonding Deadline Passed</div>
+              <p className="text-xs text-[var(--muted)] mb-3">
+                The bond target was not met before the deadline. Mark this sovereign as failed so depositors can reclaim their GOR.
+              </p>
+              <button
+                onClick={async () => {
+                  await markBondingFailed.mutateAsync({ sovereignId: position.sovereignId });
+                }}
+                disabled={markBondingFailed.isPending}
+                className="w-full px-4 py-2 rounded-lg text-xs font-bold bg-red-500 text-white hover:opacity-90 disabled:opacity-40"
+              >
+                {markBondingFailed.isPending ? 'Marking...' : 'Mark as Failed'}
+              </button>
+              {markBondingFailed.isSuccess && (
+                <p className="text-[var(--slime)] text-xs mt-2">Marked as failed!</p>
+              )}
+              {markBondingFailed.error && (
+                <p className="text-red-400 text-xs mt-2">{(markBondingFailed.error as Error).message}</p>
+              )}
+            </div>
           )}
 
           {/* ── NFT Management Section ── */}
@@ -749,6 +786,49 @@ function UnwindClaimPanel({ position }: { position: GovernancePosition }) {
       </div>
       {claimUnwind.error && (
         <p className="text-red-400 text-xs mt-2">{(claimUnwind.error as Error).message}</p>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Failed Bonding Panel — shown when sovereign bonding failed
+// ============================================================
+
+function FailedBondingPanel({
+  position,
+  withdrawFailed,
+}: {
+  position: GovernancePosition;
+  withdrawFailed: ReturnType<typeof useWithdrawFailed>;
+}) {
+  return (
+    <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3">
+      <div className="text-sm font-bold text-red-400 mb-2">Bonding Failed</div>
+      <div className="space-y-1 mb-3">
+        <p className="text-xs text-[var(--muted)]">
+          Your deposit: <span className="text-white font-bold">{position.depositAmountGor.toLocaleString()} GOR</span>
+        </p>
+        <p className="text-xs text-[var(--muted)]">
+          The bond target was not met before the deadline. Reclaim your full deposit below.
+        </p>
+      </div>
+      <button
+        onClick={async () => {
+          await withdrawFailed.mutateAsync({
+            sovereignId: position.sovereignId,
+          });
+        }}
+        disabled={withdrawFailed.isPending || position.depositAmountGor === 0}
+        className="w-full px-4 py-2 rounded-lg text-xs font-bold bg-red-500 text-white hover:opacity-90 disabled:opacity-40"
+      >
+        {withdrawFailed.isPending ? 'Reclaiming...' : 'Reclaim Deposited GOR'}
+      </button>
+      {withdrawFailed.isSuccess && (
+        <p className="text-[var(--slime)] text-xs mt-2">Deposit reclaimed successfully!</p>
+      )}
+      {withdrawFailed.error && (
+        <p className="text-red-400 text-xs mt-2">{(withdrawFailed.error as Error).message}</p>
       )}
     </div>
   );

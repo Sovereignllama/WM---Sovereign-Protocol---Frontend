@@ -7,8 +7,8 @@ import { GovernancePositionCard } from '@/components/GovernancePositionCard';
 import { CreatorPositionCard } from '@/components/CreatorPositionCard';
 import Link from 'next/link';
 
-const ACTIVE_STATUSES = ['Recovery', 'Active', 'Unwinding'];
-const ARCHIVED_STATUSES = ['Unwound', 'Halted'];
+const ACTIVE_STATUSES = ['Recovery', 'Active', 'Unwinding', 'Bonding', 'Finalizing'];
+const ARCHIVED_STATUSES = ['Unwound', 'Halted', 'Failed'];
 
 type Filter = 'active' | 'archived' | 'all';
 
@@ -50,7 +50,6 @@ export default function GovernancePage() {
       {/* Not connected */}
       {!connected && (
         <div className="card card-clean p-10 text-center">
-          <div className="text-4xl mb-3">🔗</div>
           <h3 className="text-white font-bold text-lg mb-2">Connect your wallet</h3>
           <p className="text-[var(--muted)] text-sm">
             Connect your wallet to see your governance positions and creator dashboards.
@@ -78,10 +77,9 @@ export default function GovernancePage() {
       {/* Connected, no positions at all */}
       {connected && !isLoading && !hasPositions && !hasCreatorPositions && (
         <div className="card card-clean p-10 text-center">
-          <div className="text-4xl mb-3">📭</div>
-          <h3 className="text-white font-bold text-lg mb-2">No governance positions</h3>
-          <p className="text-[var(--muted)] text-sm mb-4">
-            You don't have any sovereign deposits or created pools. Deposit into a sovereign to participate in governance.
+          <h3 className="font-bold text-lg mb-2" style={{ color: '#d4ffe6' }}>No governance positions</h3>
+          <p className="text-[var(--muted)] text-sm max-w-md mx-auto mb-4">
+            Deposit into a sovereign to participate in governance.
           </p>
           <Link
             href="/sovereigns"

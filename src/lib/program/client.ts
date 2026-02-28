@@ -702,6 +702,11 @@ export async function buildSwapBuyTx(
 
   // Ensure trader's ATA exists
   const tx = new Transaction();
+
+  // Raise heap + CU limits — bin-traversing swaps exceed defaults
+  tx.add(ComputeBudgetProgram.requestHeapFrame({ bytes: 256 * 1024 }));
+  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
+
   tx.add(
     createAssociatedTokenAccountIdempotentInstruction(
       trader,
@@ -814,6 +819,10 @@ export async function buildSwapSellTx(
   );
 
   const tx = new Transaction();
+
+  // Raise heap + CU limits — bin-traversing swaps exceed defaults
+  tx.add(ComputeBudgetProgram.requestHeapFrame({ bytes: 256 * 1024 }));
+  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
 
   // Auto-allocate BinArray pages if needed
   // Pages must be allocated sequentially: highest_allocated_page + 1
@@ -2085,4 +2094,83 @@ export async function fetchTokenFeeStats(
   } catch {
     return null;
   }
+}
+
+// ============================================================
+// Failed Bonding
+// ============================================================
+
+/**
+ * Build a mark_bonding_failed transaction.
+ * Permissionless crank: transitions a sovereign from Bonding → Failed
+ * when the deadline has passed and the bond target was not met.
+ */
+export async function buildMarkBondingFailedTx(
+  program: SovereignLiquidityProgram,
+  caller: PublicKey,
+  sovereignId: bigint | number,
+): Promise<Transaction> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+
+  const tx = await (program.methods as any)
+    .markBondingFailed()
+    .accounts({
+      caller,
+      sovereign: sovereignPDA,
+    })
+    .transaction();
+
+  return tx;
+}
+
+/**
+ * Build a withdraw_failed transaction (investor).
+ * Reclaims deposited GOR from sol_vault, closes the deposit record.
+ */
+export async function buildWithdrawFailedTx(
+  program: SovereignLiquidityProgram,
+  depositor: PublicKey,
+  sovereignId: bigint | number,
+): Promise<Transaction> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, depositor, program.programId);
+  const [solVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
+
+  const tx = await (program.methods as any)
+    .withdrawFailed()
+    .accounts({
+      depositor,
+      sovereign: sovereignPDA,
+      depositRecord: depositRecordPDA,
+      solVault: solVaultPDA,
+      systemProgram: SystemProgram.programId,
+    })
+    .transaction();
+
+  return tx;
+}
+
+/**
+ * Build a withdraw_creator_failed transaction (creator).
+ * Reclaims creator escrow + escrowed creation fee from sol_vault.
+ */
+export async function buildWithdrawCreatorFailedTx(
+  program: SovereignLiquidityProgram,
+  creator: PublicKey,
+  sovereignId: bigint | number,
+): Promise<Transaction> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [solVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
+
+  const tx = await (program.methods as any)
+    .withdrawCreatorFailed()
+    .accounts({
+      creator,
+      sovereign: sovereignPDA,
+      solVault: solVaultPDA,
+      systemProgram: SystemProgram.programId,
+    })
+    .transaction();
+
+  return tx;
 }

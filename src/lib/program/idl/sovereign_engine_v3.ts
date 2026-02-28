@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/sovereign_engine_v3.json`.
  */
 export type SovereignEngineV3 = {
-  "address": "Sov7HzpTsU3GttXmHBzjRhrjrCQ5RPYhkMns6zNUNtt",
+  "address": "SovTXTTvFW3KDxaxBQ5jwL2wTzPQtdXBbwDr3PJgpmy",
   "metadata": {
     "name": "sovereignEngineV3",
     "version": "1.0.0-beta.1",
@@ -377,6 +377,181 @@ export type SovereignEngineV3 = {
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "closeBinArray",
+      "docs": [
+        "Close a BinArray page and return rent to creator.",
+        "Pool must be Unwound. Call once per page."
+      ],
+      "discriminator": [
+        68,
+        174,
+        88,
+        80,
+        181,
+        204,
+        19,
+        224
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Anyone can crank — just pays tx fees"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sovereign",
+          "relations": [
+            "enginePool"
+          ]
+        },
+        {
+          "name": "enginePool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "binArray",
+          "docs": [
+            "The BinArray page to close."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  105,
+                  110,
+                  95,
+                  97,
+                  114,
+                  114,
+                  97,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              },
+              {
+                "kind": "arg",
+                "path": "binArrayPageIndex"
+              }
+            ]
+          }
+        },
+        {
+          "name": "creator",
+          "docs": [
+            "Creator wallet — receives the reclaimed rent."
+          ],
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "binArrayPageIndex",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "closeEnginePool",
+      "docs": [
+        "Close the EnginePool account and return rent to creator.",
+        "Pool must be Unwound. Call after all BinArrays are closed."
+      ],
+      "discriminator": [
+        107,
+        111,
+        131,
+        180,
+        37,
+        91,
+        21,
+        227
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Anyone can crank — just pays tx fees"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sovereign",
+          "relations": [
+            "enginePool"
+          ]
+        },
+        {
+          "name": "enginePool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  103,
+                  105,
+                  110,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sovereign"
+              }
+            ]
+          }
+        },
+        {
+          "name": "creator",
+          "docs": [
+            "Creator wallet — receives the reclaimed rent."
+          ],
+          "writable": true
+        }
+      ],
+      "args": []
     },
     {
       "name": "createPool",
@@ -1365,79 +1540,6 @@ export type SovereignEngineV3 = {
       "args": []
     },
     {
-      "name": "updateExtensionConfig",
-      "docs": [
-        "Update extension config (divisor, enable/disable) — governance only."
-      ],
-      "discriminator": [
-        211,
-        51,
-        144,
-        154,
-        247,
-        243,
-        247,
-        70
-      ],
-      "accounts": [
-        {
-          "name": "authority",
-          "signer": true,
-          "relations": [
-            "enginePool"
-          ]
-        },
-        {
-          "name": "sovereign",
-          "relations": [
-            "enginePool"
-          ]
-        },
-        {
-          "name": "enginePool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  101,
-                  110,
-                  103,
-                  105,
-                  110,
-                  101,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "sovereign"
-              }
-            ]
-          }
-        }
-      ],
-      "args": [
-        {
-          "name": "newExtensionDivisor",
-          "type": {
-            "option": "u16"
-          }
-        },
-        {
-          "name": "newExtensionEnabled",
-          "type": {
-            "option": "bool"
-          }
-        }
-      ]
-    },
-    {
       "name": "updateFees",
       "docs": [
         "Update swap/creator/bin fee bps — governance only."
@@ -1560,6 +1662,19 @@ export type SovereignEngineV3 = {
   ],
   "events": [
     {
+      "name": "binArrayClosed",
+      "discriminator": [
+        44,
+        58,
+        231,
+        148,
+        79,
+        49,
+        15,
+        27
+      ]
+    },
+    {
       "name": "binPageAllocated",
       "discriminator": [
         34,
@@ -1586,16 +1701,16 @@ export type SovereignEngineV3 = {
       ]
     },
     {
-      "name": "extensionConfigUpdated",
+      "name": "enginePoolClosed",
       "discriminator": [
-        69,
-        138,
-        225,
-        16,
-        89,
-        7,
-        113,
-        172
+        146,
+        219,
+        86,
+        70,
+        13,
+        208,
+        108,
+        191
       ]
     },
     {
@@ -1797,13 +1912,18 @@ export type SovereignEngineV3 = {
     },
     {
       "code": 6026,
-      "name": "invalidExtensionConfig",
-      "msg": "Invalid extension configuration"
+      "name": "invalidTaperConfig",
+      "msg": "End ratio (p_end_bps) outside allowed range"
     },
     {
       "code": 6027,
       "name": "noReconciliationNeeded",
       "msg": "GOR reserve is already correct or higher — no reconciliation needed"
+    },
+    {
+      "code": 6028,
+      "name": "poolNotUnwound",
+      "msg": "Pool must be in Unwound status to close accounts"
     }
   ],
   "types": [
@@ -1882,9 +2002,8 @@ export type SovereignEngineV3 = {
             "name": "originalCapacity",
             "docs": [
               "This bin's token capacity when it was initialized.",
-              "For initial bins: original_capacity == pool.bin_capacity",
-              "For extension bins: original_capacity == token_reserve / extension_divisor",
-              "(computed dynamically at the time the extension bin is created)"
+              "Computed via SLAMM taper: cap(i) = max(0, C0 - drop_bps × C0 × i / D)",
+              "Each bin has a unique capacity; stored here for sell-side settlement."
             ],
             "type": "u64"
           },
@@ -1917,7 +2036,7 @@ export type SovereignEngineV3 = {
           {
             "name": "pageIndex",
             "docs": [
-              "Page index (0-based). Global bin index = page_index * 512 + offset."
+              "Page index (0-based). Global bin index = page_index * 128 + offset."
             ],
             "type": "u32"
           },
@@ -1925,7 +2044,7 @@ export type SovereignEngineV3 = {
             "name": "initializedBins",
             "docs": [
               "Number of bins initialized on this page (≤ BINS_PER_PAGE).",
-              "Last page may have fewer than 512 active bins."
+              "Last page may have fewer than 128 active bins."
             ],
             "type": "u32"
           },
@@ -1944,6 +2063,33 @@ export type SovereignEngineV3 = {
                 128
               ]
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "binArrayClosed",
+      "docs": [
+        "Emitted when a BinArray page is closed and rent reclaimed"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "pageIndex",
+            "type": "u32"
+          },
+          {
+            "name": "rentRecovered",
+            "type": "u64"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
           }
         ]
       }
@@ -2001,11 +2147,11 @@ export type SovereignEngineV3 = {
             "type": "u64"
           },
           {
-            "name": "numBins",
+            "name": "pEndBps",
             "docs": [
-              "Number of bins (governance-controlled granularity)"
+              "End ratio in basis points for SLAMM taper (e.g. 2000 = 20%)"
             ],
-            "type": "u32"
+            "type": "u16"
           },
           {
             "name": "swapFeeBps",
@@ -2193,16 +2339,16 @@ export type SovereignEngineV3 = {
           {
             "name": "numBins",
             "docs": [
-              "Total number of active bins (initial + extension bins).",
-              "Starts at initial_num_bins, grows as extension bins are created."
+              "Total number of bins (core + extension). Set at init, immutable.",
+              "All bins initialized with tapered capacity at page allocation."
             ],
             "type": "u32"
           },
           {
             "name": "binCapacity",
             "docs": [
-              "Tokens per bin for the initial bins = total_token_supply / initial_num_bins.",
-              "Extension bins use dynamically computed capacity instead."
+              "Capacity of bin 0 (the largest bin). Derived at init from",
+              "total_token_supply and p_end_bps. Used in compute_bin_capacity()."
             ],
             "type": "u64"
           },
@@ -2387,27 +2533,27 @@ export type SovereignEngineV3 = {
             "type": "u8"
           },
           {
-            "name": "initialNumBins",
+            "name": "coreBins",
             "docs": [
-              "Number of initial (uniform-capacity) bins set at pool creation.",
-              "Extension bins start at index >= initial_num_bins."
+              "Number of core (taper) bins. Always CORE_BINS (5000)."
             ],
             "type": "u32"
           },
           {
-            "name": "extensionDivisor",
+            "name": "pEndBps",
             "docs": [
-              "Divisor for extension bin capacity: cap = token_reserve / extension_divisor.",
-              "Higher K = smaller bins = tighter spread. Default 100."
+              "End ratio in basis points: bin N-1 capacity as % of bin 0.",
+              "e.g. 2000 = bin 4999 has 20% of bin 0's capacity."
             ],
             "type": "u16"
           },
           {
-            "name": "extensionEnabled",
+            "name": "extBins",
             "docs": [
-              "Whether auto-extension of bins is enabled."
+              "Number of extension bins beyond core (continue taper to zero).",
+              "Derived: ceil(p_end_bps × (core_bins - 1) / (10000 - p_end_bps))."
             ],
-            "type": "bool"
+            "type": "u32"
           },
           {
             "name": "pendingBinFees",
@@ -2422,7 +2568,7 @@ export type SovereignEngineV3 = {
             "type": {
               "array": [
                 "u8",
-                15
+                12
               ]
             }
           }
@@ -2430,9 +2576,9 @@ export type SovereignEngineV3 = {
       }
     },
     {
-      "name": "extensionConfigUpdated",
+      "name": "enginePoolClosed",
       "docs": [
-        "Emitted when extension config is updated"
+        "Emitted when the EnginePool account is closed and rent reclaimed"
       ],
       "type": {
         "kind": "struct",
@@ -2442,12 +2588,19 @@ export type SovereignEngineV3 = {
             "type": "pubkey"
           },
           {
-            "name": "extensionDivisor",
-            "type": "u16"
+            "name": "rentRecovered",
+            "type": "u64"
           },
           {
-            "name": "extensionEnabled",
-            "type": "bool"
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "pagesHint",
+            "docs": [
+              "Hint: number of pages that should have been closed first"
+            ],
+            "type": "u32"
           }
         ]
       }
@@ -2512,12 +2665,24 @@ export type SovereignEngineV3 = {
             "type": "u64"
           },
           {
-            "name": "numBins",
+            "name": "coreBins",
             "type": "u32"
           },
           {
-            "name": "binCapacity",
+            "name": "extBins",
+            "type": "u32"
+          },
+          {
+            "name": "totalBins",
+            "type": "u32"
+          },
+          {
+            "name": "c0",
             "type": "u64"
+          },
+          {
+            "name": "pEndBps",
+            "type": "u16"
           },
           {
             "name": "swapFeeBps",

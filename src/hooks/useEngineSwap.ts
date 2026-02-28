@@ -62,11 +62,16 @@ export interface PoolState {
  * Compute a buy quote: GOR → Tokens.
  * V3: CPAMM pricing — tokens_out = T × gor_in / (G + gor_in)
  * Fee charged on top of the CPAMM cost.
+ *
+ * @param transferFeeBps Token-2022 transfer fee (sell fee) on the sovereign token.
+ *   On buys, engine transfers tokens to trader via transfer_checked — the trader
+ *   receives fewer tokens than the engine sends. We deduct this from the estimate.
  */
 export function computeBuyQuote(
   pool: PoolState,
   gorInput: bigint,
   slippageBps: number,
+  transferFeeBps: number = 0,
 ): EngineQuote | null {
   if (gorInput <= 0n || pool.isPaused) return null;
 
@@ -75,22 +80,29 @@ export function computeBuyQuote(
 
   if (tokenReserve === 0n) return null;
 
-  // Pure CPAMM: tokens_out = T × gor_in / (G + gor_in)
-  const totalTokensBought = tokenReserve * gorInput / (gorReserve + gorInput);
+  // Mirror on-chain fee reservation: effective_gor = gor_input × 10000 / (10000 + fee_bps)
+  // Fee is carved from gorInput upfront so the CPAMM only sees the net swap budget.
+  const feeDenom = 10000n + BigInt(pool.swapFeeBps);
+  const effectiveGor = gorInput * 10000n / feeDenom;
+
+  // CPAMM: tokens_out = T × effective_gor / (G + effective_gor)
+  const totalTokensBought = tokenReserve * effectiveGor / (gorReserve + effectiveGor);
 
   if (totalTokensBought === 0n) return null;
 
-  // GOR spent = gorInput (all GOR goes into the CPAMM)
-  const gorSpent = gorInput;
-
-  // Fee on GOR spent, charged on top
-  const fee = gorSpent * BigInt(pool.swapFeeBps) / 10000n;
-  const totalGorIn = gorSpent + fee;
-
-  const executionPrice = totalTokensBought > 0n
-    ? gorSpent * PRICE_PRECISION / totalTokensBought
+  // Token-2022 transfer fee: buyer receives fewer tokens than engine sends
+  const tokenFee = transferFeeBps > 0
+    ? totalTokensBought * BigInt(transferFeeBps) / 10000n
     : 0n;
-  const minimumOut = totalTokensBought * BigInt(10000 - slippageBps) / 10000n;
+  const tokensReceived = totalTokensBought - tokenFee;
+
+  // Fee: effective_gor × fee_bps / 10000 (matches on-chain compute_buy)
+  const fee = effectiveGor * BigInt(pool.swapFeeBps) / 10000n;
+
+  const executionPrice = tokensReceived > 0n
+    ? effectiveGor * PRICE_PRECISION / tokensReceived
+    : 0n;
+  const minimumOut = tokensReceived * BigInt(10000 - slippageBps) / 10000n;
   // Current spot price
   const currentTierPrice = tokenReserve > 0n
     ? gorReserve * PRICE_PRECISION / tokenReserve
@@ -98,8 +110,8 @@ export function computeBuyQuote(
 
   return {
     direction: 'buy',
-    amountIn: totalGorIn,
-    estimatedOut: totalTokensBought,
+    amountIn: gorInput,
+    estimatedOut: tokensReceived,
     minimumOut,
     fee,
     effectiveFeeBps: pool.swapFeeBps,
@@ -133,12 +145,18 @@ export interface SellQuoteBin {
  *
  * Without bin data, we fall back to using the pool's lastPrice (most
  * recent execution price) as an approximation of the current bin rate.
+ *
+ * @param transferFeeBps Token-2022 transfer fee (sell fee) on the sovereign token.
+ *   On sells, the trader sends tokenInput but the engine vault receives
+ *   tokenInput minus the transfer fee. The on-chain swap uses actual_received,
+ *   so we must simulate the same deduction here.
  */
 export function computeSellQuote(
   pool: PoolState,
   tokenInput: bigint,
   slippageBps: number,
   bins?: SellQuoteBin[],
+  transferFeeBps: number = 0,
 ): EngineQuote | null {
   if (tokenInput <= 0n || pool.isPaused) return null;
 
@@ -155,8 +173,14 @@ export function computeSellQuote(
   const availableGor = gorReserve > initialGorReserve ? gorReserve - initialGorReserve : 0n;
   if (availableGor === 0n) return null;
 
+  // Token-2022 transfer fee: vault receives fewer tokens than the user sends
+  const tokenFeeWithheld = transferFeeBps > 0
+    ? tokenInput * BigInt(transferFeeBps) / 10000n
+    : 0n;
+  const tokensAfterFee = tokenInput - tokenFeeWithheld;
+
   // Can't sell more tokens than are outstanding
-  const actualTokensIn = tokenInput < totalTokensSold ? tokenInput : totalTokensSold;
+  const actualTokensIn = tokensAfterFee < totalTokensSold ? tokensAfterFee : totalTokensSold;
 
   let totalGorPayout = 0n;
 
@@ -232,10 +256,12 @@ export function computeSellQuote(
   const fee = totalGorPayout * BigInt(pool.swapFeeBps) / 10000n;
   const netPayout = totalGorPayout - fee;
 
-  // With bin data we can set a real minimumOut; without it, use 0
-  const minimumOut = bins && bins.length > 0
-    ? netPayout * BigInt(10000 - slippageBps) / 10000n
-    : 0n;
+  // minimumOut = 0 for sells. The on-chain solvency floor
+  // (gor_reserve >= initial_gor_reserve) is the real protection.
+  // Bin-walk estimates from stale backend data cause false
+  // SlippageExceeded errors, especially on large sells that
+  // cross many bins at different price levels.
+  const minimumOut = 0n;
 
   const executionPrice = actualTokensIn > 0n
     ? totalGorPayout * PRICE_PRECISION / actualTokensIn

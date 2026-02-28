@@ -31,6 +31,9 @@ import {
   buildDelistNftTx,
   buildTransferNftTx,
   buildBurnNftIntoPositionTx,
+  buildMarkBondingFailedTx,
+  buildWithdrawFailedTx,
+  buildWithdrawCreatorFailedTx,
   CreateSovereignFrontendParams,
   fetchDepositRecord,
 } from '@/lib/program/client';
@@ -1407,6 +1410,165 @@ export function useTransferNft() {
           ),
         });
       }
+    },
+  });
+}
+
+// ============================================================
+// Failed Bonding
+// ============================================================
+
+/**
+ * Permissionless crank: mark a sovereign's bonding as failed
+ * (deadline passed + target not met → transitions Bonding → Failed).
+ */
+export function useMarkBondingFailed() {
+  const program = useProgram();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ sovereignId }: { sovereignId: string }) => {
+      if (!program || !publicKey) {
+        throw new Error('Wallet not connected');
+      }
+
+      const tx = await buildMarkBondingFailedTx(
+        program,
+        publicKey,
+        BigInt(sovereignId),
+      );
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+      queryClient.invalidateQueries({ queryKey: ['sovereigns'] });
+    },
+  });
+}
+
+/**
+ * Withdraw deposited GOR from a failed bonding (investor).
+ * Closes deposit record and refunds full deposit.
+ */
+export function useWithdrawFailed() {
+  const program = useProgram();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ sovereignId }: { sovereignId: string }) => {
+      if (!program || !publicKey) {
+        throw new Error('Wallet not connected');
+      }
+
+      // Defense-in-depth: the on-chain instruction rejects the creator.
+      // Fetch sovereign to verify before submitting a doomed tx.
+      const { getSovereignPDA } = await import('@/lib/program/pdas');
+      const [sovereignPDA] = getSovereignPDA(BigInt(sovereignId), program.programId);
+      const sovereignAccount = await (program.account as any).sovereignState.fetch(sovereignPDA);
+      if (sovereignAccount.creator.toBase58() === publicKey.toBase58()) {
+        throw new Error('Creator must use "Reclaim Escrow & Fees" instead. This instruction is for depositors only.');
+      }
+
+      const tx = await buildWithdrawFailedTx(
+        program,
+        publicKey,
+        BigInt(sovereignId),
+      );
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+      queryClient.invalidateQueries({ queryKey: ['sovereigns'] });
+      if (publicKey) {
+        queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.depositRecord(
+            variables.sovereignId.toString(),
+            publicKey.toBase58()
+          ),
+        });
+        queryClient.invalidateQueries({ queryKey: ['walletDeposits', publicKey.toBase58()] });
+      }
+    },
+  });
+}
+
+/**
+ * Creator withdraws escrowed GOR + creation fee from a failed bonding.
+ */
+export function useWithdrawCreatorFailed() {
+  const program = useProgram();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ sovereignId }: { sovereignId: string }) => {
+      if (!program || !publicKey) {
+        throw new Error('Wallet not connected');
+      }
+
+      const tx = await buildWithdrawCreatorFailedTx(
+        program,
+        publicKey,
+        BigInt(sovereignId),
+      );
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+      queryClient.invalidateQueries({ queryKey: ['sovereigns'] });
     },
   });
 }

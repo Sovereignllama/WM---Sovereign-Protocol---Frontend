@@ -61,7 +61,7 @@ export function useMyGovernancePositions() {
   const { data: deposits, isLoading: depLoading } = useWalletDeposits();
 
   // Governance states that are relevant
-  const GOVERNABLE = ['Recovery', 'Active', 'Unwinding', 'Unwound', 'Halted'];
+  const GOVERNABLE = ['Recovery', 'Active', 'Unwinding', 'Unwound', 'Halted', 'Failed', 'Bonding', 'Finalizing'];
 
   const positions = useMemo<GovernancePosition[]>(() => {
     if (!sovereigns || !deposits || !publicKey) return [];
@@ -78,10 +78,10 @@ export function useMyGovernancePositions() {
       .filter((d: any) => sovMap.has(d.sovereign))
       .filter((d: any) => {
         const s = sovMap.get(d.sovereign)!;
-        // Keep zero-amount deposits for archived states (Halted/Unwound)
-        // so they appear in the archive tab after emergency_withdraw
+        // Keep zero-amount deposits for archived states (Halted/Unwound/Failed)
+        // so they appear in the archive tab after withdrawal
         if (Number(d.amount) === 0) {
-          return ['Halted', 'Unwound'].includes(s.status);
+          return ['Halted', 'Unwound', 'Failed'].includes(s.status);
         }
         // Exclude creator's own deposit — they manage via Creator Dashboard
         return s.creator !== publicKey.toBase58();

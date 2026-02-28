@@ -67,7 +67,7 @@ export function SovereignList({
         break;
       case 'Archived':
         result = sovereigns.filter(s =>
-          s.status === 'Unwound' || s.status === 'Halted'
+          s.status === 'Unwound' || s.status === 'Halted' || s.status === 'Failed'
         );
         break;
     }
@@ -120,7 +120,6 @@ export function SovereignList({
   if (filteredSovereigns.length === 0) {
     return (
       <div className="text-center py-16">
-        <div className="text-4xl mb-3">👑</div>
         <p className="text-[var(--muted)] text-sm">
           {emptyMessage || 'No sovereigns found'}
         </p>

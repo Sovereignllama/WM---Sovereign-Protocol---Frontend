@@ -128,7 +128,7 @@ export default function SovereignsPage() {
     Recovery: sovereigns.filter(s => s.status === 'Recovery').length,
     Active: sovereigns.filter(s => s.status === 'Active').length,
     Unwind: sovereigns.filter(s => s.activityCheckInitiated || s.status === 'Unwinding').length,
-    Archived: sovereigns.filter(s => s.status === 'Unwound' || s.status === 'Halted').length,
+    Archived: sovereigns.filter(s => s.status === 'Unwound' || s.status === 'Halted' || s.status === 'Failed').length,
   }), [sovereigns]);
 
   const isLoading = sovereignsLoading || protocolLoading;

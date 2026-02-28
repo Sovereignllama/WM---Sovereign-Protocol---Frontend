@@ -156,7 +156,6 @@ export default function LandingPage() {
 
           {isLoading ? (
             <div className="card card-clean text-center py-12">
-              <div className="text-4xl mb-4 animate-pulse">👑</div>
               <p className="text-[var(--muted)]">Loading from chain...</p>
             </div>
           ) : trending.length > 0 ? (
@@ -232,7 +231,6 @@ export default function LandingPage() {
             </div>
           ) : (
             <div className="card card-clean text-center py-12">
-              <div className="text-4xl mb-4">🚀</div>
               <p className="text-[var(--muted)]">No sovereigns yet. Be the first to launch!</p>
               <Link href="/mint" className="btn btn-primary mt-4">
                 Launch Now
@@ -277,21 +275,18 @@ export default function LandingPage() {
           <h2 className="h2 mb-6 text-center" style={{ color: '#d4ffe6', textShadow: '0 0 20px rgba(46,235,127,0.6), 0 0 40px rgba(46,235,127,0.3)' }}>How It Works</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="text-center">
-              <div className="text-3xl mb-3">🚀</div>
               <h3 className="text-white font-bold mb-2">1. Launch</h3>
               <p className="text-[var(--muted)] text-sm">
-                Create your token, set your funding goal, and rally Liquidity Providers behind your vision.
+                Create your token or bring your own, set your funding goal, and rally Liquidity Providers behind your vision.
               </p>
             </div>
             <div className="text-center">
-              <div className="text-3xl mb-3">🛡️</div>
               <h3 className="text-white font-bold mb-2">2. Recover</h3>
               <p className="text-[var(--muted)] text-sm">
                 LPers deposit GOR, establish the price floor, and collect 100% of trading fees until your principal is fully returned.
               </p>
             </div>
             <div className="text-center">
-              <div className="text-3xl mb-3">👑</div>
               <h3 className="text-white font-bold mb-2">3. Earn</h3>
               <p className="text-[var(--muted)] text-sm">
                 Once fully repaid, fees split between Liquidity Providers and creators. Passive income for all.

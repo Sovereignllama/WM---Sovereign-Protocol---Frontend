@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { CreatorPosition } from '@/hooks/useMyGovernancePositions';
 import { useSovereign, useEnginePool, useTokenFeeStats, useProtocolState } from '@/hooks/useSovereign';
-import { useClaimPoolCreatorFees, useClaimTransferFees, useUpdateSellFee, useRenounceSellFee, useEmergencyWithdrawCreator } from '@/hooks/useTransactions';
+import { useClaimPoolCreatorFees, useClaimTransferFees, useUpdateSellFee, useRenounceSellFee, useEmergencyWithdrawCreator, useWithdrawCreatorFailed, useMarkBondingFailed } from '@/hooks/useTransactions';
 import { useProposals } from '@/hooks/useGovernance';
 import { useTokenImage } from '@/hooks/useTokenImage';
 import { config, LAMPORTS_PER_GOR } from '@/lib/config';
@@ -20,6 +20,9 @@ const STATUS_DOT: Record<string, string> = {
   Unwinding: 'bg-orange-400',
   Unwound: 'bg-red-400',
   Halted: 'bg-red-500',
+  Failed: 'bg-red-500',
+  Bonding: 'bg-blue-400',
+  Finalizing: 'bg-blue-400',
 };
 
 export function CreatorPositionCard({ position }: Props) {
@@ -37,6 +40,8 @@ export function CreatorPositionCard({ position }: Props) {
   const updateSellFee = useUpdateSellFee();
   const renounceSellFee = useRenounceSellFee();
   const emergencyWithdrawCreator = useEmergencyWithdrawCreator();
+  const withdrawCreatorFailed = useWithdrawCreatorFailed();
+  const markBondingFailed = useMarkBondingFailed();
 
   const [swapClaimStep, setSwapClaimStep] = useState('');
   const [swapClaimError, setSwapClaimError] = useState<string | null>(null);
@@ -102,6 +107,8 @@ export function CreatorPositionCard({ position }: Props) {
   if (canClaimSwapFees) pendingActions.push(`${pendingGorFees.toFixed(2)} GOR`);
   if (canClaimTransferFees) pendingActions.push(`${pendingTokenFees.toFixed(2)} ${position.tokenSymbol}`);
   if (position.status === 'Halted') pendingActions.push('$overeign Halted');
+  if (position.status === 'Failed') pendingActions.push('Bonding Failed');
+  if (position.status === 'Bonding' && sovereign?.bondDeadline && sovereign.bondDeadline < new Date()) pendingActions.push('Mark as Failed');
 
   // Active / passed unwind proposals
   const activeProposal = proposals?.find((p: any) => p.status === 'Active');
@@ -449,6 +456,69 @@ export function CreatorPositionCard({ position }: Props) {
               </div>
               {emergencyWithdrawCreator.error && (
                 <p className="text-red-400 text-xs mt-2">{(emergencyWithdrawCreator.error as Error).message}</p>
+              )}
+            </div>
+          )}
+
+          {/* Bonding Failed — reclaim creator escrow + creation fee */}
+          {position.status === 'Failed' && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-bold text-red-400">Bonding Failed</div>
+                  <p className="text-[10px] text-[var(--muted)]">
+                    Bond target was not met. Reclaim your escrow and creation fee.
+                  </p>
+                  {sovereign && (
+                    <p className="text-xs text-[var(--muted)] mt-1">
+                      Escrow: <span className="text-white font-bold">{sovereign.creatorEscrowGor.toLocaleString()} GOR</span>
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={async () => {
+                    await withdrawCreatorFailed.mutateAsync({ sovereignId: position.sovereignId });
+                  }}
+                  disabled={withdrawCreatorFailed.isPending}
+                  className="px-4 py-2 rounded-lg text-xs font-bold bg-red-500 text-white hover:opacity-90 disabled:opacity-40"
+                >
+                  {withdrawCreatorFailed.isPending ? 'Reclaiming...' : 'Reclaim Escrow & Fees'}
+                </button>
+              </div>
+              {withdrawCreatorFailed.isSuccess && (
+                <p className="text-[var(--slime)] text-xs mt-2">Escrow & fees reclaimed!</p>
+              )}
+              {withdrawCreatorFailed.error && (
+                <p className="text-red-400 text-xs mt-2">{(withdrawCreatorFailed.error as Error).message}</p>
+              )}
+            </div>
+          )}
+
+          {/* Bonding deadline passed — mark as failed crank */}
+          {position.status === 'Bonding' && sovereign?.bondDeadline && sovereign.bondDeadline < new Date() && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-bold text-red-400">Bonding Deadline Passed</div>
+                  <p className="text-[10px] text-[var(--muted)]">
+                    Mark as failed so you and depositors can reclaim funds.
+                  </p>
+                </div>
+                <button
+                  onClick={async () => {
+                    await markBondingFailed.mutateAsync({ sovereignId: position.sovereignId });
+                  }}
+                  disabled={markBondingFailed.isPending}
+                  className="px-4 py-2 rounded-lg text-xs font-bold bg-red-500 text-white hover:opacity-90 disabled:opacity-40"
+                >
+                  {markBondingFailed.isPending ? 'Marking...' : 'Mark as Failed'}
+                </button>
+              </div>
+              {markBondingFailed.isSuccess && (
+                <p className="text-[var(--slime)] text-xs mt-2">Marked as failed!</p>
+              )}
+              {markBondingFailed.error && (
+                <p className="text-red-400 text-xs mt-2">{(markBondingFailed.error as Error).message}</p>
               )}
             </div>
           )}
