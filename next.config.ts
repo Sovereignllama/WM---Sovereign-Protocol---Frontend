@@ -20,10 +20,10 @@ const nextConfig: NextConfig = {
             value: [
               "default-src 'self'",
               "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
-              "style-src 'self' 'unsafe-inline'",
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "img-src 'self' data: blob: https://arweave.net https://ipfs.io https://gateway.pinata.cloud https://*.pinata.cloud https://*.mypinata.cloud",
-              "font-src 'self' data:",
-              "connect-src 'self' https://sovereign-protocol-backend.onrender.com https://rpc.trashscan.io https://waste-management-trading-engine.onrender.com https://waste-management-pool-price-tracker.onrender.com https://*.mypinata.cloud https://gateway.pinata.cloud wss://*.solana.com wss://rpc.trashscan.io",
+              "font-src 'self' data: https://fonts.gstatic.com",
+              "connect-src 'self' https://sovereign-protocol-backend.onrender.com wss://sovereign-protocol-backend.onrender.com https://rpc.trashscan.io wss://rpc.trashscan.io https://waste-management-trading-engine.onrender.com https://waste-management-pool-price-tracker.onrender.com https://*.mypinata.cloud https://gateway.pinata.cloud wss://*.solana.com",
               "frame-src 'none'",
               "object-src 'none'",
               "base-uri 'self'",
