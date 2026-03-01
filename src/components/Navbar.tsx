@@ -97,15 +97,15 @@ export function Navbar() {
 
         {/* Mobile Navbar */}
         <div className="md:hidden">
-          <div className="flex items-center justify-between h-12 px-2">
-            <Link href="/" className="flex items-center">
+          <div className="relative flex items-center justify-between h-12 px-2">
+            <Link href="/" className="flex items-center z-10">
               <img src="/logo_plain.png" alt="WM Sovereign" className="h-16 w-auto" style={{ filter: 'drop-shadow(0 0 5px rgba(200,255,220,0.7)) drop-shadow(0 0 12px rgba(46,235,127,0.5)) drop-shadow(0 0 24px rgba(46,235,127,0.35)) drop-shadow(0 0 48px rgba(46,235,127,0.2))' }} />
             </Link>
             
-            {/* Page Title in Center */}
+            {/* Page Title in Center — absolutely positioned for true centering */}
             {currentPageTitle && (
               <span
-                className="text-sm font-black uppercase tracking-tight"
+                className="absolute inset-0 flex items-center justify-center text-sm font-black uppercase tracking-tight pointer-events-none"
                 style={{
                   color: '#d4ffe6',
                   textShadow: '0 0 8px rgba(200,255,220,0.6), 0 0 20px rgba(46,235,127,0.35)',
@@ -117,7 +117,7 @@ export function Navbar() {
             
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="text-xl px-2 transition-all"
+              className="text-xl px-2 transition-all z-10"
               style={{
                 color: 'rgba(200,255,220,0.5)',
                 textShadow: '0 0 6px rgba(46,235,127,0.2)',
