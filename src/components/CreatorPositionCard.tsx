@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { CreatorPosition } from '@/hooks/useMyGovernancePositions';
 import { useSovereign, useEnginePool, useTokenFeeStats, useProtocolState } from '@/hooks/useSovereign';
-import { useClaimPoolCreatorFees, useClaimTransferFees, useUpdateSellFee, useRenounceSellFee, useEmergencyWithdrawCreator, useWithdrawCreatorFailed, useMarkBondingFailed } from '@/hooks/useTransactions';
+import { useClaimPoolCreatorFees, useClaimTransferFees, useUpdateSellFee, useRenounceSellFee, useEmergencyWithdrawCreator, useWithdrawCreatorFailed, useMarkBondingFailed, useClaimCreatorUnwind } from '@/hooks/useTransactions';
 import { useProposals } from '@/hooks/useGovernance';
 import { useTokenImage } from '@/hooks/useTokenImage';
 import { config, LAMPORTS_PER_GOR } from '@/lib/config';
@@ -40,6 +40,7 @@ export function CreatorPositionCard({ position }: Props) {
   const updateSellFee = useUpdateSellFee();
   const renounceSellFee = useRenounceSellFee();
   const emergencyWithdrawCreator = useEmergencyWithdrawCreator();
+  const claimCreatorUnwind = useClaimCreatorUnwind();
   const withdrawCreatorFailed = useWithdrawCreatorFailed();
   const markBondingFailed = useMarkBondingFailed();
 
@@ -457,6 +458,40 @@ export function CreatorPositionCard({ position }: Props) {
               {emergencyWithdrawCreator.error && (
                 <p className="text-red-400 text-xs mt-2">{(emergencyWithdrawCreator.error as Error).message}</p>
               )}
+            </div>
+          )}
+
+          {/* $overeign Unwound — creator claims surplus GOR + unsold tokens */}
+          {position.status === 'Unwound' && sovereign && !sovereign.creatorUnwindClaimed && (
+            <div className="bg-[var(--money-green)]/5 border border-[var(--money-green)]/20 rounded-xl p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-bold text-[var(--money-green)]">✅ $overeign Unwound — Claim Your Funds</div>
+                  <p className="text-[10px] text-[var(--muted)]">
+                    Claim unsold tokens{sovereign.creatorUnwindSurplusGor > 0 ? ` and ${sovereign.creatorUnwindSurplusGor.toLocaleString(undefined, { maximumFractionDigits: 4 })} GOR surplus` : ''}.
+                  </p>
+                </div>
+                <button
+                  onClick={async () => {
+                    await claimCreatorUnwind.mutateAsync({ sovereignId: position.sovereignId });
+                  }}
+                  disabled={claimCreatorUnwind.isPending}
+                  className="px-4 py-2 rounded-lg text-xs font-bold bg-[var(--money-green)] text-black hover:brightness-110 disabled:opacity-40"
+                >
+                  {claimCreatorUnwind.isPending ? 'Claiming...' : 'Claim'}
+                </button>
+              </div>
+              {claimCreatorUnwind.isSuccess && (
+                <p className="text-[var(--slime)] text-xs mt-2">Surplus & tokens claimed!</p>
+              )}
+              {claimCreatorUnwind.error && (
+                <p className="text-red-400 text-xs mt-2">{(claimCreatorUnwind.error as Error).message}</p>
+              )}
+            </div>
+          )}
+          {position.status === 'Unwound' && sovereign?.creatorUnwindClaimed && (
+            <div className="bg-white/[0.03] rounded-xl p-3">
+              <span className="text-xs text-[var(--muted)]">✅ Creator unwind already claimed</span>
             </div>
           )}
 

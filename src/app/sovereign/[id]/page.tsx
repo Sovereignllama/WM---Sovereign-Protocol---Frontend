@@ -608,6 +608,11 @@ export default function SovereignDetailPage() {
                   </div>
                   {tokenRedemption.isSuccess && <span className="text-[var(--slime)] text-[10px]">Tokens redeemed for GOR!</span>}
                   {tokenRedemption.error && <span className="text-red-400 text-[10px]">{(tokenRedemption.error as Error).message}</span>}
+                  {sovereign.tokenRedemptionDeadline && sovereign.tokenRedemptionPoolGor > 0 && (
+                    <span className="text-[10px] text-[var(--muted)]">
+                      Redemption window {sovereign.tokenRedemptionDeadline > new Date() ? `closes ${formatDistanceToNow(sovereign.tokenRedemptionDeadline, { addSuffix: true })}` : 'has expired'}
+                    </span>
+                  )}
                 </div>
               </>
             )}
@@ -638,6 +643,11 @@ export default function SovereignDetailPage() {
                   </div>
                   {tokenRedemption.isSuccess && <span className="text-[var(--slime)] text-[10px]">Tokens redeemed for GOR!</span>}
                   {tokenRedemption.error && <span className="text-red-400 text-[10px]">{(tokenRedemption.error as Error).message}</span>}
+                  {sovereign.tokenRedemptionDeadline && sovereign.tokenRedemptionPoolGor > 0 && (
+                    <span className="text-[10px] text-[var(--muted)]">
+                      Redemption window {sovereign.tokenRedemptionDeadline > new Date() ? `closes ${formatDistanceToNow(sovereign.tokenRedemptionDeadline, { addSuffix: true })}` : 'has expired'}
+                    </span>
+                  )}
                 </div>
               </>
             )}

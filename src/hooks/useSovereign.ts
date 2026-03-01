@@ -250,6 +250,8 @@ export function useSovereign(sovereignId: string | number | undefined) {
         tokenRedemptionDeadline: Number(account.tokenRedemptionDeadline || 0) > 0
           ? new Date(Number(account.tokenRedemptionDeadline) * 1000)
           : null,
+        creatorUnwindSurplusGor: Number(account.creatorUnwindSurplus || 0) / LAMPORTS_PER_GOR,
+        creatorUnwindClaimed: !!account.creatorUnwindClaimed,
       };
     },
     staleTime: 10_000,

@@ -2266,6 +2266,60 @@ export async function buildRedeemTokensForGorTx(
 }
 
 /**
+ * Build a claim_creator_unwind transaction.
+ * Creator reclaims surplus GOR (BYO) + unsold tokens from token_vault.
+ * Available when sovereign is Unwound.
+ */
+export async function buildClaimCreatorUnwindTx(
+  program: SovereignLiquidityProgram,
+  creator: PublicKey,
+  sovereignId: bigint | number,
+): Promise<Transaction> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [solVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
+  const [tokenVaultPDA] = getTokenVaultPDA(sovereignPDA, program.programId);
+
+  // Fetch sovereign to get token_mint
+  const sovereignAccount = await (program.account as any).sovereignState.fetch(sovereignPDA);
+  const tokenMint: PublicKey = sovereignAccount.tokenMint;
+
+  // Determine the token program (Token-2022 for TokenLaunch, SPL Token for BYO)
+  const mintAccountInfo = await program.provider.connection.getAccountInfo(tokenMint);
+  const tokenProgramId = mintAccountInfo?.owner || TOKEN_2022_PROGRAM_ID;
+
+  // Creator's token account
+  const creatorTokenAccount = getAssociatedTokenAddressSync(
+    tokenMint, creator, false, tokenProgramId,
+  );
+
+  const tx = new Transaction();
+
+  // Ensure creator's ATA exists (idempotent)
+  tx.add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      creator, creatorTokenAccount, creator, tokenMint, tokenProgramId,
+    )
+  );
+
+  const ix = await (program.methods as any)
+    .claimCreatorUnwind()
+    .accounts({
+      creator,
+      sovereign: sovereignPDA,
+      solVault: solVaultPDA,
+      tokenVault: tokenVaultPDA,
+      tokenMint,
+      creatorTokenAccount,
+      tokenProgram: tokenProgramId,
+      systemProgram: SystemProgram.programId,
+    })
+    .transaction();
+
+  tx.add(...ix.instructions);
+  return tx;
+}
+
+/**
  * Build a withdraw_failed transaction (investor).
  * Reclaims deposited GOR from sol_vault, closes the deposit record.
  */

@@ -67,6 +67,7 @@ import {
   buildMarkBondingFailedTx,
   buildWithdrawFailedTx,
   buildWithdrawCreatorFailedTx,
+  buildClaimCreatorUnwindTx,
   CreateSovereignFrontendParams,
   fetchDepositRecord,
   fetchSovereignById,
@@ -763,6 +764,56 @@ export function useEmergencyWithdrawCreator() {
       });
 
       await confirmWithFallback(connection,{
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereigns });
+    },
+  });
+}
+
+/**
+ * Hook for creator to claim surplus GOR + unsold tokens after governance unwind.
+ * Available when sovereign is Unwound and creator_unwind_claimed is false.
+ */
+export function useClaimCreatorUnwind() {
+  const program = useProgram();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sovereignId,
+    }: {
+      sovereignId: string | number;
+    }): Promise<TransactionResult> => {
+      if (!program || !publicKey) {
+        throw new Error('Wallet not connected');
+      }
+
+      const tx = await buildClaimCreatorUnwindTx(
+        program,
+        publicKey,
+        BigInt(sovereignId),
+      );
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      await confirmWithFallback(connection, {
         signature,
         blockhash,
         lastValidBlockHeight,
