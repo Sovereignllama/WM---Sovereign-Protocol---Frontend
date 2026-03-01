@@ -6,7 +6,7 @@ import { useConnection } from '@solana/wallet-adapter-react';
 import { SovereignType } from '@/lib/program/client';
 import { PROTOCOL_CONSTANTS, LAMPORTS_PER_GOR } from '@/lib/config';
 import { useProtocolState } from '@/hooks/useSovereign';
-import { useCreateSovereign, type CreationProgress } from '@/hooks/useTransactions';
+import { useCreateSovereign, type CreationProgress, type CreateSovereignMutationParams } from '@/hooks/useTransactions';
 import { useRouter } from 'next/navigation';
 import { createTokenMetadata, createUploadAuth, isPinataConfigured } from '@/lib/upload';
 import { PublicKey } from '@solana/web3.js';
@@ -136,9 +136,15 @@ export default function MintPage() {
   const [creationProgress, setCreationProgress] = useState<CreationProgress | null>(null);
   const [creationError, setCreationError] = useState<string | null>(null);
   const createdSovereignIdRef = useRef<string | null>(null);
+  /** Saved params from the last creation attempt, used for resume */
+  const lastCreationParamsRef = useRef<CreateSovereignMutationParams | null>(null);
 
   const createSovereign = useCreateSovereign((progress) => {
     setCreationProgress(progress);
+    // Capture sovereign ID as soon as step 1 confirms (for resume)
+    if (progress.sovereignId && !createdSovereignIdRef.current) {
+      createdSovereignIdRef.current = progress.sovereignId;
+    }
   });
 
   const isTokenLaunch = formData.sovereignType === 'TokenLaunch';
@@ -292,6 +298,7 @@ export default function MintPage() {
     setCreationError(null);
     setCreationProgress(null);
     createdSovereignIdRef.current = null;
+    lastCreationParamsRef.current = null;
     
     try {
       const bondTargetLamports = BigInt(Math.floor(parseFloat(formData.bondTarget) * LAMPORTS_PER_GOR));
@@ -329,7 +336,7 @@ export default function MintPage() {
           setIsUploadingImage(false);
         }
 
-        const params = {
+        const params: CreateSovereignMutationParams = {
           sovereignType: 'TokenLaunch' as const,
           bondTarget: bondTargetLamports,
           bondDurationDays: formData.bondDurationDays,
@@ -345,6 +352,9 @@ export default function MintPage() {
           metadataUri,
         };
 
+        // Save params for potential resume
+        lastCreationParamsRef.current = params;
+
         console.log('Creating TokenLaunch sovereign with params:', params);
         const result = await createSovereign.mutateAsync(params);
         console.log('Sovereign created:', result);
@@ -357,7 +367,7 @@ export default function MintPage() {
           Math.floor(parseFloat(formData.depositAmount) * (10 ** formData.byoTokenDecimals))
         );
 
-        const params = {
+        const params: CreateSovereignMutationParams = {
           sovereignType: 'BYOToken' as const,
           bondTarget: bondTargetLamports,
           bondDurationDays: formData.bondDurationDays,
@@ -372,6 +382,9 @@ export default function MintPage() {
             ? new PublicKey(formData.byoTokenProgramId)
             : undefined,
         };
+
+        // Save params for potential resume
+        lastCreationParamsRef.current = params;
 
         console.log('Creating BYOToken sovereign with params:', params);
         const result = await createSovereign.mutateAsync(params);
@@ -397,8 +410,57 @@ export default function MintPage() {
     }
   };
 
+  /**
+   * Resume a partially-created sovereign from where it left off.
+   * Uses the saved params + the sovereignId captured from the progress callback.
+   */
+  const handleResume = async () => {
+    const savedParams = lastCreationParamsRef.current;
+    const savedProgress = creationProgress;
+    if (!savedParams || !savedProgress?.sovereignId || !savedProgress?.sovereignPDA) {
+      return;
+    }
+
+    // Clear error state but keep the progress (stepper will rebuild from resume)
+    setError(null);
+    setCreationError(null);
+
+    try {
+      const resumeParams: CreateSovereignMutationParams = {
+        ...savedParams,
+        resumeSovereignId: BigInt(savedProgress.sovereignId),
+        resumeSovereignPDA: new PublicKey(savedProgress.sovereignPDA),
+      };
+
+      console.log('Resuming creation for sovereign:', savedProgress.sovereignId);
+      const result = await createSovereign.mutateAsync(resumeParams);
+      console.log('Sovereign creation resumed successfully:', result);
+      createdSovereignIdRef.current = result.sovereignId;
+    } catch (err: any) {
+      console.error('Failed to resume creation:', err);
+      const message = err.message || 'Failed to resume creation. Please try again.';
+      setError(message);
+      setCreationError(message);
+
+      // Mark current step as error
+      if (creationProgress) {
+        setCreationProgress(prev => {
+          if (!prev) return prev;
+          const updated = { ...prev, steps: prev.steps.map(s => ({ ...s })) };
+          const activeStep = updated.steps.find(s => s.status === 'signing' || s.status === 'confirming');
+          if (activeStep) activeStep.status = 'error';
+          return updated;
+        });
+      }
+    }
+  };
+
   const handleStepperClose = () => {
     if (createdSovereignIdRef.current && creationProgress?.steps.every(s => s.status === 'confirmed')) {
+      // All done — navigate to sovereign page
+      router.push(`/sovereign/${createdSovereignIdRef.current}`);
+    } else if (createdSovereignIdRef.current && creationProgress?.steps.some(s => s.status === 'confirmed')) {
+      // Partial creation — navigate to sovereign page (it exists on-chain)
       router.push(`/sovereign/${createdSovereignIdRef.current}`);
     } else {
       // Error case — dismiss overlay, keep form state
@@ -1168,6 +1230,7 @@ export default function MintPage() {
         progress={creationProgress}
         error={creationError}
         onClose={handleStepperClose}
+        onResume={handleResume}
       />
     </div>
   );

@@ -8,9 +8,11 @@ interface CreationStepperProps {
   progress: CreationProgress | null;
   error?: string | null;
   onClose?: () => void;
+  /** Called when user clicks "Resume Creation" after a partial failure */
+  onResume?: () => void;
 }
 
-export default function CreationStepper({ progress, error, onClose }: CreationStepperProps) {
+export default function CreationStepper({ progress, error, onClose, onResume }: CreationStepperProps) {
   if (!progress) return null;
 
   const allDone = progress.steps.every(s => s.status === 'confirmed');
@@ -36,7 +38,9 @@ export default function CreationStepper({ progress, error, onClose }: CreationSt
             {allDone
               ? 'All transactions confirmed on-chain.'
               : hasError
-                ? 'An error occurred during creation.'
+                ? (progress.sovereignId && progress.steps.some(s => s.status === 'confirmed')
+                  ? 'Some steps completed. You can resume where it left off.'
+                  : 'An error occurred during creation.')
                 : 'Please approve each transaction in your wallet.'}
           </p>
         </div>
@@ -143,18 +147,29 @@ export default function CreationStepper({ progress, error, onClose }: CreationSt
           </div>
         )}
 
-        {/* Close button (only when done or errored) */}
+        {/* Close / Resume buttons */}
         {(allDone || hasError) && onClose && (
-          <button
-            onClick={onClose}
-            className={`mt-5 w-full py-2.5 rounded-lg font-semibold text-sm transition-colors ${
-              allDone
-                ? 'bg-[var(--profit)] text-[#14110A] hover:bg-[var(--slime)]'
-                : 'bg-[var(--border)] text-[var(--text)] hover:bg-[var(--concrete)]'
-            }`}
-          >
-            {allDone ? 'View $overeign →' : 'Close'}
-          </button>
+          <div className="mt-5 flex gap-3">
+            {/* Resume button — only when error AND at least one step confirmed (partial creation) */}
+            {hasError && onResume && progress.sovereignId && progress.steps.some(s => s.status === 'confirmed') && (
+              <button
+                onClick={onResume}
+                className="flex-1 py-2.5 rounded-lg font-semibold text-sm transition-colors bg-[var(--profit)] text-[#14110A] hover:bg-[var(--slime)]"
+              >
+                Resume Creation
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className={`${hasError && onResume && progress.sovereignId && progress.steps.some(s => s.status === 'confirmed') ? 'flex-1' : 'w-full'} py-2.5 rounded-lg font-semibold text-sm transition-colors ${
+                allDone
+                  ? 'bg-[var(--profit)] text-[#14110A] hover:bg-[var(--slime)]'
+                  : 'bg-[var(--border)] text-[var(--text)] hover:bg-[var(--concrete)]'
+              }`}
+            >
+              {allDone ? 'View $overeign →' : 'Close'}
+            </button>
+          </div>
         )}
       </div>
     </div>

@@ -36,6 +36,7 @@ import {
   buildWithdrawCreatorFailedTx,
   CreateSovereignFrontendParams,
   fetchDepositRecord,
+  fetchSovereignById,
 } from '@/lib/program/client';
 import { 
   getSovereignPDA,
@@ -64,12 +65,28 @@ export interface CreationProgress {
   currentStep: number;
   totalSteps: number;
   steps: CreationStepInfo[];
+  /** Available after step 1 (create_sovereign) confirms — used for resume */
+  sovereignId?: string;
+  /** Available after step 1 (create_sovereign) confirms — used for resume */
+  sovereignPDA?: string;
 }
 
 export type OnCreationProgress = (progress: CreationProgress) => void;
 
 /**
- * Hook to create a new sovereign with step-by-step progress reporting
+ * Extended params that include optional resume fields.
+ * When resumeSovereignId is set, the hook skips already-completed steps.
+ */
+export interface CreateSovereignMutationParams extends CreateSovereignFrontendParams {
+  /** If set, resume creation from where it left off */
+  resumeSovereignId?: bigint;
+  /** PDA of the existing sovereign (required when resumeSovereignId is set) */
+  resumeSovereignPDA?: PublicKey;
+}
+
+/**
+ * Hook to create a new sovereign with step-by-step progress reporting.
+ * Supports resuming a partially-created sovereign when `resumeSovereignId` is passed.
  */
 export function useCreateSovereign(onProgress?: OnCreationProgress) {
   const program = useProgram();
@@ -80,73 +97,154 @@ export function useCreateSovereign(onProgress?: OnCreationProgress) {
   progressRef.current = onProgress;
 
   // Helper to build the steps array and report progress
-  const report = (steps: CreationStepInfo[], currentStep: number) => {
+  const report = (
+    steps: CreationStepInfo[],
+    currentStep: number,
+    sovereignId?: string,
+    sovereignPDA?: string,
+  ) => {
     progressRef.current?.({
       currentStep,
       totalSteps: steps.length,
       steps: [...steps],
+      sovereignId,
+      sovereignPDA,
     });
   };
 
   return useMutation({
-    mutationFn: async (params: CreateSovereignFrontendParams): Promise<CreateSovereignResult> => {
+    mutationFn: async (params: CreateSovereignMutationParams): Promise<CreateSovereignResult> => {
       if (!program || !publicKey || !signTransaction) {
         throw new Error('Wallet not connected');
       }
 
-      // ── Determine steps dynamically ──
+      const isResume = !!params.resumeSovereignId;
       const isTokenLaunch = params.sovereignType === 'TokenLaunch';
       const hasBuyIn = params.creatorBuyIn && params.creatorBuyIn > BigInt(0);
 
+      // ── Determine completed steps when resuming ──
+      let createSovereignDone = false;
+      let createTokenDone = false;
+      let depositDone = false;
+      let sovereignId: bigint;
+      let sovereignPDA: PublicKey;
+
+      if (isResume) {
+        sovereignId = params.resumeSovereignId!;
+        sovereignPDA = params.resumeSovereignPDA!;
+
+        // Fetch current on-chain state to determine which steps completed
+        try {
+          const sovereign = await fetchSovereignById(program, sovereignId);
+          createSovereignDone = true;
+
+          // Token Launch: check if tokenMint is set (non-zero pubkey)
+          if (isTokenLaunch) {
+            const mintKey = sovereign.tokenMint as PublicKey;
+            createTokenDone = mintKey && !mintKey.equals(PublicKey.default);
+          }
+
+          // Check if creator already deposited (creatorEscrow > 0)
+          if (hasBuyIn) {
+            const escrow = sovereign.creatorEscrow;
+            depositDone = escrow && (typeof escrow.toNumber === 'function'
+              ? escrow.toNumber() > 0
+              : Number(escrow) > 0);
+          }
+        } catch {
+          throw new Error('Could not fetch sovereign state for resume. The sovereign may not exist on-chain.');
+        }
+      } else {
+        // Will be set after step 1
+        sovereignId = 0n;
+        sovereignPDA = PublicKey.default;
+      }
+
+      // ── Build step list, marking completed steps ──
       const steps: CreationStepInfo[] = [
-        { label: 'Creating $overeign', status: 'pending' },
+        {
+          label: 'Creating $overeign',
+          status: createSovereignDone ? 'confirmed' : 'pending',
+        },
       ];
       if (isTokenLaunch) {
-        steps.push({ label: 'Creating Token', status: 'pending' });
+        steps.push({
+          label: 'Creating Token',
+          status: createTokenDone ? 'confirmed' : 'pending',
+        });
       }
       if (hasBuyIn) {
-        steps.push({ label: 'Creator Buy-in', status: 'pending' });
+        steps.push({
+          label: 'Creator Buy-in',
+          status: depositDone ? 'confirmed' : 'pending',
+        });
       }
 
-      let stepIdx = 0;
+      // Find the first non-confirmed step
+      let stepIdx = steps.findIndex(s => s.status !== 'confirmed');
+      if (stepIdx === -1) {
+        // Everything is already done — just return
+        report(
+          steps, steps.length - 1,
+          sovereignId.toString(), sovereignPDA.toBase58(),
+        );
+        return {
+          signature: '',
+          success: true,
+          sovereignId: sovereignId.toString(),
+          sovereignPDA: sovereignPDA.toBase58(),
+        };
+      }
 
-      // ── Step 1: create_sovereign ──
-      steps[stepIdx].status = 'signing';
-      report(steps, stepIdx);
-
-      const { tx, sovereignPDA, sovereignId } = await buildCreateSovereignTx(
-        program,
-        publicKey,
-        params
+      // Report initial state (shows already-confirmed steps)
+      let firstSignature = '';
+      report(
+        steps, stepIdx,
+        isResume ? sovereignId.toString() : undefined,
+        isResume ? sovereignPDA.toBase58() : undefined,
       );
 
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
-      tx.recentBlockhash = blockhash;
-      tx.feePayer = publicKey;
-
-      const signature = await sendTransaction(tx, connection, {
-        skipPreflight: true,
-        preflightCommitment: 'confirmed',
-      });
-
-      steps[stepIdx].status = 'confirming';
-      steps[stepIdx].signature = signature;
-      report(steps, stepIdx);
-
-      await connection.confirmTransaction({
-        signature,
-        blockhash,
-        lastValidBlockHeight,
-      }, 'confirmed');
-
-      steps[stepIdx].status = 'confirmed';
-      report(steps, stepIdx);
-      stepIdx++;
-
-      // ── Step 2 (TokenLaunch only): create_token ──
-      if (isTokenLaunch) {
+      // ── Step: create_sovereign (skip if already done) ──
+      if (!createSovereignDone) {
         steps[stepIdx].status = 'signing';
         report(steps, stepIdx);
+
+        const { tx, sovereignPDA: newPDA, sovereignId: newId } = await buildCreateSovereignTx(
+          program,
+          publicKey,
+          params
+        );
+        sovereignId = newId;
+        sovereignPDA = newPDA;
+
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+        tx.recentBlockhash = blockhash;
+        tx.feePayer = publicKey;
+
+        firstSignature = await sendTransaction(tx, connection, {
+          skipPreflight: true,
+          preflightCommitment: 'confirmed',
+        });
+
+        steps[stepIdx].status = 'confirming';
+        steps[stepIdx].signature = firstSignature;
+        report(steps, stepIdx, sovereignId.toString(), sovereignPDA.toBase58());
+
+        await connection.confirmTransaction({
+          signature: firstSignature,
+          blockhash,
+          lastValidBlockHeight,
+        }, 'confirmed');
+
+        steps[stepIdx].status = 'confirmed';
+        report(steps, stepIdx, sovereignId.toString(), sovereignPDA.toBase58());
+        stepIdx++;
+      }
+
+      // ── Step: create_token (Token Launch only, skip if already done) ──
+      if (isTokenLaunch && !createTokenDone) {
+        steps[stepIdx].status = 'signing';
+        report(steps, stepIdx, sovereignId.toString(), sovereignPDA.toBase58());
 
         const defaultUri = `https://trashscan.io/address/${sovereignId}`;
         const { tx: tokenTx } = await buildCreateTokenTx(
@@ -160,7 +258,7 @@ export function useCreateSovereign(onProgress?: OnCreationProgress) {
           }
         );
 
-        const { blockhash: tokenBlockhash, lastValidBlockHeight: tokenLastValid } = 
+        const { blockhash: tokenBlockhash, lastValidBlockHeight: tokenLastValid } =
           await connection.getLatestBlockhash('confirmed');
         tokenTx.recentBlockhash = tokenBlockhash;
         tokenTx.feePayer = publicKey;
@@ -172,7 +270,7 @@ export function useCreateSovereign(onProgress?: OnCreationProgress) {
 
         steps[stepIdx].status = 'confirming';
         steps[stepIdx].signature = tokenSignature;
-        report(steps, stepIdx);
+        report(steps, stepIdx, sovereignId.toString(), sovereignPDA.toBase58());
 
         await connection.confirmTransaction({
           signature: tokenSignature,
@@ -181,21 +279,24 @@ export function useCreateSovereign(onProgress?: OnCreationProgress) {
         }, 'confirmed');
 
         steps[stepIdx].status = 'confirmed';
-        report(steps, stepIdx);
+        report(steps, stepIdx, sovereignId.toString(), sovereignPDA.toBase58());
+        if (!firstSignature) firstSignature = tokenSignature;
         console.log('Token created:', tokenSignature);
+        stepIdx++;
+      } else if (isTokenLaunch && createTokenDone) {
+        // Skip past the already-confirmed token step
         stepIdx++;
       }
 
-      // ── Step 3 (optional): creator buy-in deposit ──
-      if (hasBuyIn) {
+      // ── Step: creator buy-in deposit (skip if already done) ──
+      if (hasBuyIn && !depositDone) {
         steps[stepIdx].status = 'signing';
-        report(steps, stepIdx);
+        report(steps, stepIdx, sovereignId.toString(), sovereignPDA.toBase58());
 
-        const sovereignIdNum = BigInt(sovereignId);
         const depositTx = await buildDepositTx(
           program,
           publicKey,
-          sovereignIdNum,
+          sovereignId,
           params.creatorBuyIn!
         );
 
@@ -211,7 +312,7 @@ export function useCreateSovereign(onProgress?: OnCreationProgress) {
 
         steps[stepIdx].status = 'confirming';
         steps[stepIdx].signature = depositSignature;
-        report(steps, stepIdx);
+        report(steps, stepIdx, sovereignId.toString(), sovereignPDA.toBase58());
 
         await connection.confirmTransaction({
           signature: depositSignature,
@@ -220,12 +321,13 @@ export function useCreateSovereign(onProgress?: OnCreationProgress) {
         }, 'confirmed');
 
         steps[stepIdx].status = 'confirmed';
-        report(steps, stepIdx);
+        report(steps, stepIdx, sovereignId.toString(), sovereignPDA.toBase58());
+        if (!firstSignature) firstSignature = depositSignature;
         console.log('Creator buy-in deposited:', depositSignature);
       }
 
-      return { 
-        signature, 
+      return {
+        signature: firstSignature,
         success: true,
         sovereignId: sovereignId.toString(),
         sovereignPDA: sovereignPDA.toBase58(),
