@@ -53,6 +53,7 @@ import {
   buildEmergencyUnlockTx,
   buildEmergencyWithdrawTx,
   buildEmergencyWithdrawCreatorTx,
+  buildActivatePositionTx,
   buildMintNftFromPositionTx,
   buildUpdateSellFeeTx,
   buildRenounceSellFeeTx,
@@ -644,7 +645,27 @@ export function useEmergencyWithdraw() {
       // Fetch deposit record to check if NFT was minted
       const [sovereignPDA] = getSovereignPDA(BigInt(sovereignId), program.programId);
       const depositRecord = await fetchDepositRecord(program, sovereignPDA, depositorKey);
-      
+
+      // Preflight: activate position if position_bps is 0 (required for finalized sovereigns)
+      if (depositRecord && (depositRecord.positionBps ?? 0) === 0 && depositRecord.amount?.toNumber?.() > 0) {
+        console.log('[useEmergencyWithdraw] position_bps is 0, activating position first...');
+        const activateTx = await buildActivatePositionTx(
+          program, publicKey, BigInt(sovereignId), depositorKey,
+        );
+        const { blockhash: actBh, lastValidBlockHeight: actLvbh } =
+          await connection.getLatestBlockhash('confirmed');
+        activateTx.recentBlockhash = actBh;
+        activateTx.feePayer = publicKey;
+        const actSig = await sendTransaction(activateTx, connection, {
+          skipPreflight: true,
+          preflightCommitment: 'confirmed',
+        });
+        await confirmWithFallback(connection, {
+          signature: actSig, blockhash: actBh, lastValidBlockHeight: actLvbh,
+        }, 'confirmed');
+        console.log('[useEmergencyWithdraw] Position activated:', actSig);
+      }
+
       let nftMint: PublicKey | undefined;
       let nftTokenAccount: PublicKey | undefined;
 

@@ -1065,6 +1065,30 @@ export async function buildEmergencyUnlockTx(
 }
 
 /**
+ * Build an activate_position transaction (permissionless).
+ * Computes and stores position_bps on a deposit record.
+ * Required before emergency_withdraw on finalized sovereigns.
+ */
+export async function buildActivatePositionTx(
+  program: SovereignLiquidityProgram,
+  payer: PublicKey,
+  sovereignId: bigint | number,
+  depositor: PublicKey,
+): Promise<Transaction> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [depositRecordPDA] = getDepositRecordPDA(sovereignPDA, depositor, program.programId);
+
+  return (program.methods as any)
+    .activatePosition()
+    .accounts({
+      payer,
+      sovereign: sovereignPDA,
+      depositRecord: depositRecordPDA,
+    })
+    .transaction();
+}
+
+/**
  * Build an emergency withdraw transaction (investors)
  * Reclaims deposited GOR from sol_vault, closes deposit record
  */
