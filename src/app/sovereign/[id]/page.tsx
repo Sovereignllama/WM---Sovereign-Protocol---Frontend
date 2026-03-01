@@ -690,7 +690,7 @@ export default function SovereignDetailPage() {
         </div>
       </div>
 
-      {/* ── Creator Content Area (full width) ── */
+      {/* ── Creator Content Area (full width) ── */}
       <div className="w-full">
         {sovereignPage ? (
           <SovereignPageDisplay page={sovereignPage} />
