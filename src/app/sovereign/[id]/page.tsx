@@ -3,8 +3,12 @@
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useWallet } from '@solana/wallet-adapter-react';
+import { useConnection } from '@solana/wallet-adapter-react';
+import { useQuery } from '@tanstack/react-query';
+import { PublicKey } from '@solana/web3.js';
+import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, AccountLayout } from '@solana/spl-token';
 import { useSovereign, useDepositRecord, useEnginePool, useProtocolState } from '@/hooks/useSovereign';
-import { useDeposit, useWithdraw, useFinalizeEnginePool, useWithdrawFailed, useWithdrawCreatorFailed } from '@/hooks/useTransactions';
+import { useDeposit, useWithdraw, useFinalizeEnginePool, useWithdrawFailed, useWithdrawCreatorFailed, useTokenRedemption } from '@/hooks/useTransactions';
 import { useProposals } from '@/hooks/useGovernance';
 import { usePoolSnapshot } from '@/hooks/usePoolSnapshot';
 import { useTokenImage } from '@/hooks/useTokenImage';
@@ -19,6 +23,7 @@ export default function SovereignDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { connected, publicKey } = useWallet();
+  const { connection } = useConnection();
   const sovereignId = params.id as string;
 
   const { data: sovereign, isLoading, error } = useSovereign(sovereignId);
@@ -28,6 +33,7 @@ export default function SovereignDetailPage() {
   const finalizeEnginePool = useFinalizeEnginePool();
   const withdrawFailed = useWithdrawFailed();
   const withdrawCreatorFailed = useWithdrawCreatorFailed();
+  const tokenRedemption = useTokenRedemption();
 
 
   const { data: imageUrl } = useTokenImage(sovereign?.metadataUri);
@@ -37,6 +43,35 @@ export default function SovereignDetailPage() {
 
   const { data: protocolState } = useProtocolState();
   const { data: proposals } = useProposals(sovereign?.sovereignId);
+
+  // Fetch user's token balance for this sovereign's token mint
+  const isRedemptionStatus = sovereign?.status === 'Halted' || sovereign?.status === 'Retired'
+    || sovereign?.status === 'Unwinding' || sovereign?.status === 'Unwound';
+  const { data: userTokenBalance } = useQuery({
+    queryKey: ['userTokenBalance', publicKey?.toBase58(), sovereign?.tokenMint],
+    queryFn: async () => {
+      if (!publicKey || !sovereign?.tokenMint) return 0;
+      try {
+        const mint = new PublicKey(sovereign.tokenMint);
+        // Try Token-2022 first, then SPL Token
+        for (const programId of [TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID]) {
+          try {
+            const ata = getAssociatedTokenAddressSync(mint, publicKey, false, programId);
+            const info = await connection.getAccountInfo(ata);
+            if (info && info.data.length >= 72) {
+              const decoded = AccountLayout.decode(info.data);
+              return Number(decoded.amount);
+            }
+          } catch { /* try next */ }
+        }
+        return 0;
+      } catch {
+        return 0;
+      }
+    },
+    staleTime: 15_000,
+    enabled: !!publicKey && !!sovereign?.tokenMint && isRedemptionStatus,
+  });
 
   const [depositAmount, setDepositAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
@@ -547,14 +582,62 @@ export default function SovereignDetailPage() {
               </>
             )}
 
-            {connected && sovereign.status === 'Halted' && (
+            {connected && (sovereign.status === 'Halted' || sovereign.status === 'Retired') && (
               <>
                 <div className="hidden sm:block w-px self-stretch bg-[var(--border)]" />
-                <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-1.5">
-                  <span className="text-xs text-red-400 font-medium">⚠️ Halted</span>
-                  <Link href="/governance" className="px-3 py-1 rounded text-xs font-bold bg-red-600 text-white hover:bg-red-700">
-                    Governance →
-                  </Link>
+                <div className="flex flex-col gap-2 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                  <span className="text-xs text-red-400 font-bold">⚠️ Halted — Claim your funds</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {(userTokenBalance ?? 0) > 0 && sovereign.tokenRedemptionPoolGor > 0 && (
+                      <button
+                        onClick={() => tokenRedemption.mutateAsync({ sovereignId, sovereignStatus: sovereign.status })}
+                        disabled={tokenRedemption.isPending}
+                        className="px-3 py-1 rounded text-xs font-bold bg-[var(--money-green)] text-black hover:brightness-110 disabled:opacity-40"
+                      >
+                        {tokenRedemption.isPending ? 'Redeeming...' : `Redeem ${((userTokenBalance ?? 0) / LAMPORTS_PER_GOR).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${sovereign.tokenSymbol || 'tokens'} for GOR`}
+                      </button>
+                    )}
+                    {depositRecord && depositRecord.amountGor > 0 && (
+                      <Link href={`/governance?sovereign=${sovereignId}`} className="px-3 py-1 rounded text-xs font-bold bg-red-600 text-white hover:bg-red-700">
+                        Governance → Claim {depositRecord.amountGor.toLocaleString()} GOR
+                      </Link>
+                    )}
+                    {!(userTokenBalance ?? 0) && !depositRecord && (
+                      <span className="text-xs text-[var(--muted)]">No tokens or deposits to claim</span>
+                    )}
+                  </div>
+                  {tokenRedemption.isSuccess && <span className="text-[var(--slime)] text-[10px]">Tokens redeemed for GOR!</span>}
+                  {tokenRedemption.error && <span className="text-red-400 text-[10px]">{(tokenRedemption.error as Error).message}</span>}
+                </div>
+              </>
+            )}
+
+            {connected && (sovereign.status === 'Unwinding' || sovereign.status === 'Unwound') && (
+              <>
+                <div className="hidden sm:block w-px self-stretch bg-[var(--border)]" />
+                <div className="flex flex-col gap-2 bg-[var(--money-green)]/5 border border-[var(--money-green)]/20 rounded-lg px-3 py-2">
+                  <span className="text-xs text-[var(--money-green)] font-bold">{sovereign.status === 'Unwound' ? '✅ Unwound' : '🔄 Unwinding'} — Claim your funds</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {(userTokenBalance ?? 0) > 0 && sovereign.tokenRedemptionPoolGor > 0 && (
+                      <button
+                        onClick={() => tokenRedemption.mutateAsync({ sovereignId, sovereignStatus: sovereign.status })}
+                        disabled={tokenRedemption.isPending}
+                        className="px-3 py-1 rounded text-xs font-bold bg-[var(--money-green)] text-black hover:brightness-110 disabled:opacity-40"
+                      >
+                        {tokenRedemption.isPending ? 'Redeeming...' : `Redeem ${((userTokenBalance ?? 0) / LAMPORTS_PER_GOR).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${sovereign.tokenSymbol || 'tokens'} for GOR`}
+                      </button>
+                    )}
+                    {depositRecord && depositRecord.amountGor > 0 && (
+                      <Link href={`/governance?sovereign=${sovereignId}`} className="px-3 py-1 rounded text-xs font-bold bg-[var(--money-green)]/20 text-[var(--money-green)] hover:bg-[var(--money-green)]/30 border border-[var(--money-green)]/30">
+                        Governance → Claim {depositRecord.amountGor.toLocaleString()} GOR
+                      </Link>
+                    )}
+                    {!(userTokenBalance ?? 0) && !depositRecord && (
+                      <span className="text-xs text-[var(--muted)]">No tokens or deposits to claim</span>
+                    )}
+                  </div>
+                  {tokenRedemption.isSuccess && <span className="text-[var(--slime)] text-[10px]">Tokens redeemed for GOR!</span>}
+                  {tokenRedemption.error && <span className="text-red-400 text-[10px]">{(tokenRedemption.error as Error).message}</span>}
                 </div>
               </>
             )}
@@ -607,7 +690,7 @@ export default function SovereignDetailPage() {
         </div>
       </div>
 
-      {/* ── Creator Content Area (full width) ── */}
+      {/* ── Creator Content Area (full width) ── */
       <div className="w-full">
         {sovereignPage ? (
           <SovereignPageDisplay page={sovereignPage} />
@@ -871,3 +954,4 @@ function WindDownBanner({
     </div>
   );
 }
+

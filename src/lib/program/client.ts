@@ -2148,6 +2148,124 @@ export async function buildMarkBondingFailedTx(
 }
 
 /**
+ * Build an emergency_token_redemption transaction.
+ * Token holders redeem sovereign tokens for proportional surplus GOR.
+ * Available when sovereign is Halted/Retired and token_redemption_pool > 0.
+ */
+export async function buildEmergencyTokenRedemptionTx(
+  program: SovereignLiquidityProgram,
+  caller: PublicKey,
+  sovereignId: bigint | number,
+): Promise<Transaction> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [solVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
+
+  // Fetch sovereign to get token_mint and creator
+  const sovereignAccount = await (program.account as any).sovereignState.fetch(sovereignPDA);
+  const tokenMint: PublicKey = sovereignAccount.tokenMint;
+  const creator: PublicKey = sovereignAccount.creator;
+
+  // Determine the token program (Token-2022 for TokenLaunch, Token for BYO)
+  const mintAccountInfo = await program.provider.connection.getAccountInfo(tokenMint);
+  const tokenProgramId = mintAccountInfo?.owner || TOKEN_2022_PROGRAM_ID;
+
+  // Caller's token account
+  const callerTokenAccount = getAssociatedTokenAddressSync(
+    tokenMint, caller, false, tokenProgramId,
+  );
+
+  // Creator's token account (receives the redeemed tokens)
+  const creatorTokenAccount = getAssociatedTokenAddressSync(
+    tokenMint, creator, false, tokenProgramId,
+  );
+
+  const tx = new Transaction();
+
+  // Ensure creator's ATA exists (idempotent)
+  tx.add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      caller, creatorTokenAccount, creator, tokenMint, tokenProgramId,
+    )
+  );
+
+  const ix = await (program.methods as any)
+    .emergencyTokenRedemption()
+    .accounts({
+      caller,
+      sovereign: sovereignPDA,
+      solVault: solVaultPDA,
+      tokenMint,
+      callerTokenAccount,
+      creatorTokenAccount,
+      tokenProgram: tokenProgramId,
+      systemProgram: SystemProgram.programId,
+    })
+    .transaction();
+
+  tx.add(...ix.instructions);
+  return tx;
+}
+
+/**
+ * Build a redeem_tokens_for_gor transaction.
+ * Token holders redeem sovereign tokens for proportional surplus GOR.
+ * Available after governance unwind (Unwound state), within 30-day window.
+ */
+export async function buildRedeemTokensForGorTx(
+  program: SovereignLiquidityProgram,
+  caller: PublicKey,
+  sovereignId: bigint | number,
+): Promise<Transaction> {
+  const [sovereignPDA] = getSovereignPDA(sovereignId, program.programId);
+  const [solVaultPDA] = getSolVaultPDA(sovereignPDA, program.programId);
+
+  // Fetch sovereign to get token_mint and creator
+  const sovereignAccount = await (program.account as any).sovereignState.fetch(sovereignPDA);
+  const tokenMint: PublicKey = sovereignAccount.tokenMint;
+  const creator: PublicKey = sovereignAccount.creator;
+
+  // Determine the token program (Token-2022 for TokenLaunch, Token for BYO)
+  const mintAccountInfo = await program.provider.connection.getAccountInfo(tokenMint);
+  const tokenProgramId = mintAccountInfo?.owner || TOKEN_2022_PROGRAM_ID;
+
+  // Caller's token account
+  const callerTokenAccount = getAssociatedTokenAddressSync(
+    tokenMint, caller, false, tokenProgramId,
+  );
+
+  // Creator's token account (receives the redeemed tokens)
+  const creatorTokenAccount = getAssociatedTokenAddressSync(
+    tokenMint, creator, false, tokenProgramId,
+  );
+
+  const tx = new Transaction();
+
+  // Ensure creator's ATA exists (idempotent)
+  tx.add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      caller, creatorTokenAccount, creator, tokenMint, tokenProgramId,
+    )
+  );
+
+  const ix = await (program.methods as any)
+    .redeemTokensForGor()
+    .accounts({
+      caller,
+      sovereign: sovereignPDA,
+      solVault: solVaultPDA,
+      tokenMint,
+      callerTokenAccount,
+      creatorTokenAccount,
+      tokenProgram: tokenProgramId,
+      systemProgram: SystemProgram.programId,
+    })
+    .transaction();
+
+  tx.add(...ix.instructions);
+  return tx;
+}
+
+/**
  * Build a withdraw_failed transaction (investor).
  * Reclaims deposited GOR from sol_vault, closes the deposit record.
  */

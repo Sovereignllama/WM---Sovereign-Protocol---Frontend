@@ -53,6 +53,8 @@ import {
   buildEmergencyUnlockTx,
   buildEmergencyWithdrawTx,
   buildEmergencyWithdrawCreatorTx,
+  buildEmergencyTokenRedemptionTx,
+  buildRedeemTokensForGorTx,
   buildActivatePositionTx,
   buildMintNftFromPositionTx,
   buildUpdateSellFeeTx,
@@ -761,6 +763,60 @@ export function useEmergencyWithdrawCreator() {
       });
 
       await confirmWithFallback(connection,{
+        signature,
+        blockhash,
+        lastValidBlockHeight,
+      }, 'confirmed');
+
+      return { signature, success: true };
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereign(variables.sovereignId) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sovereigns });
+    },
+  });
+}
+
+/**
+ * Hook for token holders to redeem tokens for proportional surplus GOR.
+ * Auto-selects the correct instruction based on sovereign status:
+ *   - Halted / Retired  → emergency_token_redemption
+ *   - Unwinding / Unwound → redeem_tokens_for_gor
+ */
+export function useTokenRedemption() {
+  const program = useProgram();
+  const { publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sovereignId,
+      sovereignStatus,
+    }: {
+      sovereignId: string | number;
+      sovereignStatus: string;
+    }): Promise<TransactionResult> => {
+      if (!program || !publicKey) {
+        throw new Error('Wallet not connected');
+      }
+
+      const isEmergency = sovereignStatus === 'Halted' || sovereignStatus === 'Retired';
+
+      const tx = isEmergency
+        ? await buildEmergencyTokenRedemptionTx(program, publicKey, BigInt(sovereignId))
+        : await buildRedeemTokensForGorTx(program, publicKey, BigInt(sovereignId));
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+
+      const signature = await sendTransaction(tx, connection, {
+        skipPreflight: true,
+        preflightCommitment: 'confirmed',
+      });
+
+      await confirmWithFallback(connection, {
         signature,
         blockhash,
         lastValidBlockHeight,

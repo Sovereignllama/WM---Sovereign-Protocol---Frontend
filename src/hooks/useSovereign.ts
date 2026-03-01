@@ -241,6 +241,13 @@ export function useSovereign(sovereignId: string | number | undefined) {
         unwindSolBalance: account.unwindSolBalance.toString(),
         unwindSolBalanceGor: Number(account.unwindSolBalance) / LAMPORTS_PER_GOR,
         unwindTokenBalance: account.unwindTokenBalance.toString(),
+        // Token redemption pool (surplus GOR for external token holders)
+        tokenRedemptionPool: account.tokenRedemptionPool?.toString() ?? '0',
+        tokenRedemptionPoolGor: Number(account.tokenRedemptionPool || 0) / LAMPORTS_PER_GOR,
+        circulatingTokensAtUnwind: account.circulatingTokensAtUnwind?.toString() ?? '0',
+        tokenRedemptionDeadline: Number(account.tokenRedemptionDeadline || 0) > 0
+          ? new Date(Number(account.tokenRedemptionDeadline) * 1000)
+          : null,
       };
     },
     staleTime: 10_000,
