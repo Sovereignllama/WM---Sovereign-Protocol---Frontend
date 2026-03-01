@@ -128,6 +128,8 @@ export function useSovereigns() {
           ? new Date(safeNum(account.finalizedAt) * 1000)
           : null,
         unwindSolBalanceGor: Number(account.unwindSolBalance || 0) / LAMPORTS_PER_GOR,
+        tokenRedemptionPoolGor: Number(account.tokenRedemptionPool || 0) / LAMPORTS_PER_GOR,
+        creatorUnwindSurplusGor: Number(account.creatorUnwindSurplus || 0) / LAMPORTS_PER_GOR,
         hasActiveProposal: !!account.hasActiveProposal,
         // Progress calculations
         bondingProgress: safeNum(account.bondTarget) > 0 

@@ -21,6 +21,8 @@ export interface GovernancePosition {
   recoveryComplete: boolean;
   finalizedAt: Date | null;
   unwindSolBalanceGor: number;
+  tokenRedemptionPoolGor: number;
+  creatorUnwindSurplusGor: number;
   hasActiveProposal: boolean;
   // Deposit info
   depositAmountGor: number;
@@ -114,6 +116,8 @@ export function useMyGovernancePositions() {
           recoveryComplete: s.recoveryComplete,
           finalizedAt: s.finalizedAt ?? null,
           unwindSolBalanceGor: s.unwindSolBalanceGor ?? 0,
+          tokenRedemptionPoolGor: s.tokenRedemptionPoolGor ?? 0,
+          creatorUnwindSurplusGor: s.creatorUnwindSurplusGor ?? 0,
           hasActiveProposal: s.hasActiveProposal ?? false,
           depositAmountGor: d.amountGor,
           depositAmountLamports: d.amount,

@@ -847,11 +847,14 @@ function EmergencyWithdrawPanel({
 }) {
   const isPostFinalization = !!position.finalizedAt;
   const unwindGor = position.unwindSolBalanceGor || 0;
+  const tokenPoolGor = position.tokenRedemptionPoolGor || 0;
+  const creatorSurplusGor = position.creatorUnwindSurplusGor || 0;
+  const investorPortionGor = Math.max(0, unwindGor - tokenPoolGor - creatorSurplusGor);
   const totalDepGor = position.totalDepositedGor || 1;
   const depositGor = position.depositAmountGor;
   const reclaimableGor =
     isPostFinalization && unwindGor > 0
-      ? (unwindGor * depositGor) / totalDepGor
+      ? (investorPortionGor * depositGor) / totalDepGor
       : depositGor;
 
   return (
