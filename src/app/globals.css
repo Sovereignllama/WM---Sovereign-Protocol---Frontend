@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+/* Wallet adapter button overrides */
+.wallet-adapter-button {
+  display: inline-flex !important;
+  align-items: center !important;
+  white-space: nowrap !important;
+  line-height: 1 !important;
+  gap: 6px !important;
+  height: auto !important;
+}
+.wallet-adapter-button-start-icon {
+  margin: 0 !important;
+}
+
 /* Gasterol Font */
 @font-face {
   font-family: 'Gasterol';

@@ -1,8 +1,11 @@
 'use client';
 
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { useWallet } from '@solana/wallet-adapter-react';
 
 export function ConnectWalletButton() {
+  const { publicKey } = useWallet();
+
   return (
     <WalletMultiButton
       style={{
@@ -17,7 +20,16 @@ export function ConnectWalletButton() {
         boxShadow: '0 0 8px rgba(46,235,127,0.15)',
         textShadow: '0 0 6px rgba(200,255,220,0.5)',
         transition: 'all 0.2s',
+        display: 'inline-flex',
+        alignItems: 'center',
+        whiteSpace: 'nowrap',
+        lineHeight: '1',
+        gap: '6px',
       }}
-    />
+    >
+      {publicKey
+        ? `${publicKey.toBase58().slice(0, 4)}..${publicKey.toBase58().slice(-4)}`
+        : 'Connect'}
+    </WalletMultiButton>
   );
 }
