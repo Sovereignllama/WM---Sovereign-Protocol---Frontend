@@ -333,11 +333,31 @@ export function useEngineSwap() {
         preflightCommitment: 'confirmed',
       });
 
-      // Confirm
-      await connection.confirmTransaction(
-        { signature, blockhash, lastValidBlockHeight },
-        'confirmed',
-      );
+      // Confirm — with fallback for WebSocket failures
+      try {
+        await connection.confirmTransaction(
+          { signature, blockhash, lastValidBlockHeight },
+          'confirmed',
+        );
+      } catch (confirmErr: any) {
+        const isTimeout = confirmErr?.message?.includes('block height exceeded')
+          || confirmErr?.message?.includes('expired');
+        if (isTimeout) {
+          // WebSocket confirmation may have failed but the tx could have landed.
+          // Do a manual signature status check before declaring failure.
+          console.warn('[useEngineSwap] Confirmation timed out, checking signature status...');
+          const statusResp = await connection.getSignatureStatuses([signature]);
+          const status = statusResp?.value?.[0];
+          if (status && !status.err) {
+            console.log('[useEngineSwap] Transaction confirmed via fallback check');
+            // tx landed successfully — continue as normal
+          } else {
+            throw confirmErr; // genuinely failed
+          }
+        } else {
+          throw confirmErr;
+        }
+      }
 
       setTxSignature(signature);
       return { signature };

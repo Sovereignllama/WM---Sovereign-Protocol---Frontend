@@ -4,10 +4,40 @@ import { useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useConnection } from '@solana/wallet-adapter-react';
-import { PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
+import { PublicKey, Transaction, VersionedTransaction, Connection, Commitment, BlockheightBasedTransactionConfirmationStrategy } from '@solana/web3.js';
 import { BN } from '@coral-xyz/anchor';
 import { useProgram, useWalletAddress } from './useProgram';
 import { QUERY_KEYS } from './useSovereign';
+
+/**
+ * Confirm a transaction with a fallback for WebSocket failures.
+ * If the WS-based confirmation throws "block height exceeded" / "expired",
+ * we do a manual getSignatureStatuses check — the tx may have landed on-chain
+ * even though the subscription-based listener never saw the notification.
+ */
+async function confirmWithFallback(
+  connection: Connection,
+  strategy: BlockheightBasedTransactionConfirmationStrategy,
+  commitment: Commitment = 'confirmed',
+): Promise<void> {
+  try {
+    await confirmWithFallback(connection,strategy, commitment);
+  } catch (err: any) {
+    const msg = err?.message || '';
+    const isTimeout = msg.includes('block height exceeded') || msg.includes('expired');
+    if (!isTimeout) throw err;
+
+    // WS confirmation failed — check if the tx actually landed
+    console.warn('[confirmWithFallback] Confirmation timed out, checking signature status…');
+    const resp = await connection.getSignatureStatuses([strategy.signature]);
+    const status = resp?.value?.[0];
+    if (status && !status.err) {
+      console.log('[confirmWithFallback] Transaction confirmed via fallback check');
+      return; // tx landed successfully
+    }
+    throw err; // genuinely failed
+  }
+}
 import { 
   buildDepositTx, 
   buildWithdrawTx, 
@@ -230,7 +260,7 @@ export function useCreateSovereign(onProgress?: OnCreationProgress) {
         steps[stepIdx].signature = firstSignature;
         report(steps, stepIdx, sovereignId.toString(), sovereignPDA.toBase58());
 
-        await connection.confirmTransaction({
+        await confirmWithFallback(connection,{
           signature: firstSignature,
           blockhash,
           lastValidBlockHeight,
@@ -272,7 +302,7 @@ export function useCreateSovereign(onProgress?: OnCreationProgress) {
         steps[stepIdx].signature = tokenSignature;
         report(steps, stepIdx, sovereignId.toString(), sovereignPDA.toBase58());
 
-        await connection.confirmTransaction({
+        await confirmWithFallback(connection,{
           signature: tokenSignature,
           blockhash: tokenBlockhash,
           lastValidBlockHeight: tokenLastValid,
@@ -314,7 +344,7 @@ export function useCreateSovereign(onProgress?: OnCreationProgress) {
         steps[stepIdx].signature = depositSignature;
         report(steps, stepIdx, sovereignId.toString(), sovereignPDA.toBase58());
 
-        await connection.confirmTransaction({
+        await confirmWithFallback(connection,{
           signature: depositSignature,
           blockhash: depositBlockhash,
           lastValidBlockHeight: depositLastValid,
@@ -384,7 +414,7 @@ export function useDeposit() {
       });
 
       // Wait for confirmation
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -455,7 +485,7 @@ export function useWithdraw() {
       });
 
       // Wait for confirmation
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -516,7 +546,7 @@ export function useFinalizeEnginePool() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -569,7 +599,7 @@ export function useEmergencyUnlock() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -649,7 +679,7 @@ export function useEmergencyWithdraw() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -709,7 +739,7 @@ export function useEmergencyWithdrawCreator() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -765,7 +795,7 @@ export function useMintNftFromPosition() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -826,7 +856,7 @@ export function useClaimPoolLpFees() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -875,7 +905,7 @@ export function useClaimPoolCreatorFees() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -927,7 +957,7 @@ export function useUpdateSellFee() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -979,7 +1009,7 @@ export function useRenounceSellFee() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -1031,7 +1061,7 @@ export function useExecuteEngineUnwind() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -1086,7 +1116,7 @@ export function useClaimTransferFees() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -1141,7 +1171,7 @@ export function useSwapBuy() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -1195,7 +1225,7 @@ export function useSwapSell() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -1254,7 +1284,7 @@ export function useListNft() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -1312,7 +1342,7 @@ export function useBuyNft() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -1375,7 +1405,7 @@ export function useDelistNft() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -1428,7 +1458,7 @@ export function useBurnNftIntoPosition() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -1493,7 +1523,7 @@ export function useTransferNft() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -1551,7 +1581,7 @@ export function useMarkBondingFailed() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -1606,7 +1636,7 @@ export function useWithdrawFailed() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
@@ -1660,7 +1690,7 @@ export function useWithdrawCreatorFailed() {
         preflightCommitment: 'confirmed',
       });
 
-      await connection.confirmTransaction({
+      await confirmWithFallback(connection,{
         signature,
         blockhash,
         lastValidBlockHeight,
