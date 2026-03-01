@@ -21,7 +21,7 @@ async function confirmWithFallback(
   commitment: Commitment = 'confirmed',
 ): Promise<void> {
   try {
-    await confirmWithFallback(connection,strategy, commitment);
+    await connection.confirmTransaction(strategy, commitment);
   } catch (err: any) {
     const msg = err?.message || '';
     const isTimeout = msg.includes('block height exceeded') || msg.includes('expired');
