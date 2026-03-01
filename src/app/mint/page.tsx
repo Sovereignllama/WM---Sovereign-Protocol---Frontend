@@ -4,7 +4,8 @@ import { useState, useRef, useCallback } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { SovereignType } from '@/lib/program/client';
-import { PROTOCOL_CONSTANTS, LAMPORTS_PER_GOR } from '@/lib/config';
+import { PROTOCOL_CONSTANTS, LAMPORTS_PER_GOR, config } from '@/lib/config';
+import { getSovereignPDA } from '@/lib/program/pdas';
 import { useProtocolState } from '@/hooks/useSovereign';
 import { useCreateSovereign, type CreationProgress, type CreateSovereignMutationParams } from '@/hooks/useTransactions';
 import { useRouter } from 'next/navigation';
@@ -293,6 +294,43 @@ export default function MintPage() {
 
   const handleSubmit = async () => {
     if (!connected) return;
+
+    // ── Guard: If a previous attempt already created the sovereign on-chain,
+    //    auto-resume instead of creating a duplicate. ──
+    if (createdSovereignIdRef.current && lastCreationParamsRef.current) {
+      console.log('Previous sovereign exists on-chain, auto-resuming:', createdSovereignIdRef.current);
+      const sovId = BigInt(createdSovereignIdRef.current);
+      const [sovPDA] = getSovereignPDA(sovId, new PublicKey(config.programId));
+
+      setError(null);
+      setCreationError(null);
+      setCreationProgress(null);
+
+      try {
+        const resumeParams: CreateSovereignMutationParams = {
+          ...lastCreationParamsRef.current,
+          resumeSovereignId: sovId,
+          resumeSovereignPDA: sovPDA,
+        };
+        const result = await createSovereign.mutateAsync(resumeParams);
+        createdSovereignIdRef.current = result.sovereignId;
+      } catch (err: any) {
+        console.error('Failed to auto-resume creation:', err);
+        const message = err.message || 'Failed to resume creation. Please try again.';
+        setError(message);
+        setCreationError(message);
+        if (creationProgress) {
+          setCreationProgress(prev => {
+            if (!prev) return prev;
+            const updated = { ...prev, steps: prev.steps.map(s => ({ ...s })) };
+            const activeStep = updated.steps.find(s => s.status === 'signing' || s.status === 'confirming');
+            if (activeStep) activeStep.status = 'error';
+            return updated;
+          });
+        }
+      }
+      return;
+    }
     
     setError(null);
     setCreationError(null);

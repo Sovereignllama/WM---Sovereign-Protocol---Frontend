@@ -20,8 +20,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  // Use a dedicated WebSocket endpoint for tx confirmations.
+  // The HTTP RPC may be proxied through a backend that doesn't support WS upgrades.
+  const wsEndpoint = useMemo(() => config.wsRpcUrl, []);
+
   return (
-    <ConnectionProvider endpoint={endpoint}>
+    <ConnectionProvider endpoint={endpoint} config={{ wsEndpoint }}>
       <SolanaWalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
           {children}
